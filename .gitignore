@@ -1,0 +1,6 @@
+*
+!.gitignore
+!*.c
+!*.h
+!sample.kj
+!premake5.lua
