@@ -1,7 +1,7 @@
 /*
-* koji language. 2015 Canio Massimo Tristano
-* Read LICENSE.txt for information about this software copyright and license.
-*/
+  * koji language. 2015 Canio Massimo Tristano
+  * Read LICENSE.txt for information about this software copyright and license.
+  */
 
 
 #include "koji.h"
@@ -65,9 +65,9 @@ static inline void array_init(void* array_)
 }
 
 /*
-* Makes sure that specified karray at @array_ of elements of size @element_size has enough capacity
-* to store @new_capacity elements.
-*/
+  * Makes sure that specified karray at @array_ of elements of size @element_size has enough capacity
+  * to store @new_capacity elements.
+  */
 static koji_bool array_reserve(void *array_, uint element_size, uint new_capacity)
 {
 	void_array *array = array_;
@@ -95,12 +95,12 @@ static koji_bool array_reserve(void *array_, uint element_size, uint new_capacit
 }
 
 /**
-* Resizes specified dynamic array @array_ containing elements of size @element_size to a new
-* number of elements @new_size. If the array has enough capacity to contain @new_size elements
-* then the function simply returns KJ_FALSE. If the array instead is too small, the function
-* allocates a new buffer large enough to contain @new_size, copies the old buffer to the new one,
-* destroys the old buffer and returns KJ_TRUE.
-*/
+  * Resizes specified dynamic array @array_ containing elements of size @element_size to a new
+  * number of elements @new_size. If the array has enough capacity to contain @new_size elements
+  * then the function simply returns KJ_FALSE. If the array instead is too small, the function
+  * allocates a new buffer large enough to contain @new_size, copies the old buffer to the new one,
+  * destroys the old buffer and returns KJ_TRUE.
+  */
 static inline koji_bool array_resize(void *array_, uint element_size, uint new_size)
 {
 	void_array *array = array_;
@@ -110,8 +110,8 @@ static inline koji_bool array_resize(void *array_, uint element_size, uint new_s
 }
 
 /**
-* Destroys the buffer contained in the array_t pointed by @array_.
-*/
+  * Destroys the buffer contained in the array_t pointed by @array_.
+  */
 static inline void array_destroy(void *array_)
 {
 	void_array *array = array_;
@@ -122,9 +122,9 @@ static inline void array_destroy(void *array_)
 }
 
 /**
-* (internal) Resizes @array_ to contain its current size plus @num_elements.
-*  @returns a pointer to the first of new elements.
-*/
+  * (internal) Resizes @array_ to contain its current size plus @num_elements.
+  *  @returns a pointer to the first of new elements.
+  */
 static inline void* _array_push(void *array_, uint element_size, uint num_elements)
 {
 	void_array *array = array_;
@@ -134,14 +134,14 @@ static inline void* _array_push(void *array_, uint element_size, uint num_elemen
 }
 
 /**
-* Expands @array contain @n new elements of specified @type and returns a pointer to the first
-* new element.
-*/
+  * Expands @array contain @n new elements of specified @type and returns a pointer to the first
+  * new element.
+  */
 #define array_push(array, type, n) ((type*)_array_push(array, sizeof(type), n))
 
 /**
-* Pushes @value of type @type to the back of @array.
-*/
+  * Pushes @value of type @type to the back of @array.
+  */
 #define array_push_value(array, type, value) *(type*)_array_push(array, sizeof(type), 1) = value
 
 #pragma endregion
@@ -150,8 +150,8 @@ static inline void* _array_push(void *array_, uint element_size, uint num_elemen
 #pragma region Diagnostics
 
 /**
-* Describes a specific location as in line and column in a specific source file.
-*/
+  * Describes a specific location as in line and column in a specific source file.
+  */
 typedef struct kj_source_location
 {
 	const char *filename;
@@ -161,8 +161,8 @@ typedef struct kj_source_location
 kj_source_location;
 
 /**
-* Type of the function set by the user that will handle any compilation or runtime error.
-*/
+  * Type of the function set by the user that will handle any compilation or runtime error.
+  */
 typedef void(*kj_error_report_fn)(void *user_data, kj_source_location, const char *message);
 
 static void default_error_report_fn(void* user_data, kj_source_location sl, const char *message)
@@ -173,8 +173,8 @@ static void default_error_report_fn(void* user_data, kj_source_location sl, cons
 }
 
 /**
-* Groups info about the error handler used during compilation and execution.
-*/
+  * Groups info about the error handler used during compilation and execution.
+  */
 typedef struct kj_error_handler
 {
 	void *user_data;
@@ -184,9 +184,9 @@ typedef struct kj_error_handler
 kj_error_handler;
 
 /**
-* Reports an issue at source location @sl with printf-like @format and arguments @args using
-* specified handler @e.
-*/
+  * Reports an issue at source location @sl with printf-like @format and arguments @args using
+  * specified handler @e.
+  */
 static void reportv(kj_error_handler *e, kj_source_location sl, const char *format, va_list args)
 {
 	static const char *header_format = "at '%s' (%d:%d): ";
@@ -199,9 +199,9 @@ static void reportv(kj_error_handler *e, kj_source_location sl, const char *form
 }
 
 /**
-* Reports an issue at source location @sl with printf-like @format and variadic arguments using
-* specified handler @e.
-*/
+  * Reports an issue at source location @sl with printf-like @format and variadic arguments using
+  * specified handler @e.
+  */
 static void report(kj_error_handler *e, kj_source_location sl, const char *format, ...)
 {
 	va_list args;
@@ -211,8 +211,8 @@ static void report(kj_error_handler *e, kj_source_location sl, const char *forma
 }
 
 /**
-* Reports the specified error message and jumps to the error handler code.
-*/
+  * Reports the specified error message and jumps to the error handler code.
+  */
 static void compile_error(kj_error_handler *e, kj_source_location sl, const char *format, ...)
 {
 	va_list args;
@@ -228,9 +228,9 @@ static void compile_error(kj_error_handler *e, kj_source_location sl, const char
 #pragma region Lexer
 
 /**
-* Value rapresenting an enumerated token value (e.g. kw_while) or a valid sequence of characters
-* (e.g. '>=').
-*/
+  * Value rapresenting an enumerated token value (e.g. kw_while) or a valid sequence of characters
+  * (e.g. '>=').
+  */
 typedef int kj_token;
 
 enum
@@ -257,13 +257,13 @@ enum
 };
 
 /**
-* A lexer scans a stream using a provided stream_reader matching tokens recognized by the
-* language such as the "if" keyword, or a string, or an identifier. The parser then verifies that
-* the sequence of tokens in an input source file scanned by the lexer is valid and generates the
-* appropriate output bytecode.
-* This lexer is implemented as a basic state machine that implements the language tokens regular
-* expression.
-*/
+  * A lexer scans a stream using a provided stream_reader matching tokens recognized by the
+  * language such as the "if" keyword, or a string, or an identifier. The parser then verifies that
+  * the sequence of tokens in an input source file scanned by the lexer is valid and generates the
+  * appropriate output bytecode.
+  * This lexer is implemented as a basic state machine that implements the language tokens regular
+  * expression.
+  */
 typedef struct kj_lexer
 {
 	kj_error_handler *error_handler;
@@ -329,8 +329,8 @@ static inline int _lex_accept_char(kj_lexer *l, char ch)
 }
 
 /**
-* @returns whether the next char is a valid name char.
-*/
+  * @returns whether the next char is a valid name char.
+  */
 static inline koji_bool _lex_is_identifier_char(char ch, koji_bool first_char)
 {
 	return (ch >= 'A' && ch <= 'Z') ||
@@ -340,9 +340,9 @@ static inline koji_bool _lex_is_identifier_char(char ch, koji_bool first_char)
 }
 
 /**
-* Scans the input for an name. \p first_char specifies whether this is the first name
-* character read. It sets l->lookahead to the tok_identifier if some name was read and returns it.
-*/
+  * Scans the input for an name. \p first_char specifies whether this is the first name
+  * character read. It sets l->lookahead to the tok_identifier if some name was read and returns it.
+  */
 static inline kj_token _lex_scan_identifier(kj_lexer *l, koji_bool first_char)
 {
 	while (_lex_is_identifier_char(l->curr_char, first_char))
@@ -355,9 +355,9 @@ static inline kj_token _lex_scan_identifier(kj_lexer *l, koji_bool first_char)
 }
 
 /**
-* Converts specified token @tok into its equivalent string and writs the reslt in @buffer of size
-* @buffer_size.
-*/
+  * Converts specified token @tok into its equivalent string and writs the reslt in @buffer of size
+  * @buffer_size.
+  */
 static const char *lex_token_to_string(kj_token tok, char *buffer, uint buffer_size)
 {
 	switch (tok)
@@ -385,8 +385,8 @@ static const char *lex_token_to_string(kj_token tok, char *buffer, uint buffer_s
 }
 
 /*
-* @returns a readable string for current lookahead (e.g. it returns "end-of-stream" for tok_eos)
-*/
+  * @returns a readable string for current lookahead (e.g. it returns "end-of-stream" for tok_eos)
+  */
 static const char *lex_lookahead_to_string(kj_lexer *l)
 {
 	if (l->lookahead == tok_eos)
@@ -396,8 +396,8 @@ static const char *lex_lookahead_to_string(kj_lexer *l)
 }
 
 /**
-* Scans the next token in the source stream and returns its type.
-*/
+  * Scans the next token in the source stream and returns its type.
+  */
 static kj_token lex(kj_lexer *l)
 {
 	l->lookahead = tok_eos;
@@ -594,10 +594,10 @@ static kj_token lex(kj_lexer *l)
 }
 
 /**
-* Initializes an unitialized lexer instance @l to use specified error handler @e. Lexer will scan
-* source using specified stream @stream_func and @stream_data, using @filename as the source origin
-* descriptor.
-*/
+  * Initializes an unitialized lexer instance @l to use specified error handler @e. Lexer will scan
+  * source using specified stream @stream_func and @stream_data, using @filename as the source origin
+  * descriptor.
+  */
 static void lex_init(kj_lexer *l, kj_error_handler *e, const char *filename, koji_stream_reader_fn stream_func,
 	void* stream_data)
 {
@@ -616,8 +616,8 @@ static void lex_init(kj_lexer *l, kj_error_handler *e, const char *filename, koj
 }
 
 /**
-* Deinitializes an initialized lexer instance destroying its resources.
-*/
+  * Deinitializes an initialized lexer instance destroying its resources.
+  */
 static void lex_close(kj_lexer *l)
 {
 	array_destroy(&l->token_string);
@@ -714,15 +714,15 @@ static inline void replace_Bx(kj_instruction *i, int Bx) { *i = (*i & 0x3FFF) | 
 static inline void replace_C(kj_instruction *i, int C) { *i = (*i & 0x7FFFFF) | (C << 23); }
 
 /**
-* A value is the primary script data type. It is dynamically typed as it carries its type information at
-* runtime.
-*/
+  * A value is the primary script data type. It is dynamically typed as it carries its type information at
+  * runtime.
+  */
 typedef struct kj_value kj_value;
 
 
 /**
-* TODO
-*/
+  * TODO
+  */
 typedef struct kj_closure
 {
 	koji_prototype* proto;
@@ -730,8 +730,8 @@ typedef struct kj_closure
 kj_closure;
 
 /**
-* Enumeration of all supported value types.
-*/
+  * Enumeration of all supported value types.
+  */
 typedef enum
 {
 	KJ_VALUE_NIL,
@@ -771,8 +771,8 @@ struct koji_prototype
 };
 
 /**
-* (internal) Destroys prototype @p resources and frees its memory.
-*/
+  * (internal) Destroys prototype @p resources and frees its memory.
+  */
 static void prototype_delete(koji_prototype* p)
 {
 	assert(p->references == 0);
@@ -786,8 +786,8 @@ static void prototype_delete(koji_prototype* p)
 }
 
 /**
-* Prints prototype information and instructions for compilation debugging.
-*/
+  * Prints prototype information and instructions for compilation debugging.
+  */
 static void prototype_dump(koji_prototype* p, int level, int index)
 {
 	if (level == 0)
@@ -932,9 +932,9 @@ static inline void value_set(kj_value* dest, const kj_value* src)
 }
 
 /**
-* A static function is a C function registered by the user *before* compiling scripts. These
-* should be low level library functions that might are called often (e.g. sqrt).
-*/
+  * A static function is a C function registered by the user *before* compiling scripts. These
+  * should be low level library functions that might are called often (e.g. sqrt).
+  */
 typedef struct kj_static_function
 {
 	uint name_string_offset;
@@ -943,8 +943,8 @@ typedef struct kj_static_function
 } kj_static_function;
 
 /**
-* Collection of static functions.
-*/
+  * Collection of static functions.
+  */
 typedef struct kj_static_functions
 {
 	array_type(char) name_buffer;
@@ -952,9 +952,9 @@ typedef struct kj_static_functions
 } kj_static_functions;
 
 /**
-* Searches for a static function with name @name and @nargs number of arguments in @fns and returns
-* its index in fns->functions if found, -1 otherwise.
-*/
+  * Searches for a static function with name @name and @nargs number of arguments in @fns and returns its index in
+  * fns->functions if found, -1 otherwise.
+  */
 static int static_functions_fetch(kj_static_functions const* fns, const char* name, int nargs)
 {
 	int best_candidate = -1;
@@ -976,8 +976,8 @@ static int static_functions_fetch(kj_static_functions const* fns, const char* na
 #pragma region Compiler
 
 /**
-* A local variable is simply a named and reserved stack register offset.
-*/
+  * A local variable is simply a named and reserved stack register offset.
+  */
 typedef struct
 {
 	uint identifier_offset;
@@ -986,13 +986,13 @@ typedef struct
 
 
 /**
-* A label is a dynamic array of the indices of the instructions that branch to it.
-*/
+  * A label is a dynamic array of the indices of the instructions that branch to it.
+  */
 typedef array_type(uint) kc_label;
 
 /**
-* Holds the state of a compilation execution.
-*/
+  * Holds the state of a compilation execution.
+  */
 typedef struct kj_compiler
 {
 	kj_static_functions const* static_functions;
@@ -1008,16 +1008,16 @@ typedef struct kj_compiler
 /* Auxiliary parsing functions */
 
 /**
-* Formats and reports a syntax error (unexpected <token>).
-*/
+  * Formats and reports a syntax error (unexpected <token>).
+  */
 static void kc_syntax_error(kj_compiler *c, kj_source_location sourceloc)
 {
 	compile_error(c->lex->error_handler, sourceloc, "unexpected %s.", lex_lookahead_to_string(c->lex));
 }
 
 /**
-* Scans next token if lookahead is @tok. Returns whether a new token was scanned.
-*/
+  * Scans next token if lookahead is @tok. Returns whether a new token was scanned.
+  */
 static inline koji_bool kc_accept(kj_compiler *c, kj_token tok)
 {
 	if (c->lex->lookahead == tok)
@@ -1029,8 +1029,8 @@ static inline koji_bool kc_accept(kj_compiler *c, kj_token tok)
 }
 
 /**
-* Reports a compilation error if lookhead differs from @tok.
-*/
+  * Reports a compilation error if lookhead differs from @tok.
+  */
 static inline void kc_check(kj_compiler *c, kj_token tok)
 {
 	if (c->lex->lookahead != tok)
@@ -1042,8 +1042,8 @@ static inline void kc_check(kj_compiler *c, kj_token tok)
 }
 
 /**
-* Checks that lookahead is @tok then scans next token.
-*/
+  * Checks that lookahead is @tok then scans next token.
+  */
 static inline void kc_expect(kj_compiler *c, kj_token tok)
 {
 	kc_check(c, tok);
@@ -1051,8 +1051,8 @@ static inline void kc_expect(kj_compiler *c, kj_token tok)
 }
 
 /**
-* Returns an "end of statement" token is found (newline, ';', '}' or end-of-stream) and "eats" it.
-*/
+  * Returns an "end of statement" token is found (newline, ';', '}' or end-of-stream) and "eats" it.
+  */
 static inline koji_bool kc_accept_end_of_stmt(kj_compiler *c)
 {
 	if (kc_accept(c, ';')) return KJ_TRUE;
@@ -1062,8 +1062,8 @@ static inline koji_bool kc_accept_end_of_stmt(kj_compiler *c)
 }
 
 /**
-* Expects an end of statement.
-*/
+  * Expects an end of statement.
+  */
 static inline void kc_expect_end_of_stmt(kj_compiler *c)
 {
 	if (!kc_accept_end_of_stmt(c)) kc_syntax_error(c, c->lex->source_location);
@@ -1072,8 +1072,8 @@ static inline void kc_expect_end_of_stmt(kj_compiler *c)
 /* Constants management */
 
 /**
-* Searches a constant in value @k and adds it if not found, then it returns its index.
-*/
+  * Searches a constant in value @k and adds it if not found, then it returns its index.
+  */
 static inline int _kc_fetch_constant(kj_compiler *c, kj_value k)
 {
 	for (uint i = 0; i < c->proto->constants.size; ++i)
@@ -1102,8 +1102,8 @@ static inline int kc_fetch_constant_real(kj_compiler *c, koji_real k)
 /* instruction emission */
 
 /**
-* Pushes instruction @i to current prototype instructions.
-*/
+  * Pushes instruction @i to current prototype instructions.
+  */
 static inline void kc_emit(kj_compiler *c, kj_instruction i)
 {
 	if (opcode_has_target(decode_op(i)))
@@ -1115,9 +1115,9 @@ static inline void kc_emit(kj_compiler *c, kj_instruction i)
 }
 
 /**
-* Computes and returns the offset specified from instruction index to the next instruction
-* that will be emitted in current prototype.
-*/
+  * Computes and returns the offset specified from instruction index to the next instruction
+  * that will be emitted in current prototype.
+  */
 static inline int kc_offset_to_next_instruction(kj_compiler *c, int from_instruction_index)
 {
 	return c->proto->instructions.size - from_instruction_index - 1;
@@ -1126,9 +1126,9 @@ static inline int kc_offset_to_next_instruction(kj_compiler *c, int from_instruc
 /* Jump instruction related */
 
 /**
-* Writes the offset to jump instructions contained in @label starting from @begin to target
-* instruction index target_index.
-*/
+  * Writes the offset to jump instructions contained in @label starting from @begin to target
+  * instruction index target_index.
+  */
 static void kc_bind_label_to(kj_compiler *c, kc_label* label, uint begin, int target_index)
 {
 	for (uint i = begin, size = label->size; i < size; ++i)
@@ -1140,9 +1140,9 @@ static void kc_bind_label_to(kj_compiler *c, kc_label* label, uint begin, int ta
 }
 
 /**
-* Binds jump instructions in @label starting from @begin to the next instruction that will be
-* emitted to current prototype.
-*/
+  * Binds jump instructions in @label starting from @begin to the next instruction that will be
+  * emitted to current prototype.
+  */
 static inline void kc_bind_label_here(kj_compiler *c, kc_label* label, uint begin)
 {
 	kc_bind_label_to(c, label, begin, c->proto->instructions.size);
@@ -1151,8 +1151,8 @@ static inline void kc_bind_label_here(kj_compiler *c, kc_label* label, uint begi
 /* local variables */
 
 /**
-* Adds an identifier string to the compiler buffer and returns the string offset within it.
-*/
+  * Adds an identifier string to the compiler buffer and returns the string offset within it.
+  */
 static uint kc_push_identifier(kj_compiler *c, const char* identifier, uint identifier_size)
 {
 	char* my_identifier = array_push(&c->identifiers, char, identifier_size + 1);
@@ -1161,9 +1161,9 @@ static uint kc_push_identifier(kj_compiler *c, const char* identifier, uint iden
 }
 
 /**
-* Searches for a local named @identifier from current prototype up to the main one and returns
-* a pointer to it if found, null otherwise.
-*/
+  * Searches for a local named @identifier from current prototype up to the main one and returns
+  * a pointer to it if found, null otherwise.
+  */
 static kc_local* kc_fetch_local(kj_compiler *c, const char* identifier)
 {
 	for (int i = c->locals.size - 1; i >= 0; --i)
@@ -1177,9 +1177,9 @@ static kc_local* kc_fetch_local(kj_compiler *c, const char* identifier)
 }
 
 /**
-* Defines a new local variable in current prototype with an identifier starting at
-* identifier_offset preiously pushed through _push_identifier().
-*/
+  * Defines a new local variable in current prototype with an identifier starting at
+  * identifier_offset preiously pushed through _push_identifier().
+  */
 static void kc_define_local(kj_compiler *c, uint identifier_offset)
 {
 	kc_local* var = array_push(&c->locals, kc_local, 1);
@@ -1191,10 +1191,10 @@ static void kc_define_local(kj_compiler *c, uint identifier_offset)
 /* Expressions */
 
 /**
-* A state structure used to contain information about expression parsing and compilation
-* such as the desired target register, whether the expression should be negated and the
-* indices of new jump instructions in compiler state global true/false labels.
-*/
+  * A state structure used to contain information about expression parsing and compilation
+  * such as the desired target register, whether the expression should be negated and the
+  * indices of new jump instructions in compiler state global true/false labels.
+  */
 typedef struct kc_expr_state
 {
 	int target_register;
@@ -1204,8 +1204,8 @@ typedef struct kc_expr_state
 } kc_expr_state;
 
 /**
-* Enumeration of the types an expression can take.
-*/
+  * Enumeration of the types an expression can take.
+  */
 typedef enum
 {
 	KC_EXPR_TYPE_NIL,
@@ -1222,10 +1222,10 @@ static const char* KC_EXPR_TYPE_TYPE_TO_STRING[] =
 { "nil", "bool", "int", "real", "register", "bool", "bool", "bool" };
 
 /**
-* An expr is the result of a subexpression during compilation. For optimal bytecode generation
-* expression are actually compiled to registers lazily, at the last moment possible so that
-* simple optimizations such as operations on constants can be performed.
-*/
+  * An expr is the result of a subexpression during compilation. For optimal bytecode generation
+  * expression are actually compiled to registers lazily, at the last moment possible so that
+  * simple optimizations such as operations on constants can be performed.
+  */
 typedef struct kc_expr
 {
 	kc_expr_type type;
@@ -1246,41 +1246,41 @@ typedef struct kc_expr
 static const kc_expr KC_EXPR_NIL = { .type = KC_EXPR_TYPE_NIL, .positive = KJ_TRUE };
 
 /**
-* Makes and returns a boolean expr of specified @value.
-*/
+  * Makes and returns a boolean expr of specified @value.
+  */
 static inline kc_expr kc_expr_boolean(koji_bool value)
 {
 	return (kc_expr) { KC_EXPR_TYPE_BOOL, .integer = value, .positive = KJ_TRUE };
 }
 
 /**
-* Makes and returns a integer expr of specified @value.
-*/
+  * Makes and returns a integer expr of specified @value.
+  */
 static inline kc_expr kc_expr_integer(koji_integer value)
 {
 	return (kc_expr) { KC_EXPR_TYPE_INT, .integer = value, .positive = KJ_TRUE };
 }
 
 /**
-* Makes and returns a real expr of specified @value.
-*/
+  * Makes and returns a real expr of specified @value.
+  */
 static inline kc_expr kc_expr_real(koji_real value)
 {
 	return (kc_expr) { KC_EXPR_TYPE_REAL, .real = value, .positive = KJ_TRUE };
 }
 
 /**
-* Makes and returns a register expr of specified @location.
-*/
+  * Makes and returns a register expr of specified @location.
+  */
 static inline kc_expr kc_expr_register(int location)
 {
 	return (kc_expr) { KC_EXPR_TYPE_REGISTER, .location = location, .positive = KJ_TRUE };
 }
 
 /**
-* Makes and returns a comparison expr of specified @type between @lhs_location and @rhs_location
-* against test value @test_value.
-*/
+  * Makes and returns a comparison expr of specified @type between @lhs_location and @rhs_location
+  * against test value @test_value.
+  */
 static inline kc_expr kc_expr_comparison(kc_expr_type type, koji_bool test_value, int lhs_location,
 	int rhs_location)
 {
@@ -1288,26 +1288,26 @@ static inline kc_expr kc_expr_comparison(kc_expr_type type, koji_bool test_value
 }
 
 /**
-* Returns whether expression @type is a constant (bool, int or real).
-*/
+  * Returns whether expression @type is a constant (bool, int or real).
+  */
 static inline koji_bool kc_expr_is_constant(kc_expr_type type)
 {
 	return type >= KC_EXPR_TYPE_BOOL && type <= KC_EXPR_TYPE_REAL;
 }
 
 /**
-* Returns whether an expression of specified @expr can be *statically* converted to a bool.
-*/
+  * Returns whether an expression of specified @expr can be *statically* converted to a bool.
+  */
 static inline koji_bool kc_expr_is_bool_convertible(kc_expr_type type) { return type <= KC_EXPR_TYPE_REAL; }
 
 /**
-* Returns whether an expression of specified @type is a comparison.
-*/
+  * Returns whether an expression of specified @type is a comparison.
+  */
 static inline koji_bool kc_expr_is_comparison(kc_expr_type type) { return type >= KC_EXPR_TYPE_EQ; }
 
 /**
-* Converts @expr to a boolean. kc_expr_is_bool_convertible(expr) must return true.
-*/
+  * Converts @expr to a boolean. kc_expr_is_bool_convertible(expr) must return true.
+  */
 static inline koji_bool kc_expr_to_bool(kc_expr expr)
 {
 	switch (expr.type)
@@ -1327,8 +1327,8 @@ static inline koji_bool kc_expr_to_bool(kc_expr expr)
 }
 
 /**
-* Converts @expr to a real. Value is casted if expr is a constant, otherwise it returns zero.
-*/
+  * Converts @expr to a real. Value is casted if expr is a constant, otherwise it returns zero.
+  */
 static inline koji_real kc_expr_to_real(kc_expr expr)
 {
 	switch (expr.type)
@@ -1346,10 +1346,10 @@ static inline koji_real kc_expr_to_real(kc_expr expr)
 }
 
 /**
-* Compiles expression @e to a register and returns the expression (of type KC_EXPR_TYPE_REGISTER)
-* containing the value that was contained in @e.
-* If @e needs to be moved to some register (e.g. it is a boolean value), @target_hint is used.
-*/
+  * Compiles expression @e to a register and returns the expression (of type KC_EXPR_TYPE_REGISTER)
+  * containing the value that was contained in @e.
+  * If @e needs to be moved to some register (e.g. it is a boolean value), @target_hint is used.
+  */
 static inline kc_expr kc_expr_to_any_register(kj_compiler *c, kc_expr e, int target_hint)
 {
 	uint constant_index;
@@ -1404,8 +1404,8 @@ static inline kc_expr kc_expr_to_any_register(kj_compiler *c, kc_expr e, int tar
 }
 
 /**
-* Emits the appropriate instructions so that expression e value is written to register @target.
-*/
+  * Emits the appropriate instructions so that expression e value is written to register @target.
+  */
 static void kc_move_expr_to_register(kj_compiler *c, kc_expr e, int target)
 {
 	e = kc_expr_to_any_register(c, e, target);
@@ -1431,8 +1431,8 @@ static void kc_move_expr_to_register(kj_compiler *c, kc_expr e, int target)
 }
 
 /**
-* Enumeration of binary operators.
-*/
+  * Enumeration of binary operators.
+  */
 typedef enum
 {
 	KC_BINOP_INVALID,
@@ -1455,8 +1455,8 @@ static const char* KC_BINOP_TO_STR[] = { "<invalid>", "&&", "||", "==", "!=", "<
 "+", "-", "*", "/", "%" };
 
 /**
-* Converts token @tok to the corresponding binary operator.
-*/
+  * Converts token @tok to the corresponding binary operator.
+  */
 static inline kc_binop kc_token_to_binop(kj_token tok)
 {
 	switch (tok)
@@ -1479,12 +1479,12 @@ static inline kc_binop kc_token_to_binop(kj_token tok)
 }
 
 /**
-* If expression @e is a register of location equal to current free register, it bumps up the free
-* register counter. It returns the old temporary register regardless whether if the current
-* temporary register was bumped up.
-* After using the new temporary you must restore the temporary register c->temporary to the value
-* returned by this function.
-*/
+  * If expression @e is a register of location equal to current free register, it bumps up the free
+  * register counter. It returns the old temporary register regardless whether if the current
+  * temporary register was bumped up.
+  * After using the new temporary you must restore the temporary register c->temporary to the value
+  * returned by this function.
+  */
 static int kc_use_temporary(kj_compiler *c, kc_expr const* e)
 {
 	int old_temporaries = c->temporaries;
@@ -1497,8 +1497,8 @@ static int kc_use_temporary(kj_compiler *c, kc_expr const* e)
 }
 
 /**
-* Compiles the logical negation of expression @e. It returns the negated result.
-*/
+  * Compiles the logical negation of expression @e. It returns the negated result.
+  */
 static kc_expr kc_negate(kc_expr e)
 {
 	switch (e.type)
@@ -1517,8 +1517,8 @@ static kc_expr kc_negate(kc_expr e)
 }
 
 /**
-* Compiles the unary minus of expression @e and returns the result.
-*/
+  * Compiles the unary minus of expression @e and returns the result.
+  */
 static kc_expr kc_unary_minus(kj_compiler *c, const kc_expr_state* es, kj_source_location sourceloc, kc_expr e)
 {
 	switch (e.type)
@@ -1546,9 +1546,9 @@ static kc_expr kc_parse_expression_to_any_register(kj_compiler *c, int target);
 static inline void kc_parse_block(kj_compiler *c);
 
 /**
-* Parses and compiles a closure starting from arguments declaration (therefore excluded "def" and
-* eventual identifier). It returns the register expr with the location of the compiled closure.
-*/
+  * Parses and compiles a closure starting from arguments declaration (therefore excluded "def" and
+  * eventual identifier). It returns the register expr with the location of the compiled closure.
+  */
 static kc_expr kc_parse_closure(kj_compiler *c, const kc_expr_state* es)
 {
 	ubyte num_args = 0;
@@ -1600,12 +1600,10 @@ static kc_expr kc_parse_closure(kj_compiler *c, const kc_expr_state* es)
 }
 
 /**
-* Parses and compiles a function call arguments "(arg1, arg2, ..)" and returns the number of
-* arguments.
-* Before calling this function save the current temporary as arguments will be compiled to
-* temporaries staring from current. It's responsibility of the caller to restore the temporary
-* register.
-*/
+  * Parses and compiles a function call arguments "(arg1, arg2, ..)" and returns the number of arguments. Before calling
+  * this function save the current temporary as arguments will be compiled to temporaries staring from current. It's
+  * responsibility of the caller to restore the temporary register.
+  */
 static int kc_parse_function_call_args(kj_compiler *c)
 {
 	int nargs = 0;
@@ -1634,8 +1632,8 @@ static int kc_parse_function_call_args(kj_compiler *c)
 }
 
 /**
-* Parses and returns a primary expression such as a constant or a function call.
-*/
+  * Parses and returns a primary expression such as a constant or a function call.
+  */
 static kc_expr kc_parse_primary_expression(kj_compiler *c, const kc_expr_state* es)
 {
 	kc_expr expr = { KC_EXPR_TYPE_NIL };
@@ -1752,17 +1750,17 @@ static kc_expr kc_parse_primary_expression(kj_compiler *c, const kc_expr_state* 
 }
 
 /**
-* Compiles the lhs of a logical expression if @op is such and lhs is a register or comparison.
-* Only called by _parse_binary_expr_rhs() before parsing its rhs.
-* In a nutshell, the purpose of this function is to patch th current early out branches to the true
-* or false label depending on @op, the truth value (positivity) of lhs and whether the whole expression
-* should be negated (as stated by @es).
-* What this function does is: compiles the comparison if lhs is one, or emit the test/testset if
-* is a register if say op is an OR then it patches all existing branches to false in the compiled
-* expression represented by lhs to this point so that the future rhs will "try again" the OR. The
-* opposite holds for AND (jumps to true are patched to evaluate the future rhs because evaluating
-* only the lhs to true is not enough in an AND).
-*/
+  * Compiles the lhs of a logical expression if @op is such and lhs is a register or comparison.
+  * Only called by _parse_binary_expr_rhs() before parsing its rhs.
+  * In a nutshell, the purpose of this function is to patch th current early out branches to the true
+  * or false label depending on @op, the truth value (positivity) of lhs and whether the whole expression
+  * should be negated (as stated by @es).
+  * What this function does is: compiles the comparison if lhs is one, or emit the test/testset if
+  * is a register if say op is an OR then it patches all existing branches to false in the compiled
+  * expression represented by lhs to this point so that the future rhs will "try again" the OR. The
+  * opposite holds for AND (jumps to true are patched to evaluate the future rhs because evaluating
+  * only the lhs to true is not enough in an AND).
+  */
 static void kc_compile_logical_operation(kj_compiler *c, const kc_expr_state* es, kc_binop op, kc_expr lhs)
 {
 	if ((lhs.type != KC_EXPR_TYPE_REGISTER && !kc_expr_is_comparison(lhs.type))
@@ -1834,10 +1832,10 @@ static void kc_compile_logical_operation(kj_compiler *c, const kc_expr_state* es
 }
 
 /**
-* Helper function for parse_binary_expression_rhs() that actually compiles the binary operation
-* between @lhs and @rhs. This function also checks whether the operation can be optimized to a
-* constant if possible before falling back to emitting the actual instructions.
-*/
+  * Helper function for parse_binary_expression_rhs() that actually compiles the binary operation
+  * between @lhs and @rhs. This function also checks whether the operation can be optimized to a
+  * constant if possible before falling back to emitting the actual instructions.
+  */
 static kc_expr _compile_binary_expression(kj_compiler *c, const kc_expr_state* es, const kj_source_location sourceloc,
 	kc_binop binop, kc_expr lhs, kc_expr rhs)
 {
@@ -2014,9 +2012,9 @@ error:
 }
 
 /**
-* Parses and compiles the potential right hand side of a binary expression if binary operators
-* are found.
-*/
+  * Parses and compiles the potential right hand side of a binary expression if binary operators
+  * are found.
+  */
 static kc_expr parse_binary_expression_rhs(kj_compiler *c, const kc_expr_state* es, kc_expr lhs, int precedence)
 {
 	static const int precedences[] = { -1, 1, 0, 2, 2, 3, 3, 3, 3, 4, 4, 5, 5, 5 };
@@ -2073,9 +2071,9 @@ static kc_expr parse_binary_expression_rhs(kj_compiler *c, const kc_expr_state* 
 }
 
 /**
-* Parses a full expression and returns it. Note that the returned expr is not guaranteed to be in
-* a register.
-*/
+  * Parses a full expression and returns it. Note that the returned expr is not guaranteed to be in
+  * a register.
+  */
 static kc_expr kc_parse_expression(kj_compiler *c, const kc_expr_state* es)
 {
 	kc_expr_state my_es = *es;
@@ -2111,9 +2109,9 @@ error:
 }
 
 /**
-* Parses and compiles an expression, then it makes sure that the final result is written to some
-* register; it could be @target_hint or something else.
-*/
+  * Parses and compiles an expression, then it makes sure that the final result is written to some
+  * register; it could be @target_hint or something else.
+  */
 static kc_expr kc_parse_expression_to_any_register(kj_compiler *c, int target_hint)
 {
 	instructions* instructions = &c->proto->instructions;
@@ -2250,10 +2248,10 @@ done:
 }
 
 /**
-* Parses and compiles an expression only focusing on emitting appropriate branching instructions
-* to the true or false branch. The expression parsed & compiled is tested against @truth_value, i.e.
-* if the expression is @truth_value (true or false) then it branches to *true*, otherwise to false.
-*/
+  * Parses and compiles an expression only focusing on emitting appropriate branching instructions
+  * to the true or false branch. The expression parsed & compiled is tested against @truth_value, i.e.
+  * if the expression is @truth_value (true or false) then it branches to *true*, otherwise to false.
+  */
 static void _parse_condition(kj_compiler *c, koji_bool test_value)
 {
 	instructions* instructions = &c->proto->instructions;
@@ -2289,8 +2287,8 @@ static void _parse_condition(kj_compiler *c, koji_bool test_value)
 static void kc_parse_block_stmts(kj_compiler *c);
 
 /**
-* Parses and compiles an entire "{ stmts... }" block.
-*/
+  * Parses and compiles an entire "{ stmts... }" block.
+  */
 static inline void kc_parse_block(kj_compiler *c)
 {
 	kc_expect(c, '{');
@@ -2299,8 +2297,8 @@ static inline void kc_parse_block(kj_compiler *c)
 }
 
 /**
-* Parses and compiles an if statement.
-*/
+  * Parses and compiles an if statement.
+  */
 static void kc_parse_if_stmt(kj_compiler *c)
 {
 	instructions* instructions = &c->proto->instructions;
@@ -2345,8 +2343,8 @@ static void kc_parse_if_stmt(kj_compiler *c)
 }
 
 /**
-* Parses and compiles a while statement.
-*/
+  * Parses and compiles a while statement.
+  */
 static void kc_parse_while_stmt(kj_compiler *c)
 {
 	kc_expect(c, kw_while);
@@ -2374,8 +2372,8 @@ static void kc_parse_while_stmt(kj_compiler *c)
 }
 
 /**
-* Parses and compiles a do-while statement.
-*/
+  * Parses and compiles a do-while statement.
+  */
 static void kc_parse_do_while_stmt(kj_compiler *c)
 {
 	kc_expect(c, kw_do);
@@ -2404,8 +2402,8 @@ static void kc_parse_do_while_stmt(kj_compiler *c)
 }
 
 /**
-* Parses and compiles a single statement of any kind.
-*/
+  * Parses and compiles a single statement of any kind.
+  */
 static void kc_parse_statement(kj_compiler *c)
 {
 	switch (c->lex->lookahead)
