@@ -4,6 +4,7 @@
  */
 
 #pragma once
+#ifndef KOJI_H_
 
 /* Types */
 
@@ -40,6 +41,21 @@ typedef struct koji_state koji_state;
 * parent prototypes hold a reference of their children.
 */
 typedef struct koji_prototype koji_prototype;
+
+/**
+  * Enumeration of all supported value types.
+  */
+enum koji_type
+{
+	KOJI_TYPE_NIL,
+	KOJI_TYPE_BOOL,
+	KOJI_TYPE_INT,
+	KOJI_TYPE_REAL,
+	KOJI_TYPE_STRING,
+	KOJI_TYPE_CLOSURE
+};
+
+typedef enum koji_type koji_type;
 
 /**
 * Function that takes some user data and returns the next char in the stream every time it's
@@ -151,24 +167,14 @@ extern void koji_push_int(koji_state*, koji_integer value);
 extern void koji_push_real(koji_state*, koji_real value);
 
 /**
-  * TODO add documentation.
-  */
-extern koji_bool koji_is_nil(koji_state*, int offset);
+* TODO add documentation.
+*/
+extern void koji_pop(koji_state*, int count);
 
 /**
   * TODO add documentation.
   */
-extern koji_bool koji_is_bool(koji_state*, int offset);
-
-/**
-  * TODO add documentation.
-  */
-extern koji_bool koji_is_int(koji_state*, int offset);
-
-/**
-  * TODO add documentation.
-  */
-extern koji_bool koji_is_real(koji_state*, int offset);
+extern koji_type koji_get_value_type(koji_state*, int offset);
 
 /**
   * TODO add documentation.
@@ -183,4 +189,6 @@ extern koji_real koji_to_real(koji_state*, int offset);
 /**
   * TODO add documentation.
   */
-extern void koji_pop(koji_state*, int count);
+extern const char* koji_get_string(koji_state*, int offset);
+
+#endif KOJI_H_

@@ -669,7 +669,7 @@ typedef enum kj_opcode
 	KJ_OP_CLOSURE, /* closure A, Bx     ; R(A) = closure for prototype Bx */
 	KJ_OP_CALL,    /* call A, B, C      ; call closure R(A) with C arguments starting at R(B) */
 
-								// operations that do not write into a target register
+	// operations that do not write into a target register
 	KJ_OP_TEST,    /* test A, Bx        ; if (bool)R(A) != (bool)B then jump 1 */
 	KJ_OP_JUMP,    /* jump Bx           ; jump by Bx instructions */
 	KJ_OP_EQ,      /* eq A, B, C        ; if (R(A) == R(B)) == (bool)C then nothing else jump 1 */
@@ -742,7 +742,6 @@ static inline void replace_C(kj_instruction *i, int C) { *i = (*i & 0x7FFFFF) | 
   */
 typedef struct kj_value kj_value;
 
-
 /**
   * TODO
   */
@@ -751,19 +750,6 @@ typedef struct kj_closure
 	koji_prototype* proto;
 }
 kj_closure;
-
-/**
-  * Enumeration of all supported value types.
-  */
-typedef enum
-{
-	KJ_VALUE_NIL,
-	KJ_VALUE_BOOL,
-	KJ_VALUE_INT,
-	KJ_VALUE_REAL,
-	KJ_VALUE_STRING,
-	KJ_VALUE_CLOSURE,
-} kj_value_type;
 
 static const char *KJ_VALUE_TYPE_STRING[] = { "nil", "bool", "int", "real", "closure" };
 
@@ -777,7 +763,7 @@ typedef struct kj_string
 /* Definition */
 struct kj_value
 {
-	kj_value_type type;
+	koji_type type;
 	union
 	{
 		koji_bool    boolean;
@@ -789,7 +775,7 @@ struct kj_value
 };
 
 /* helper macro to access a string object in a string value */
-#define KJ_VALUE_TO_STRING(v) ((kj_string*)(v)->object)
+#define KJ_TO_STRING(v) ((kj_string*)(v)->object)
 
 /** Dynamic array of instructions. */
 typedef array_type(kj_instruction) instructions;
@@ -808,21 +794,111 @@ struct koji_prototype
 /**
   * (internal) Destroys prototype @p resources and frees its memory.
   */
+static void prototype_delete(koji_prototype* p);
+
+/* kj_value functions */
+
+static inline void value_destroy(kj_value* v)
+{
+	switch (v->type)
+	{
+		case KOJI_TYPE_STRING:
+		{
+			uint* references = (uint*)v->object;
+			if ((*references)-- == 1)
+				free(v->object);
+			break;
+		}
+
+		case KOJI_TYPE_CLOSURE:
+			/* check whether this closure was the last reference to the prototype module, if so destroy the module */
+			koji_prototype_release(v->closure.proto);
+			break;
+
+		default: break;
+	}
+}
+
+static inline void value_set_nil(kj_value* v)
+{
+	value_destroy(v);
+	v->type = KOJI_TYPE_NIL;
+}
+
+static inline void value_set_boolean(kj_value* v, koji_bool boolean)
+{
+	value_destroy(v);
+	v->type = KOJI_TYPE_BOOL;
+	v->boolean = boolean;
+}
+
+static inline void value_set_integer(kj_value* v, koji_integer integer)
+{
+	value_destroy(v);
+	v->type = KOJI_TYPE_INT;
+	v->integer = integer;
+}
+
+static inline void value_set_real(kj_value* v, koji_real real)
+{
+	value_destroy(v);
+	v->type = KOJI_TYPE_REAL;
+	v->real = real;
+}
+
+static inline void value_make_closure(kj_value* v, koji_prototype* proto)
+{
+	value_destroy(v);
+	++proto->references;
+	v->type = KOJI_TYPE_CLOSURE;
+	v->closure = (kj_closure) { proto };
+}
+
+static inline void value_copy(kj_value* dest, const kj_value* src)
+{
+	if (dest == src) return;
+	value_destroy(dest);
+	*dest = *src;
+
+	/* fixme */
+	switch (dest->type)
+	{
+		case KOJI_TYPE_STRING:
+			++*(uint*)(dest->object); /* bump up the reference */
+			break;
+
+		case KOJI_TYPE_CLOSURE: /* fixme */
+			++dest->closure.proto->references;
+			break;
+
+		default: break;
+	}
+}
+
+/**
+* (internal) Destroys prototype @p resources and frees its memory.
+*/
 static void prototype_delete(koji_prototype* p)
 {
 	assert(p->references == 0);
-	array_destroy(&p->constants);
 	array_destroy(&p->instructions);
-	// delete all child prototypes that reach reference to zero.
+
+	/* delete all child prototypes that reach reference to zero */
 	for (uint i = 0; i < p->prototypes.size; ++i)
 		koji_prototype_release(p->prototypes.data[i]);
 	array_destroy(&p->prototypes);
+
+	/* destroy constant values */
+	for (uint i = 0; i < p->constants.size; ++i)
+		value_destroy(p->constants.data + i);
+	array_destroy(&p->constants);
+
 	free(p);
 }
 
 /**
-  * Prints prototype information and instructions for compilation debugging.
-  */
+* Prints prototype information and instructions for compilation debugging.
+*/
 static void prototype_dump(koji_prototype* p, int level, int index)
 {
 	if (level == 0)
@@ -845,53 +921,53 @@ static void prototype_dump(koji_prototype* p, int level, int index)
 
 		switch (op)
 		{
-			case KJ_OP_MOV: case KJ_OP_NEG: case KJ_OP_LOADNIL: case KJ_OP_RET:
-				printf("%s\t%d, %d\t", opstr, A, Bx);
-				goto print_constant;
+		case KJ_OP_MOV: case KJ_OP_NEG: case KJ_OP_LOADNIL: case KJ_OP_RET:
+			printf("%s\t%d, %d\t", opstr, A, Bx);
+			goto print_constant;
 
-			case KJ_OP_ADD: case KJ_OP_SUB: case KJ_OP_MUL: case KJ_OP_DIV: case KJ_OP_MOD: case KJ_OP_POW: case KJ_OP_CALL:
-				printf("%s\t%d, %d, %d", opstr, A, B, C);
-				Bx = C;
+		case KJ_OP_ADD: case KJ_OP_SUB: case KJ_OP_MUL: case KJ_OP_DIV: case KJ_OP_MOD: case KJ_OP_POW: case KJ_OP_CALL:
+			printf("%s\t%d, %d, %d", opstr, A, B, C);
+			Bx = C;
 
-			print_constant:
-				if (Bx < 0)
+		print_constant:
+			if (Bx < 0)
+			{
+				printf("\t; ");
+				kj_value k = p->constants.data[-Bx - 1];
+				switch (k.type)
 				{
-					printf("\t; ");
-					kj_value k = p->constants.data[-Bx - 1];
-					switch (k.type)
-					{
-						case KJ_VALUE_INT: printf("%lld", (long long int)k.integer); break;
-						case KJ_VALUE_REAL: printf("%.3f", k.real); break;
-						case KJ_VALUE_STRING: printf("\"%s\"", KJ_VALUE_TO_STRING(&k)->string); break;
-						default: assert(0);
-					}
+				case KOJI_TYPE_INT: printf("%lld", (long long int)k.integer); break;
+				case KOJI_TYPE_REAL: printf("%.3f", k.real); break;
+				case KOJI_TYPE_STRING: printf("\"%s\"", KJ_TO_STRING(&k)->string); break;
+				default: assert(0);
 				}
-				break;
+			}
+			break;
 
-			case KJ_OP_TEST:
-				printf("%s\t%d, %s", opstr, A, Bx ? "true" : "false");
-				break;
+		case KJ_OP_TEST:
+			printf("%s\t%d, %s", opstr, A, Bx ? "true" : "false");
+			break;
 
-			case KJ_OP_LOADB:
-				printf("%s\t%d, %s, %d\t; to [%d]", opstr, A, B ? "true" : "false", C, i + C + 1);
-				break;
+		case KJ_OP_LOADB:
+			printf("%s\t%d, %s, %d\t; to [%d]", opstr, A, B ? "true" : "false", C, i + C + 1);
+			break;
 
-			case KJ_OP_TESTSET: case KJ_OP_EQ: case KJ_OP_LT: case KJ_OP_LTE:
-				printf("%s\t%d, %d, %s", opstr, A, B, C ? "true" : "false");
-				break;
+		case KJ_OP_TESTSET: case KJ_OP_EQ: case KJ_OP_LT: case KJ_OP_LTE:
+			printf("%s\t%d, %d, %s", opstr, A, B, C ? "true" : "false");
+			break;
 
-			case KJ_OP_JUMP:
-				printf("%s\t%d\t\t; to [%d]", opstr, Bx, i + Bx + 1);
-				break;
+		case KJ_OP_JUMP:
+			printf("%s\t%d\t\t; to [%d]", opstr, Bx, i + Bx + 1);
+			break;
 
-			case KJ_OP_CLOSURE:
-			case KJ_OP_SCALL:
-				printf("%s\t%d, %d", opstr, A, Bx);
-				break;
+		case KJ_OP_CLOSURE:
+		case KJ_OP_SCALL:
+			printf("%s\t%d, %d", opstr, A, Bx);
+			break;
 
-			default:
-				assert(KJ_FALSE);
-				break;
+		default:
+			assert(KJ_FALSE);
+			break;
 		}
 
 		printf("\n");
@@ -899,80 +975,6 @@ static void prototype_dump(koji_prototype* p, int level, int index)
 
 	for (uint i = 0; i < p->prototypes.size; ++i)
 		prototype_dump(p->prototypes.data[i], level + 1, i);
-}
-
-/* kj_value functions */
-
-static inline void value_destroy(kj_value* v)
-{
-	switch (v->type)
-	{
-		case KJ_VALUE_STRING:
-		{
-			uint* references = (uint*)v->object;
-			if (*references-- == 1)
-				free(v->object);
-			break;
-		}
-
-		case KJ_VALUE_CLOSURE:
-			/* check whether this closure was the last reference to the prototype module, if so destroy the module */
-			koji_prototype_release(v->closure.proto);
-			break;
-
-		default: break;
-	}
-}
-
-static inline void value_set_nil(kj_value* v)
-{
-	value_destroy(v);
-	v->type = KJ_VALUE_NIL;
-}
-
-static inline void value_set_boolean(kj_value* v, koji_bool boolean)
-{
-	value_destroy(v);
-	v->type = KJ_VALUE_BOOL;
-	v->boolean = boolean;
-}
-
-static inline void value_set_integer(kj_value* v, koji_integer integer)
-{
-	value_destroy(v);
-	v->type = KJ_VALUE_INT;
-	v->integer = integer;
-}
-
-static inline void value_set_real(kj_value* v, koji_real real)
-{
-	value_destroy(v);
-	v->type = KJ_VALUE_REAL;
-	v->real = real;
-}
-
-static inline void value_make_closure(kj_value* v, koji_prototype* proto)
-{
-	value_destroy(v);
-	++proto->references;
-	v->type = KJ_VALUE_CLOSURE;
-	v->closure = (kj_closure) { proto };
-}
-
-static inline void value_set(kj_value* dest, const kj_value* src)
-{
-	if (dest == src) return;
-	value_destroy(dest);
-	*dest = *src;
-	// bump up object reference if needed
-	switch (dest->type)
-	{
-		case KJ_VALUE_CLOSURE:
-			++dest->closure.proto->references;
-			break;
-
-		default: break;
-	}
 }
 
 /**
@@ -1138,7 +1140,7 @@ static inline int _kc_fetch_primitive_constant(kj_compiler *c, kj_value k)
 */
 static inline int kc_fetch_constant_int(kj_compiler *c, koji_integer k)
 {
-	return _kc_fetch_primitive_constant(c, (kj_value) { KJ_VALUE_INT, .integer = k });
+	return _kc_fetch_primitive_constant(c, (kj_value) { KOJI_TYPE_INT, .integer = k });
 }
 
 /**
@@ -1146,7 +1148,7 @@ static inline int kc_fetch_constant_int(kj_compiler *c, koji_integer k)
   */
 static inline int kc_fetch_constant_real(kj_compiler *c, koji_real k)
 {
-	return _kc_fetch_primitive_constant(c, (kj_value) { KJ_VALUE_REAL, .real = k });
+	return _kc_fetch_primitive_constant(c, (kj_value) { KOJI_TYPE_REAL, .real = k });
 
 }
 
@@ -1158,14 +1160,14 @@ static inline int kc_fetch_constant_string(kj_compiler *c, const char* k)
 	for (uint i = 0; i < c->proto->constants.size; ++i)
 	{
 		kj_value* constant = c->proto->constants.data + i;
-		if (constant->type == KJ_VALUE_STRING && strcmp(k, ((kj_string*)constant->object)->string) == 0)
+		if (constant->type == KOJI_TYPE_STRING && strcmp(k, ((kj_string*)constant->object)->string) == 0)
 			return i;
 	}
 
 	/* constant not found, add it */
 	int index = c->proto->constants.size;
 	kj_value* constant = array_push(&c->proto->constants, kj_value, 1);
-	constant->type = KJ_VALUE_STRING;
+	constant->type = KOJI_TYPE_STRING;
 	
 	/* create the string object */
 	uint str_length = strlen(k);
@@ -2707,11 +2709,11 @@ static inline void ks_op_neg(kj_value* dest, const kj_value* src)
 {
 	switch (src->type)
 	{
-		case KJ_VALUE_NIL: value_set_boolean(dest, KJ_TRUE);
-		case KJ_VALUE_BOOL: value_set_boolean(dest, !src->boolean);
-		case KJ_VALUE_INT: value_set_boolean(dest, !src->integer);
-		case KJ_VALUE_REAL: value_set_boolean(dest, !src->real);
-		case KJ_VALUE_CLOSURE: value_set_boolean(dest, KJ_TRUE);
+		case KOJI_TYPE_NIL: value_set_boolean(dest, KJ_TRUE);
+		case KOJI_TYPE_BOOL: value_set_boolean(dest, !src->boolean);
+		case KOJI_TYPE_INT: value_set_boolean(dest, !src->integer);
+		case KOJI_TYPE_REAL: value_set_boolean(dest, !src->real);
+		case KOJI_TYPE_CLOSURE: value_set_boolean(dest, KJ_TRUE);
 	}
 }
 
@@ -2719,12 +2721,12 @@ static inline void ks_op_unm(koji_state* s, kj_value* dest, const kj_value* src)
 {
 	switch (src->type)
 	{
-		case KJ_VALUE_INT: value_set_integer(dest, -src->integer); break;
-		case KJ_VALUE_REAL: value_set_real(dest, -src->real); break;
+		case KOJI_TYPE_INT: value_set_integer(dest, -src->integer); break;
+		case KOJI_TYPE_REAL: value_set_real(dest, -src->real); break;
 
-		case KJ_VALUE_NIL:
-		case KJ_VALUE_BOOL:
-		case KJ_VALUE_CLOSURE:
+		case KOJI_TYPE_NIL:
+		case KOJI_TYPE_BOOL:
+		case KOJI_TYPE_CLOSURE:
 			ks_error(s, "cannot apply unary minus operation to a %s value.", KJ_VALUE_TYPE_STRING[src->type]);
 	}
 }
@@ -2733,20 +2735,20 @@ static inline void ks_op_unm(koji_state* s, kj_value* dest, const kj_value* src)
 {\
 	switch (lhs->type)\
 	{\
-			case KJ_VALUE_NIL: case KJ_VALUE_CLOSURE: goto error;\
-			case KJ_VALUE_INT:\
+			case KOJI_TYPE_NIL: case KOJI_TYPE_CLOSURE: goto error;\
+			case KOJI_TYPE_INT:\
 				switch (rhs->type)\
 				{\
-					case KJ_VALUE_NIL: case KJ_VALUE_BOOL: case KJ_VALUE_CLOSURE: goto error;\
-					case KJ_VALUE_INT: value_set_integer(dest, lhs->integer op rhs->integer); return;\
-					case KJ_VALUE_REAL: value_set_real(dest, lhs->integer op rhs->real); return;\
+					case KOJI_TYPE_NIL: case KOJI_TYPE_BOOL: case KOJI_TYPE_CLOSURE: goto error;\
+					case KOJI_TYPE_INT: value_set_integer(dest, lhs->integer op rhs->integer); return;\
+					case KOJI_TYPE_REAL: value_set_real(dest, lhs->integer op rhs->real); return;\
 				}\
-			case KJ_VALUE_REAL:\
+			case KOJI_TYPE_REAL:\
 				switch (rhs->type)\
 				{\
-					case KJ_VALUE_NIL: case KJ_VALUE_BOOL: case KJ_VALUE_CLOSURE: goto error;\
-					case KJ_VALUE_INT: value_set_real(dest, lhs->real op rhs->integer); return;\
-					case KJ_VALUE_REAL: value_set_real(dest, lhs->real op rhs->real); return;\
+					case KOJI_TYPE_NIL: case KOJI_TYPE_BOOL: case KOJI_TYPE_CLOSURE: goto error;\
+					case KOJI_TYPE_INT: value_set_real(dest, lhs->real op rhs->integer); return;\
+					case KOJI_TYPE_REAL: value_set_real(dest, lhs->real op rhs->real); return;\
 				}\
 			default: goto error;\
 	}\
@@ -2766,10 +2768,10 @@ static inline void ks_binop_mod(koji_state* s, kj_value* dest, const kj_value* l
 {
 	switch (lhs->type)
 	{
-		case KJ_VALUE_INT:
+		case KOJI_TYPE_INT:
 			switch (lhs->type)
 			{
-				case KJ_VALUE_INT: value_set_integer(dest, lhs->integer + rhs->integer); return;
+				case KOJI_TYPE_INT: value_set_integer(dest, lhs->integer + rhs->integer); return;
 				default: goto error;
 			}
 
@@ -2785,11 +2787,11 @@ static inline koji_bool value_to_bool(const kj_value* v)
 {
 	switch (v->type)
 	{
-		case KJ_VALUE_NIL: return KJ_FALSE;
-		case KJ_VALUE_BOOL: return v->boolean;
-		case KJ_VALUE_INT: return v->integer != 0;
-		case KJ_VALUE_REAL: return v->real != 0;
-		case KJ_VALUE_CLOSURE: return KJ_TRUE;
+		case KOJI_TYPE_NIL: return KJ_FALSE;
+		case KOJI_TYPE_BOOL: return v->boolean;
+		case KOJI_TYPE_INT: return v->integer != 0;
+		case KOJI_TYPE_REAL: return v->real != 0;
+		case KOJI_TYPE_CLOSURE: return KJ_TRUE;
 		default: assert(!"implement me");
 	}
 	return 0;
@@ -2799,9 +2801,9 @@ static inline koji_integer value_to_int(const kj_value* v)
 {
 	switch (v->type)
 	{
-		case KJ_VALUE_BOOL: return (koji_integer)v->boolean;
-		case KJ_VALUE_INT: return v->integer;
-		case KJ_VALUE_REAL: return (koji_integer)v->real;
+		case KOJI_TYPE_BOOL: return (koji_integer)v->boolean;
+		case KOJI_TYPE_INT: return v->integer;
+		case KOJI_TYPE_REAL: return (koji_integer)v->real;
 		default: assert(!"implement me");
 	}
 	return 0;
@@ -2811,9 +2813,9 @@ static inline koji_real value_to_real(const kj_value* v)
 {
 	switch (v->type)
 	{
-		case KJ_VALUE_BOOL: return (koji_real)v->boolean;
-		case KJ_VALUE_INT: return (koji_real)v->integer;
-		case KJ_VALUE_REAL: return v->real;
+		case KOJI_TYPE_BOOL: return (koji_real)v->boolean;
+		case KOJI_TYPE_INT: return (koji_real)v->integer;
+		case KOJI_TYPE_REAL: return v->real;
 		default: assert(!"implement me");
 	}
 	return 0;
@@ -2823,10 +2825,10 @@ static inline koji_bool ks_comp_eq(const kj_value* lhs, const kj_value* rhs)
 {
 	switch (lhs->type)
 	{
-		case KJ_VALUE_NIL: return rhs->type == KJ_VALUE_NIL;
-		case KJ_VALUE_BOOL: return rhs->type == KJ_VALUE_BOOL && lhs->boolean == rhs->boolean;
-		case KJ_VALUE_INT: return rhs->type == KJ_VALUE_REAL ? lhs->integer == rhs->real : lhs->integer == value_to_int(rhs);
-		case KJ_VALUE_REAL: return lhs->real == value_to_real(rhs);
+		case KOJI_TYPE_NIL: return rhs->type == KOJI_TYPE_NIL;
+		case KOJI_TYPE_BOOL: return rhs->type == KOJI_TYPE_BOOL && lhs->boolean == rhs->boolean;
+		case KOJI_TYPE_INT: return rhs->type == KOJI_TYPE_REAL ? lhs->integer == rhs->real : lhs->integer == value_to_int(rhs);
+		case KOJI_TYPE_REAL: return lhs->real == value_to_real(rhs);
 		default: assert(!"implement me");
 	}
 	return 0;
@@ -2836,10 +2838,10 @@ static inline koji_bool ks_comp_lt(const kj_value* lhs, const kj_value* rhs)
 {
 	switch (lhs->type)
 	{
-		case KJ_VALUE_NIL: return rhs->type != KJ_VALUE_NIL;
-		case KJ_VALUE_BOOL: return lhs->boolean < value_to_int(rhs);
-		case KJ_VALUE_INT: return lhs->integer < value_to_int(rhs);
-		case KJ_VALUE_REAL: return lhs->real < value_to_real(rhs);
+		case KOJI_TYPE_NIL: return rhs->type != KOJI_TYPE_NIL;
+		case KOJI_TYPE_BOOL: return lhs->boolean < value_to_int(rhs);
+		case KOJI_TYPE_INT: return lhs->integer < value_to_int(rhs);
+		case KOJI_TYPE_REAL: return lhs->real < value_to_real(rhs);
 		default: assert(!"implement me");
 	}
 	return 0;
@@ -2849,10 +2851,10 @@ static inline koji_bool ks_comp_lte(const kj_value* lhs, const kj_value* rhs)
 {
 	switch (lhs->type)
 	{
-		case KJ_VALUE_NIL: return KJ_TRUE;
-		case KJ_VALUE_BOOL: return lhs->boolean <= value_to_int(rhs);
-		case KJ_VALUE_INT: return lhs->integer <= value_to_int(rhs);
-		case KJ_VALUE_REAL: return lhs->real <= value_to_real(rhs);
+		case KOJI_TYPE_NIL: return KJ_TRUE;
+		case KOJI_TYPE_BOOL: return lhs->boolean <= value_to_int(rhs);
+		case KOJI_TYPE_INT: return lhs->integer <= value_to_int(rhs);
+		case KOJI_TYPE_REAL: return lhs->real <= value_to_real(rhs);
 		default: assert(!"implement me");
 	}
 	return 0;
@@ -2876,7 +2878,7 @@ static inline kj_value ks_pop(koji_state* s)
 {
 	kj_value* value = ks_top(s, -1);
 	kj_value retvalue = *value;
-	value->type = KJ_VALUE_NIL;
+	value->type = KOJI_TYPE_NIL;
 	--s->sp;
 	return retvalue;
 }
@@ -2994,7 +2996,7 @@ int koji_run(koji_state* s)
 
 	kj_value top = ks_pop(s);
 
-	if (top.type != KJ_VALUE_CLOSURE)
+	if (top.type != KOJI_TYPE_CLOSURE)
 	{
 		ks_error(s, "cannot run function on stack, top value is not closure.");
 		return KOJI_RESULT_FAIL;
@@ -3037,7 +3039,7 @@ newframe:
 				break;
 
 			case KJ_OP_MOV:
-				value_set(KJXREGA, KJXARG(Bx));
+				value_copy(KJXREGA, KJXARG(Bx));
 				break;
 
 			case KJ_OP_NEG:
@@ -3087,7 +3089,7 @@ newframe:
 				const kj_value* arg = KJXARG(B);
 				if (value_to_bool(arg) == decode_C(ins))
 				{
-					value_set(KJXREGA, arg);
+					value_copy(KJXREGA, arg);
 					newpc += decode_Bx(instructions[f->pc]);
 				}
 				f->pc = newpc;
@@ -3141,7 +3143,7 @@ newframe:
 			case KJ_OP_CALL:
 			{
 				const kj_value* value = KJXARG(B);
-				if (value->type != KJ_VALUE_CLOSURE)
+				if (value->type != KOJI_TYPE_CLOSURE)
 				{
 					ks_error(c, "cannot call value of type %s.", KJ_VALUE_TYPE_STRING[value->type]);
 					return KOJI_RESULT_FAIL; // temp
@@ -3177,7 +3179,7 @@ newframe:
 			{
 				int i = 0;
 				for (int reg = decode_A(ins), to_reg = decode_Bx(ins); reg < to_reg; ++reg, ++i)
-					value_set(ks_get_register(c, f, i), ks_get(c, f, reg));
+					value_copy(ks_get_register(c, f, i), ks_get(c, f, reg));
 				for (int end = f->proto->nargs + f->proto->ntemporaries; i < end; ++i)
 					value_set_nil(ks_get_register(c, f, i));
 				koji_prototype_release(f->proto);
@@ -3198,48 +3200,47 @@ newframe:
 
 void koji_push_nil(koji_state* s)
 {
-	ks_push(s)->type = KJ_VALUE_NIL;
+	ks_push(s)->type = KOJI_TYPE_NIL;
 }
 
 void koji_push_bool(koji_state* s, koji_bool b)
 {
 	kj_value* value = ks_push(s);
-	value->type = KJ_VALUE_BOOL;
+	value->type = KOJI_TYPE_BOOL;
 	value->boolean = b;
 }
 
 void koji_push_int(koji_state* s, koji_integer i)
 {
 	kj_value* value = ks_push(s);
-	value->type = KJ_VALUE_INT;
+	value->type = KOJI_TYPE_INT;
 	value->integer = i;
 }
 
 void koji_push_real(koji_state* s, koji_real f)
 {
 	kj_value* value = ks_push(s);
-	value->type = KJ_VALUE_REAL;
+	value->type = KOJI_TYPE_REAL;
 	value->real = f;
 }
 
-koji_bool koji_is_nil(koji_state* s, int offset)
+void koji_pop(koji_state* s, int count)
 {
-	return ks_top(s, offset)->type == KJ_VALUE_NIL;
+	for (int i = 0; i < count; ++i)
+	{
+		kj_value val = ks_pop(s);
+		value_destroy(&val);
+	}
 }
 
-koji_bool koji_is_bool(koji_state* s, int offset)
+koji_type koji_get_value_type(koji_state* s, int offset)
 {
-	return ks_top(s, offset)->type == KJ_VALUE_BOOL;
-}
-
-koji_bool koji_is_int(koji_state* s, int offset)
-{
-	return ks_top(s, offset)->type == KJ_VALUE_INT;
+	return ks_top(s, offset)->type;
 }
 
 koji_bool koji_is_real(koji_state* s, int offset)
 {
-	return ks_top(s, offset)->type == KJ_VALUE_REAL;
+	return ks_top(s, offset)->type == KOJI_TYPE_REAL;
 }
 
 koji_integer koji_to_int(koji_state* s, int offset)
@@ -3252,13 +3253,11 @@ koji_real koji_to_real(koji_state* s, int offset)
 	return value_to_real(ks_top(s, offset));
 }
 
-void koji_pop(koji_state* s, int count)
+const char* koji_get_string(koji_state* s, int offset)
 {
-	for (int i = 0; i < count; ++i)
-	{
-		kj_value val = ks_pop(s);
-		value_destroy(&val);
-	}
+	kj_value* value = ks_top(s, offset);
+	assert(value->type == KOJI_TYPE_STRING);
+	return KJ_TO_STRING(value)->string;
 }
 
 #pragma endregion
