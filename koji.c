@@ -19,6 +19,10 @@
 #define inline __forceinline
 #endif
 
+#if _MSC_VER <= 1800
+#define snprintf _snprintf_c
+#endif
+
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmultichar"
@@ -422,6 +426,25 @@ static kj_token lex(kj_lexer *l)
 				_lex_push(l);
 				return l->lookahead;
 
+			/* strings */
+			case '"':
+			case '\'':
+			{
+				char delimiter = l->curr_char;
+				_lex_skip(l);
+				while (l->curr_char != EOF && l->curr_char != delimiter)
+				{
+					_lex_push(l);
+				}
+				if (l->curr_char != delimiter)
+				{
+					compile_error(l->error_handler, l->source_location, "end-of-stream while scanning string.");
+					return l->lookahead = tok_eos;
+				}
+				_lex_skip(l);
+				return l->lookahead = tok_string;
+			}
+
 			case '.': case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
 			{
 				koji_bool decimal = l->curr_char == '.';
@@ -738,10 +761,18 @@ typedef enum
 	KJ_VALUE_BOOL,
 	KJ_VALUE_INT,
 	KJ_VALUE_REAL,
+	KJ_VALUE_STRING,
 	KJ_VALUE_CLOSURE,
 } kj_value_type;
 
 static const char *KJ_VALUE_TYPE_STRING[] = { "nil", "bool", "int", "real", "closure" };
+
+typedef struct kj_string
+{
+	uint references;
+	uint length;
+	char* string;
+} kj_string;
 
 /* Definition */
 struct kj_value
@@ -752,9 +783,13 @@ struct kj_value
 		koji_bool    boolean;
 		koji_integer integer;
 		koji_real    real;
-		kj_closure  closure;
+		void*        object;
+		kj_closure   closure; // fixme
 	};
 };
+
+/* helper macro to access a string object in a string value */
+#define KJ_VALUE_TO_STRING(v) ((kj_string*)(v)->object)
 
 /** Dynamic array of instructions. */
 typedef array_type(kj_instruction) instructions;
@@ -827,6 +862,7 @@ static void prototype_dump(koji_prototype* p, int level, int index)
 					{
 						case KJ_VALUE_INT: printf("%lld", (long long int)k.integer); break;
 						case KJ_VALUE_REAL: printf("%.3f", k.real); break;
+						case KJ_VALUE_STRING: printf("\"%s\"", KJ_VALUE_TO_STRING(&k)->string); break;
 						default: assert(0);
 					}
 				}
@@ -871,6 +907,14 @@ static inline void value_destroy(kj_value* v)
 {
 	switch (v->type)
 	{
+		case KJ_VALUE_STRING:
+		{
+			uint* references = (uint*)v->object;
+			if (*references-- == 1)
+				free(v->object);
+			break;
+		}
+
 		case KJ_VALUE_CLOSURE:
 			/* check whether this closure was the last reference to the prototype module, if so destroy the module */
 			koji_prototype_release(v->closure.proto);
@@ -996,8 +1040,8 @@ typedef array_type(uint) kc_label;
 typedef struct kj_compiler
 {
 	kj_static_functions const* static_functions;
-	kj_lexer *lex;
-	koji_prototype * proto;
+	kj_lexer* lex;
+	koji_prototype* proto;
 	array_type(char) identifiers;
 	array_type(kc_local) locals;
 	int  temporaries;
@@ -1074,7 +1118,7 @@ static inline void kc_expect_end_of_stmt(kj_compiler *c)
 /**
   * Searches a constant in value @k and adds it if not found, then it returns its index.
   */
-static inline int _kc_fetch_constant(kj_compiler *c, kj_value k)
+static inline int _kc_fetch_primitive_constant(kj_compiler *c, kj_value k)
 {
 	for (uint i = 0; i < c->proto->constants.size; ++i)
 	{
@@ -1089,14 +1133,53 @@ static inline int _kc_fetch_constant(kj_compiler *c, kj_value k)
 	return index;
 }
 
+/**
+* Fetches or defines if not found an int constant @k and returns its index.
+*/
 static inline int kc_fetch_constant_int(kj_compiler *c, koji_integer k)
 {
-	return _kc_fetch_constant(c, (kj_value) { KJ_VALUE_INT, .integer = k });
+	return _kc_fetch_primitive_constant(c, (kj_value) { KJ_VALUE_INT, .integer = k });
 }
 
+/**
+  * Fetches or defines if not found a real constant @k and returns its index.
+  */
 static inline int kc_fetch_constant_real(kj_compiler *c, koji_real k)
 {
-	return _kc_fetch_constant(c, (kj_value) { KJ_VALUE_REAL, .real = k });
+	return _kc_fetch_primitive_constant(c, (kj_value) { KJ_VALUE_REAL, .real = k });
+
+}
+
+/**
+* Fetches or defines if not found a string constant @k and returns its index.
+*/
+static inline int kc_fetch_constant_string(kj_compiler *c, const char* k)
+{
+	for (uint i = 0; i < c->proto->constants.size; ++i)
+	{
+		kj_value* constant = c->proto->constants.data + i;
+		if (constant->type == KJ_VALUE_STRING && strcmp(k, ((kj_string*)constant->object)->string) == 0)
+			return i;
+	}
+
+	/* constant not found, add it */
+	int index = c->proto->constants.size;
+	kj_value* constant = array_push(&c->proto->constants, kj_value, 1);
+	constant->type = KJ_VALUE_STRING;
+	
+	/* create the string object */
+	uint str_length = strlen(k);
+	kj_string* string = malloc(sizeof(kj_string) + str_length + 1);
+	constant->object = string;
+
+	/* setup the string object so that it always holds a reference (it is never destroyed)
+	 * and the actual string buffer is right after the string object in memory (same allocation) */
+	string->references = 1;
+	string->length = str_length;
+	string->string = (char*)string + sizeof(kj_string);
+	memcpy(string->string, k, str_length + 1);
+	
+	return index;
 }
 
 /* instruction emission */
@@ -1212,14 +1295,15 @@ typedef enum
 	KC_EXPR_TYPE_BOOL,
 	KC_EXPR_TYPE_INT,
 	KC_EXPR_TYPE_REAL,
+	KC_EXPR_TYPE_STRING,
 	KC_EXPR_TYPE_REGISTER,
 	KC_EXPR_TYPE_EQ,
 	KC_EXPR_TYPE_LT,
 	KC_EXPR_TYPE_LTE,
 } kc_expr_type;
 
-static const char* KC_EXPR_TYPE_TYPE_TO_STRING[] =
-{ "nil", "bool", "int", "real", "register", "bool", "bool", "bool" };
+static const char* KC_EXPR_TYPE_TYPE_TO_STRING[] = { "nil", "bool", "int", "real", "string", "register",
+	"bool", "bool", "bool" };
 
 /**
   * An expr is the result of a subexpression during compilation. For optimal bytecode generation
@@ -1234,6 +1318,7 @@ typedef struct kc_expr
 		koji_integer integer;
 		koji_real real;
 		int location;
+		const char* string;
 		struct
 		{
 			int lhs;
@@ -1267,6 +1352,14 @@ static inline kc_expr kc_expr_integer(koji_integer value)
 static inline kc_expr kc_expr_real(koji_real value)
 {
 	return (kc_expr) { KC_EXPR_TYPE_REAL, .real = value, .positive = KJ_TRUE };
+}
+
+/**
+  * Makes and returns a string expr of specified @string.
+  */
+static inline kc_expr kc_expr_string(const char* string)
+{
+	return (kc_expr) { KC_EXPR_TYPE_STRING, .string = strdup(string), .positive = KJ_TRUE };
 }
 
 /**
@@ -1370,6 +1463,9 @@ static inline kc_expr kc_expr_to_any_register(kj_compiler *c, kc_expr e, int tar
 			goto make_constant;
 
 		case KC_EXPR_TYPE_REAL: constant_index = kc_fetch_constant_real(c, e.real);
+			goto make_constant;
+
+		case KC_EXPR_TYPE_STRING: constant_index = kc_fetch_constant_string(c, e.string);
 			goto make_constant;
 
 		make_constant:
@@ -1646,6 +1742,7 @@ static kc_expr kc_parse_primary_expression(kj_compiler *c, const kc_expr_state* 
 		case kw_false: lex(c->lex); expr = kc_expr_boolean(KJ_FALSE); break;
 		case tok_integer: expr = kc_expr_integer(c->lex->token_int); lex(c->lex); break;
 		case tok_real: expr = kc_expr_real(c->lex->token_real); lex(c->lex); break;
+		case tok_string: expr = kc_expr_string(c->lex->token_string.data); lex(c->lex); break;
 
 		case '(': /* subexpression */
 			lex(c->lex);
