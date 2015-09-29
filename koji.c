@@ -23,6 +23,11 @@
 #define snprintf _snprintf_c
 #endif
 
+#ifdef _MSC_VER
+#pragma warning(disable:4996)
+#pragma 
+#endif
+
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmultichar"
@@ -2959,7 +2964,7 @@ static void ks_reset(koji_state* s)
 
 	/* release prototype references */
 	for (uint i = 0; i < s->framestack.size; ++i)
-		koji_prototype_release(s->framestack.data + i);
+		koji_prototype_release(s->framestack.data[i].proto);
 	
 	array_destroy(&s->static_host_functions.functions);
 	array_destroy(&s->static_host_functions.name_buffer);
