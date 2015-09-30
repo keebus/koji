@@ -283,7 +283,9 @@ typedef struct kj_lexer
 	char curr_char;
 	kj_token lookahead;
 	koji_bool newline;
-	array_type(char) token_string;
+	char* token_string;
+	uint token_string_length;
+	uint token_string_capacity;
 	union
 	{
 		koji_integer token_int;
@@ -306,16 +308,24 @@ static char _lex_skip(kj_lexer *l)
 
 static inline char _lex_push(kj_lexer *l)
 {
-	array_reserve(&l->token_string, sizeof(char), l->token_string.size + 1);
-	l->token_string.data[l->token_string.size - 1] = l->curr_char;
-	l->token_string.data[l->token_string.size++] = '\0';
+	if (l->token_string_length + 2 > l->token_string_capacity)
+	{
+		char* temp = malloc(l->token_string_capacity * 2);
+		memcpy(temp, l->token_string, l->token_string_length + 1);
+		free(l->token_string);
+		l->token_string = temp;
+	}
+
+	l->token_string[l->token_string_length++] = l->curr_char;
+	l->token_string[l->token_string_length] = '\0';
+
 	return _lex_skip(l);
 }
 
 static inline void _lex_clear_token_string(kj_lexer *l)
 {
-	l->token_string.size = 1;
-	l->token_string.data[0] = '\0';
+	l->token_string_length = 0;
+	l->token_string[0] = '\0';
 }
 
 static inline int _lex_accept(kj_lexer *l, const char *str)
@@ -402,7 +412,7 @@ static const char *lex_lookahead_to_string(kj_lexer *l)
 	if (l->lookahead == tok_eos)
 		return "end-of-stream";
 	else
-		return l->token_string.data;
+		return l->token_string;
 }
 
 /**
@@ -487,12 +497,12 @@ static kj_token lex(kj_lexer *l)
 
 				if (decimal)
 				{
-					l->token_real = (koji_real)atof(l->token_string.data);
+					l->token_real = (koji_real)atof(l->token_string);
 				}
 				else
 				{
 					char *dummy;
-					l->token_int = (koji_integer)strtoll(l->token_string.data, &dummy, 10);
+					l->token_int = (koji_integer)strtoll(l->token_string, &dummy, 10);
 				}
 
 				return l->lookahead;
@@ -633,8 +643,9 @@ static void lex_init(kj_lexer *l, kj_error_handler *e, const char *filename, koj
 	l->error_handler = e;
 	l->stream = stream_func;
 	l->stream_data = stream_data;
-	array_init(&l->token_string);
-	array_push_value(&l->token_string, char, '\0');
+	l->token_string_capacity = 16;
+	l->token_string = malloc(l->token_string_capacity);
+	l->token_string_length = 0;
 	l->source_location.filename = filename;
 	l->source_location.line = 1;
 	l->source_location.column = 0;
@@ -649,7 +660,7 @@ static void lex_init(kj_lexer *l, kj_error_handler *e, const char *filename, koj
   */
 static void lex_close(kj_lexer *l)
 {
-	array_destroy(&l->token_string);
+	free(l->token_string);
 }
 
 #pragma endregion
@@ -853,7 +864,7 @@ static inline void value_set_real(kj_value* v, koji_real real)
 	v->real = real;
 }
 
-static inline void value_set_string(kj_value* v, uint length)
+static inline void value_set_new_string(kj_value* v, uint length)
 {
 	value_destroy(v);
 	v->type = KOJI_TYPE_STRING;
@@ -1050,15 +1061,82 @@ typedef struct
 
 
 /**
-  * A label is a dynamic array of the indices of the instructions that branch to it.
-  */
+ * A label is a dynamic array of the indices of the instructions that branch to it.
+ */
 typedef array_type(uint) kc_label;
 
+
+#pragma region Allocator
+
+typedef struct kj_allocation_page
+{
+	struct kj_allocation_page* next;
+	uint size;
+	char* cursor;
+} kj_allocation_page;
+
+#define KJ_ALLOCATION_PAGE_MIN_SIZE 1024
+
+inline char* _align(char* ptr, uint alignment)
+{
+	const uint alignment_minus_one = alignment - 1;
+	return (char*)(((uintptr_t)ptr + alignment_minus_one) & ~alignment_minus_one);
+}
+
+inline char* _allocator_page_buffer(kj_allocation_page* page)
+{
+	return (char*)page + sizeof(kj_allocation_page);
+}
+
+static kj_allocation_page* allocator_page_create(uint size)
+{
+	size = size < KJ_ALLOCATION_PAGE_MIN_SIZE ? KJ_ALLOCATION_PAGE_MIN_SIZE : size;
+	kj_allocation_page* page = malloc(sizeof(kj_allocation_page) + size);
+	page->size = size;
+	page->next = KJ_NULL;
+	page->cursor = _allocator_page_buffer(page);
+	return page;
+}
+
+static void allocator_destroy(kj_allocation_page* head)
+{
+	while (head)
+	{
+		kj_allocation_page* temp = head->next;
+		free(head);
+		head = temp;
+	}
+}
+
+static void allocator_reset(kj_allocation_page** head)
+{
+	allocator_destroy((*head)->next);
+	(*head)->next = KJ_NULL;
+	(*head)->cursor = _allocator_page_buffer(*head);
+}
+
+static void* allocator_alloc(kj_allocation_page** head, uint size, uint alignment)
+{
+	char* ptr = KJ_NULL;
+	if (*head && (ptr = _align((*head)->cursor, alignment)) >= _allocator_page_buffer(*head) + (*head)->size)
+	{
+		kj_allocation_page* temp = allocator_page_create(size);
+		temp->next = *head;
+		*head = temp;
+		ptr = _align(temp->cursor, alignment);
+	}
+	(*head)->cursor = ptr + size;
+	return ptr;
+}
+
+#pragma endregion
+
 /**
-  * Holds the state of a compilation execution.
-  */
+ * Holds the state of a compilation execution.
+ */
 typedef struct kj_compiler
 {
+	kj_allocation_page* allocator;
 	kj_static_functions const* static_functions;
 	kj_lexer* lex;
 	koji_prototype* proto;
@@ -1074,7 +1152,7 @@ typedef struct kj_compiler
 /**
   * Formats and reports a syntax error (unexpected <token>).
   */
-static void kc_syntax_error(kj_compiler *c, kj_source_location sourceloc)
+static void kc_syntax_error(kj_compiler* c, kj_source_location sourceloc)
 {
 	compile_error(c->lex->error_handler, sourceloc, "unexpected %s.", lex_lookahead_to_string(c->lex));
 }
@@ -1082,7 +1160,7 @@ static void kc_syntax_error(kj_compiler *c, kj_source_location sourceloc)
 /**
   * Scans next token if lookahead is @tok. Returns whether a new token was scanned.
   */
-static inline koji_bool kc_accept(kj_compiler *c, kj_token tok)
+static inline koji_bool kc_accept(kj_compiler* c, kj_token tok)
 {
 	if (c->lex->lookahead == tok)
 	{
@@ -1095,7 +1173,7 @@ static inline koji_bool kc_accept(kj_compiler *c, kj_token tok)
 /**
   * Reports a compilation error if lookhead differs from @tok.
   */
-static inline void kc_check(kj_compiler *c, kj_token tok)
+static inline void kc_check(kj_compiler* c, kj_token tok)
 {
 	if (c->lex->lookahead != tok)
 	{
@@ -1108,7 +1186,7 @@ static inline void kc_check(kj_compiler *c, kj_token tok)
 /**
   * Checks that lookahead is @tok then scans next token.
   */
-static inline void kc_expect(kj_compiler *c, kj_token tok)
+static inline void kc_expect(kj_compiler* c, kj_token tok)
 {
 	kc_check(c, tok);
 	lex(c->lex);
@@ -1117,7 +1195,7 @@ static inline void kc_expect(kj_compiler *c, kj_token tok)
 /**
   * Returns an "end of statement" token is found (newline, ';', '}' or end-of-stream) and "eats" it.
   */
-static inline koji_bool kc_accept_end_of_stmt(kj_compiler *c)
+static inline koji_bool kc_accept_end_of_stmt(kj_compiler* c)
 {
 	if (kc_accept(c, ';')) return KJ_TRUE;
 	if (c->lex->lookahead == '}' || c->lex->lookahead == tok_eos) return KJ_TRUE;
@@ -1128,7 +1206,7 @@ static inline koji_bool kc_accept_end_of_stmt(kj_compiler *c)
 /**
   * Expects an end of statement.
   */
-static inline void kc_expect_end_of_stmt(kj_compiler *c)
+static inline void kc_expect_end_of_stmt(kj_compiler* c)
 {
 	if (!kc_accept_end_of_stmt(c)) kc_syntax_error(c, c->lex->source_location);
 }
@@ -1138,7 +1216,7 @@ static inline void kc_expect_end_of_stmt(kj_compiler *c)
 /**
   * Searches a constant in value @k and adds it if not found, then it returns its index.
   */
-static inline int _kc_fetch_primitive_constant(kj_compiler *c, kj_value k)
+static inline int _kc_fetch_primitive_constant(kj_compiler* c, kj_value k)
 {
 	for (uint i = 0; i < c->proto->constants.size; ++i)
 	{
@@ -1156,7 +1234,7 @@ static inline int _kc_fetch_primitive_constant(kj_compiler *c, kj_value k)
 /**
 * Fetches or defines if not found an int constant @k and returns its index.
 */
-static inline int kc_fetch_constant_int(kj_compiler *c, koji_integer k)
+static inline int kc_fetch_constant_int(kj_compiler* c, koji_integer k)
 {
 	return _kc_fetch_primitive_constant(c, (kj_value) { KOJI_TYPE_INT, .integer = k });
 }
@@ -1164,7 +1242,7 @@ static inline int kc_fetch_constant_int(kj_compiler *c, koji_integer k)
 /**
   * Fetches or defines if not found a real constant @k and returns its index.
   */
-static inline int kc_fetch_constant_real(kj_compiler *c, koji_real k)
+static inline int kc_fetch_constant_real(kj_compiler* c, koji_real k)
 {
 	return _kc_fetch_primitive_constant(c, (kj_value) { KOJI_TYPE_REAL, .real = k });
 
@@ -1173,7 +1251,7 @@ static inline int kc_fetch_constant_real(kj_compiler *c, koji_real k)
 /**
 * Fetches or defines if not found a string constant @k and returns its index.
 */
-static inline int kc_fetch_constant_string(kj_compiler *c, const char* k)
+static inline int kc_fetch_constant_string(kj_compiler* c, const char* k)
 {
 	for (uint i = 0; i < c->proto->constants.size; ++i)
 	{
@@ -1207,7 +1285,7 @@ static inline int kc_fetch_constant_string(kj_compiler *c, const char* k)
 /**
   * Pushes instruction @i to current prototype instructions.
   */
-static inline void kc_emit(kj_compiler *c, kj_instruction i)
+static inline void kc_emit(kj_compiler* c, kj_instruction i)
 {
 	if (opcode_has_target(decode_op(i)))
 	{
@@ -1221,7 +1299,7 @@ static inline void kc_emit(kj_compiler *c, kj_instruction i)
   * Computes and returns the offset specified from instruction index to the next instruction
   * that will be emitted in current prototype.
   */
-static inline int kc_offset_to_next_instruction(kj_compiler *c, int from_instruction_index)
+static inline int kc_offset_to_next_instruction(kj_compiler* c, int from_instruction_index)
 {
 	return c->proto->instructions.size - from_instruction_index - 1;
 }
@@ -1232,7 +1310,7 @@ static inline int kc_offset_to_next_instruction(kj_compiler *c, int from_instruc
   * Writes the offset to jump instructions contained in @label starting from @begin to target
   * instruction index target_index.
   */
-static void kc_bind_label_to(kj_compiler *c, kc_label* label, uint begin, int target_index)
+static void kc_bind_label_to(kj_compiler* c, kc_label* label, uint begin, int target_index)
 {
 	for (uint i = begin, size = label->size; i < size; ++i)
 	{
@@ -1246,7 +1324,7 @@ static void kc_bind_label_to(kj_compiler *c, kc_label* label, uint begin, int ta
   * Binds jump instructions in @label starting from @begin to the next instruction that will be
   * emitted to current prototype.
   */
-static inline void kc_bind_label_here(kj_compiler *c, kc_label* label, uint begin)
+static inline void kc_bind_label_here(kj_compiler* c, kc_label* label, uint begin)
 {
 	kc_bind_label_to(c, label, begin, c->proto->instructions.size);
 }
@@ -1256,7 +1334,7 @@ static inline void kc_bind_label_here(kj_compiler *c, kc_label* label, uint begi
 /**
   * Adds an identifier string to the compiler buffer and returns the string offset within it.
   */
-static uint kc_push_identifier(kj_compiler *c, const char* identifier, uint identifier_size)
+static uint kc_push_identifier(kj_compiler* c, const char* identifier, uint identifier_size)
 {
 	char* my_identifier = array_push(&c->identifiers, char, identifier_size + 1);
 	memcpy(my_identifier, identifier, identifier_size + 1);
@@ -1267,7 +1345,7 @@ static uint kc_push_identifier(kj_compiler *c, const char* identifier, uint iden
   * Searches for a local named @identifier from current prototype up to the main one and returns
   * a pointer to it if found, null otherwise.
   */
-static kc_local* kc_fetch_local(kj_compiler *c, const char* identifier)
+static kc_local* kc_fetch_local(kj_compiler* c, const char* identifier)
 {
 	for (int i = c->locals.size - 1; i >= 0; --i)
 	{
@@ -1283,7 +1361,7 @@ static kc_local* kc_fetch_local(kj_compiler *c, const char* identifier)
   * Defines a new local variable in current prototype with an identifier starting at
   * identifier_offset preiously pushed through _push_identifier().
   */
-static void kc_define_local(kj_compiler *c, uint identifier_offset)
+static void kc_define_local(kj_compiler* c, uint identifier_offset)
 {
 	kc_local* var = array_push(&c->locals, kc_local, 1);
 	var->identifier_offset = identifier_offset;
@@ -1338,7 +1416,11 @@ typedef struct kc_expr
 		koji_integer integer;
 		koji_real real;
 		int location;
-		const char* string;
+		struct  
+		{
+			uint length;
+			char* data;
+		} string;
 		struct
 		{
 			int lhs;
@@ -1377,9 +1459,13 @@ static inline kc_expr kc_expr_real(koji_real value)
 /**
   * Makes and returns a string expr of specified @string.
   */
-static inline kc_expr kc_expr_string(const char* string)
+static inline kc_expr kc_expr_string(kj_compiler* c, uint length)
 {
-	return (kc_expr) { KC_EXPR_TYPE_STRING, .string = _strdup(string), .positive = KJ_TRUE };
+	return (kc_expr) {
+		KC_EXPR_TYPE_STRING,
+		.string.length = length,
+		.string.data = allocator_alloc(&c->allocator, length + 1, 1),
+		.positive = KJ_TRUE };
 }
 
 /**
@@ -1405,7 +1491,7 @@ static inline kc_expr kc_expr_comparison(kc_expr_type type, koji_bool test_value
   */
 static inline koji_bool kc_expr_is_constant(kc_expr_type type)
 {
-	return type >= KC_EXPR_TYPE_BOOL && type <= KC_EXPR_TYPE_REAL;
+	return type >= KC_EXPR_TYPE_BOOL && type <= KC_EXPR_TYPE_STRING;
 }
 
 /**
@@ -1463,7 +1549,7 @@ static inline koji_real kc_expr_to_real(kc_expr expr)
   * containing the value that was contained in @e.
   * If @e needs to be moved to some register (e.g. it is a boolean value), @target_hint is used.
   */
-static inline kc_expr kc_expr_to_any_register(kj_compiler *c, kc_expr e, int target_hint)
+static inline kc_expr kc_expr_to_any_register(kj_compiler* c, kc_expr e, int target_hint)
 {
 	uint constant_index;
 	int location;
@@ -1485,7 +1571,7 @@ static inline kc_expr kc_expr_to_any_register(kj_compiler *c, kc_expr e, int tar
 		case KC_EXPR_TYPE_REAL: constant_index = kc_fetch_constant_real(c, e.real);
 			goto make_constant;
 
-		case KC_EXPR_TYPE_STRING: constant_index = kc_fetch_constant_string(c, e.string);
+		case KC_EXPR_TYPE_STRING: constant_index = kc_fetch_constant_string(c, e.string.data);
 			goto make_constant;
 
 		make_constant:
@@ -1522,7 +1608,7 @@ static inline kc_expr kc_expr_to_any_register(kj_compiler *c, kc_expr e, int tar
 /**
   * Emits the appropriate instructions so that expression e value is written to register @target.
   */
-static void kc_move_expr_to_register(kj_compiler *c, kc_expr e, int target)
+static void kc_move_expr_to_register(kj_compiler* c, kc_expr e, int target)
 {
 	e = kc_expr_to_any_register(c, e, target);
 	assert(e.positive);
@@ -1601,7 +1687,7 @@ static inline kc_binop kc_token_to_binop(kj_token tok)
   * After using the new temporary you must restore the temporary register c->temporary to the value
   * returned by this function.
   */
-static int kc_use_temporary(kj_compiler *c, kc_expr const* e)
+static int kc_use_temporary(kj_compiler* c, kc_expr const* e)
 {
 	int old_temporaries = c->temporaries;
 	if (e->type == KC_EXPR_TYPE_REGISTER && e->location == c->temporaries)
@@ -1635,7 +1721,7 @@ static kc_expr kc_negate(kc_expr e)
 /**
   * Compiles the unary minus of expression @e and returns the result.
   */
-static kc_expr kc_unary_minus(kj_compiler *c, const kc_expr_state* es, kj_source_location sourceloc, kc_expr e)
+static kc_expr kc_unary_minus(kj_compiler* c, const kc_expr_state* es, kj_source_location sourceloc, kc_expr e)
 {
 	switch (e.type)
 	{
@@ -1657,15 +1743,15 @@ static kc_expr kc_unary_minus(kj_compiler *c, const kc_expr_state* es, kj_source
 }
 
 /* forward decls */
-static kc_expr kc_parse_expression(kj_compiler *c, const kc_expr_state* es);
-static kc_expr kc_parse_expression_to_any_register(kj_compiler *c, int target);
-static inline void kc_parse_block(kj_compiler *c);
+static kc_expr kc_parse_expression(kj_compiler* c, const kc_expr_state* es);
+static kc_expr kc_parse_expression_to_any_register(kj_compiler* c, int target);
+static inline void kc_parse_block(kj_compiler* c);
 
 /**
   * Parses and compiles a closure starting from arguments declaration (therefore excluded "def" and
   * eventual identifier). It returns the register expr with the location of the compiled closure.
   */
-static kc_expr kc_parse_closure(kj_compiler *c, const kc_expr_state* es)
+static kc_expr kc_parse_closure(kj_compiler* c, const kc_expr_state* es)
 {
 	ubyte num_args = 0;
 	int proto_index = c->proto->prototypes.size;
@@ -1686,7 +1772,7 @@ static kc_expr kc_parse_closure(kj_compiler *c, const kc_expr_state* es)
 		do
 		{
 			kc_check(c, tok_identifier);
-			uint id_offset = kc_push_identifier(c, c->lex->token_string.data, c->lex->token_string.size);
+			uint id_offset = kc_push_identifier(c, c->lex->token_string, c->lex->token_string_length);
 			lex(c->lex);
 			kc_define_local(c, id_offset);
 			++num_args;
@@ -1720,7 +1806,7 @@ static kc_expr kc_parse_closure(kj_compiler *c, const kc_expr_state* es)
   * this function save the current temporary as arguments will be compiled to temporaries staring from current. It's
   * responsibility of the caller to restore the temporary register.
   */
-static int kc_parse_function_call_args(kj_compiler *c)
+static int kc_parse_function_call_args(kj_compiler* c)
 {
 	int nargs = 0;
 	kj_source_location sourceloc = c->lex->source_location;
@@ -1750,7 +1836,7 @@ static int kc_parse_function_call_args(kj_compiler *c)
 /**
   * Parses and returns a primary expression such as a constant or a function call.
   */
-static kc_expr kc_parse_primary_expression(kj_compiler *c, const kc_expr_state* es)
+static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* es)
 {
 	kc_expr expr = { KC_EXPR_TYPE_NIL };
 	kj_source_location sourceloc = c->lex->source_location;
@@ -1762,7 +1848,11 @@ static kc_expr kc_parse_primary_expression(kj_compiler *c, const kc_expr_state* 
 		case kw_false: lex(c->lex); expr = kc_expr_boolean(KJ_FALSE); break;
 		case tok_integer: expr = kc_expr_integer(c->lex->token_int); lex(c->lex); break;
 		case tok_real: expr = kc_expr_real(c->lex->token_real); lex(c->lex); break;
-		case tok_string: expr = kc_expr_string(c->lex->token_string.data); lex(c->lex); break;
+		case tok_string:
+			expr = kc_expr_string(c, c->lex->token_string_length);
+			memcpy(expr.string.data, c->lex->token_string, c->lex->token_string_length + 1);
+			lex(c->lex);
+			break;
 
 		case '(': /* subexpression */
 			lex(c->lex);
@@ -1795,8 +1885,8 @@ static kc_expr kc_parse_primary_expression(kj_compiler *c, const kc_expr_state* 
 		case tok_identifier: /* variable */
 		{
 			/* we need to scan the token after the identifier so copy it to a temporary on the stack */
-			char* id = alloca(c->lex->token_string.size + 1);
-			memcpy(id, c->lex->token_string.data, c->lex->token_string.size + 1);
+			char* id = alloca(c->lex->token_string_length + 1);
+			memcpy(id, c->lex->token_string, c->lex->token_string_length + 1);
 			lex(c->lex);
 
 			/* identifier refers to a local variable? */
@@ -1878,7 +1968,7 @@ static kc_expr kc_parse_primary_expression(kj_compiler *c, const kc_expr_state* 
   * opposite holds for AND (jumps to true are patched to evaluate the future rhs because evaluating
   * only the lhs to true is not enough in an AND).
   */
-static void kc_compile_logical_operation(kj_compiler *c, const kc_expr_state* es, kc_binop op, kc_expr lhs)
+static void kc_compile_logical_operation(kj_compiler* c, const kc_expr_state* es, kc_binop op, kc_expr lhs)
 {
 	if ((lhs.type != KC_EXPR_TYPE_REGISTER && !kc_expr_is_comparison(lhs.type))
 		|| (op != KC_BINOP_LOGICAL_AND && op != KC_BINOP_LOGICAL_OR))
@@ -1953,7 +2043,7 @@ static void kc_compile_logical_operation(kj_compiler *c, const kc_expr_state* es
   * between @lhs and @rhs. This function also checks whether the operation can be optimized to a
   * constant if possible before falling back to emitting the actual instructions.
   */
-static kc_expr _compile_binary_expression(kj_compiler *c, const kc_expr_state* es, const kj_source_location sourceloc,
+static kc_expr _compile_binary_expression(kj_compiler* c, const kc_expr_state* es, const kj_source_location sourceloc,
 	kc_binop binop, kc_expr lhs, kc_expr rhs)
 {
 
@@ -1975,10 +2065,32 @@ static kc_expr _compile_binary_expression(kj_compiler *c, const kc_expr_state* e
 	//lhs = compile_binary_operation(c, es, sourceloc, binop, lhs, rhs);
 	switch (binop)
 	{
-		MAKEBINOP(KC_BINOP_ADD, +)
-			MAKEBINOP(KC_BINOP_SUB, -)
-			MAKEBINOP(KC_BINOP_MUL, *)
-			MAKEBINOP(KC_BINOP_DIV, / )
+		case KC_BINOP_ADD:
+			if (lhs.type == KC_EXPR_TYPE_NIL || rhs.type == KC_EXPR_TYPE_NIL) goto error;
+			if (kc_expr_is_constant(lhs.type) && kc_expr_is_constant(rhs.type))
+			{
+				if (lhs.type == KC_EXPR_TYPE_BOOL || rhs.type == KC_EXPR_TYPE_BOOL)
+					goto error;
+				if ((lhs.type == KC_EXPR_TYPE_STRING) != (rhs.type == KC_EXPR_TYPE_STRING))
+					goto error;
+				if (lhs.type == KC_EXPR_TYPE_REAL || rhs.type == KC_EXPR_TYPE_REAL)
+					lhs = kc_expr_real(kc_expr_to_real(lhs) + kc_expr_to_real(rhs));
+				else if (lhs.type == KC_EXPR_TYPE_STRING && rhs.type == KC_EXPR_TYPE_STRING)
+				{
+					kc_expr temp = kc_expr_string(c, lhs.string.length + rhs.string.length);
+					memcpy(temp.string.data, lhs.string.data, lhs.string.length);
+					memcpy(temp.string.data + lhs.string.length, rhs.string.data, rhs.string.length + 1);
+					lhs = temp;
+				}
+				else
+					lhs.integer = lhs.integer + rhs.integer;
+				return lhs;
+			}
+			break;
+
+		MAKEBINOP(KC_BINOP_SUB, -)
+		MAKEBINOP(KC_BINOP_MUL, *)
+		MAKEBINOP(KC_BINOP_DIV, / )
 
 		case KC_BINOP_MOD:
 			if (lhs.type == KC_EXPR_TYPE_NIL || rhs.type == KC_EXPR_TYPE_NIL) goto error;
@@ -2132,7 +2244,7 @@ error:
   * Parses and compiles the potential right hand side of a binary expression if binary operators
   * are found.
   */
-static kc_expr parse_binary_expression_rhs(kj_compiler *c, const kc_expr_state* es, kc_expr lhs, int precedence)
+static kc_expr parse_binary_expression_rhs(kj_compiler* c, const kc_expr_state* es, kc_expr lhs, int precedence)
 {
 	static const int precedences[] = { -1, 1, 0, 2, 2, 3, 3, 3, 3, 4, 4, 5, 5, 5 };
 
@@ -2191,7 +2303,7 @@ static kc_expr parse_binary_expression_rhs(kj_compiler *c, const kc_expr_state* 
   * Parses a full expression and returns it. Note that the returned expr is not guaranteed to be in
   * a register.
   */
-static kc_expr kc_parse_expression(kj_compiler *c, const kc_expr_state* es)
+static kc_expr kc_parse_expression(kj_compiler* c, const kc_expr_state* es)
 {
 	kc_expr_state my_es = *es;
 	my_es.true_jumps_begin = c->true_label.size;
@@ -2229,7 +2341,7 @@ error:
   * Parses and compiles an expression, then it makes sure that the final result is written to some
   * register; it could be @target_hint or something else.
   */
-static kc_expr kc_parse_expression_to_any_register(kj_compiler *c, int target_hint)
+static kc_expr kc_parse_expression_to_any_register(kj_compiler* c, int target_hint)
 {
 	instructions* instructions = &c->proto->instructions;
 
@@ -2369,7 +2481,7 @@ done:
   * to the true or false branch. The expression parsed & compiled is tested against @truth_value, i.e.
   * if the expression is @truth_value (true or false) then it branches to *true*, otherwise to false.
   */
-static void _parse_condition(kj_compiler *c, koji_bool test_value)
+static void _kc_parse_condition(kj_compiler* c, koji_bool test_value)
 {
 	instructions* instructions = &c->proto->instructions;
 	int old_temps = c->temporaries;
@@ -2401,12 +2513,12 @@ static void _parse_condition(kj_compiler *c, koji_bool test_value)
 	c->temporaries = old_temps;
 }
 
-static void kc_parse_block_stmts(kj_compiler *c);
+static void kc_parse_block_stmts(kj_compiler* c);
 
 /**
   * Parses and compiles an entire "{ stmts... }" block.
   */
-static inline void kc_parse_block(kj_compiler *c)
+static inline void kc_parse_block(kj_compiler* c)
 {
 	kc_expect(c, '{');
 	kc_parse_block_stmts(c);
@@ -2416,7 +2528,7 @@ static inline void kc_parse_block(kj_compiler *c)
 /**
   * Parses and compiles an if statement.
   */
-static void kc_parse_if_stmt(kj_compiler *c)
+static void kc_parse_if_stmt(kj_compiler* c)
 {
 	instructions* instructions = &c->proto->instructions;
 	kc_expect(c, kw_if);
@@ -2426,7 +2538,7 @@ static void kc_parse_if_stmt(kj_compiler *c)
 
 	// parse the condition to branch to 'true' if it's false.
 	kc_expect(c, '(');
-	_parse_condition(c, KJ_FALSE);
+	_kc_parse_condition(c, KJ_FALSE);
 	kc_expect(c, ')');
 
 	// bind the true branch (contained in the false label) and parse the true branch block.
@@ -2462,7 +2574,7 @@ static void kc_parse_if_stmt(kj_compiler *c)
 /**
   * Parses and compiles a while statement.
   */
-static void kc_parse_while_stmt(kj_compiler *c)
+static void kc_parse_while_stmt(kj_compiler* c)
 {
 	kc_expect(c, kw_while);
 
@@ -2472,7 +2584,7 @@ static void kc_parse_while_stmt(kj_compiler *c)
 
 	// parse and compile the condition
 	kc_expect(c, '(');
-	_parse_condition(c, KJ_FALSE); // if condition is KJ_FALSE jump (to KJ_TRUE)
+	_kc_parse_condition(c, KJ_FALSE); // if condition is KJ_FALSE jump (to KJ_TRUE)
 	kc_expect(c, ')');
 
 	// compile the loop body
@@ -2491,7 +2603,7 @@ static void kc_parse_while_stmt(kj_compiler *c)
 /**
   * Parses and compiles a do-while statement.
   */
-static void kc_parse_do_while_stmt(kj_compiler *c)
+static void kc_parse_do_while_stmt(kj_compiler* c)
 {
 	kc_expect(c, kw_do);
 
@@ -2508,7 +2620,7 @@ static void kc_parse_do_while_stmt(kj_compiler *c)
 	// parse and compile the condition
 	kc_expect(c, kw_while);
 	kc_expect(c, '(');
-	_parse_condition(c, KJ_TRUE); // if condition is KJ_TRUE jump (to KJ_TRUE)
+	_kc_parse_condition(c, KJ_TRUE); // if condition is KJ_TRUE jump (to KJ_TRUE)
 	kc_expect(c, ')');
 
 	// bind the branches to true to the first body instruction
@@ -2521,8 +2633,11 @@ static void kc_parse_do_while_stmt(kj_compiler *c)
 /**
   * Parses and compiles a single statement of any kind.
   */
-static void kc_parse_statement(kj_compiler *c)
+static void kc_parse_statement(kj_compiler* c)
 {
+	/* reset the temporaries allocator every statement */
+	allocator_reset(&c->allocator);
+
 	switch (c->lex->lookahead)
 	{
 		case '{':
@@ -2537,7 +2652,7 @@ static void kc_parse_statement(kj_compiler *c)
 
 			// push the identifier
 			kc_check(c, tok_identifier);
-			uint identifier_offset = kc_push_identifier(c, c->lex->token_string.data, c->lex->token_string.size);
+			uint identifier_offset = kc_push_identifier(c, c->lex->token_string, c->lex->token_string_length);
 			lex(c->lex);
 
 			// parse initialization expression, if any
@@ -2595,7 +2710,7 @@ static void kc_parse_statement(kj_compiler *c)
 /**
   * Parses and compiles the content of a block, i.e. the instructions between '{' and '}'.
 	*/
-static void kc_parse_block_stmts(kj_compiler *c)
+static void kc_parse_block_stmts(kj_compiler* c)
 {
 	uint num_variables = c->locals.size;
 
@@ -2608,7 +2723,7 @@ static void kc_parse_block_stmts(kj_compiler *c)
 /**
   * Parses and compiles and entire module, i.e. a source file.
 	*/
-static void kc_parse_module(kj_compiler *c)
+static void kc_parse_module(kj_compiler* c)
 {
 	while (c->lex->lookahead != tok_eos)
 	{
@@ -2644,6 +2759,7 @@ static koji_prototype* compile(const char* source_name, koji_stream_reader_fn st
 
 	/* setup the compilation state */
 	kj_compiler state = { 0 };
+	state.allocator = allocator_page_create(0);
 	state.static_functions = local_variable;
 	state.lex = &lexer;
 	state.proto = mainproto;
@@ -2658,6 +2774,7 @@ error:
 	mainproto = NULL;
 
 cleanup:
+	allocator_destroy(state.allocator);
 	array_destroy(&state.locals);
 	array_destroy(&state.false_label);
 	array_destroy(&state.true_label);
@@ -2783,7 +2900,7 @@ static inline void ks_binop_add(koji_state* s, kj_value* dest, const kj_value* l
 {
 	if (lhs->type == KOJI_TYPE_STRING)
 	{
-		if (rhs->type == KOJI_TYPE_STRING) goto error;
+		if (rhs->type != KOJI_TYPE_STRING) goto error;
 
 		/* is dest a string and the total string fits in its buffer? */
 		if (dest->type == KOJI_TYPE_STRING
@@ -2801,11 +2918,14 @@ static inline void ks_binop_add(koji_state* s, kj_value* dest, const kj_value* l
 		else
 		{
 			/* create a new string */
-			value_set_string(dest, lhs->string->length + rhs->string->length);
+			value_set_new_string(dest, lhs->string->length + rhs->string->length);
 			memcpy(dest->string->data, lhs->string->data, lhs->string->length);
 			memcpy(dest->string->data + lhs->string->length, rhs->string->data, rhs->string->length + 1);
 		}
+
+		return;
 	}
+
 	KS_BINOP(+)
 }
 
