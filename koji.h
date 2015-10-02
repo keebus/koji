@@ -6,6 +6,10 @@
 #pragma once
 #ifndef KOJI_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Types */
 
 /**
@@ -110,11 +114,6 @@ extern void koji_destroy(koji_state*);
 extern void koji_static_function(koji_state*, const char* name, koji_user_function fn, int nargs);
 
 /**
-* Frees a reference to prototype @p and deletes it if zero.
-*/
-extern void koji_prototype_release(koji_prototype*);
-
-/**
   * Compiles a source from a generic stream and returns compilation result.
   * If compilation was succesful, the script main prototype function is pushed as a closure onto the
   * stack. Call koji_run() to execute the just compiled script.
@@ -190,5 +189,10 @@ extern koji_real koji_to_real(koji_state*, int offset);
   * TODO add documentation.
   */
 extern const char* koji_get_string(koji_state*, int offset);
+
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif KOJI_H_
