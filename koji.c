@@ -56,6 +56,7 @@
 
 /* convenience typedefs */
 typedef unsigned int uint;
+typedef unsigned long long uint64;
 typedef unsigned char ubyte;
 
 /* Dynamic Array */
@@ -261,6 +262,7 @@ enum
 	kw_do,
 	kw_else,
 	kw_false,
+	kw_globals,
 	kw_for,
 	kw_if,
 	kw_in,
@@ -395,6 +397,7 @@ static const char *lex_token_to_string(kj_token tok, char *buffer, uint buffer_s
 		case kw_do: return "do";
 		case kw_else: return "else";
 		case kw_false: return "false";
+		case kw_globals: return "globals";
 		case kw_for: return "for";
 		case kw_if: return "if";
 		case kw_in: return "in";
@@ -429,6 +432,7 @@ static kj_token lex(kj_lexer *l)
 
 	for (;;)
 	{
+		koji_bool decimal = KJ_FALSE;
 		switch (l->curr_char)
 		{
 			case EOF:
@@ -465,9 +469,13 @@ static kj_token lex(kj_lexer *l)
 				return l->lookahead = tok_string;
 			}
 
-			case '.': case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
 			{
-				koji_bool decimal = l->curr_char == '.';
+			case '.':
+				decimal = KJ_TRUE;
+				_lex_push(l);
+				if (l->curr_char < '0' || l->curr_char > '9') return l->lookahead = '.';
+
+			case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
 				l->lookahead = decimal ? tok_real : tok_integer;
 
 				if (!decimal)
@@ -593,6 +601,12 @@ static kj_token lex(kj_lexer *l)
 				}
 				return l->lookahead = _lex_scan_identifier(l, KJ_FALSE);
 
+			case 'g':
+				_lex_push(l);
+				l->lookahead = tok_identifier;
+				if (_lex_accept(l, "lobals")) l->lookahead = kw_globals;
+				return l->lookahead = _lex_scan_identifier(l, KJ_FALSE);
+
 			case 'i':
 				_lex_push(l);
 				l->lookahead = tok_identifier;
@@ -689,6 +703,10 @@ typedef enum kj_opcode
 	KJ_OP_TESTSET, /* testset A, B, C   ; if R(B) == (bool)C then R(A) = R(B) else jump 1 */
 	KJ_OP_CLOSURE, /* closure A, Bx     ; R(A) = closure for prototype Bx */
 	KJ_OP_CALL,    /* call A, B, C      ; call closure R(A) with C arguments starting at R(B) */
+	KJ_OP_MCALL,   /* call A, B, C      ; call object R(A) method with name R(B) with C arguments from R(A + 1) on */
+	KJ_OP_GLOBALS, /* globals A         ; get the global table into register A */
+	KJ_OP_NEWTABLE, /* newtable A       ; creates a new table in R(A) */
+	KJ_OP_GETTABLE, /* gettable A, B, C ; R(A) = table(R(B))[R(C)] */
 
 	// operations that do not write into a target register
 	KJ_OP_TEST,    /* test A, Bx        ; if (bool)R(A) != (bool)B then jump 1 */
@@ -698,11 +716,12 @@ typedef enum kj_opcode
 	KJ_OP_LTE,     /* lte A, B, C       ; if (R(A) <= R(B)) == (bool)C then nothing else jump 1 */
 	KJ_OP_SCALL,   /* scall A, Bx       ; call static function at Bx with arguments starting from R(A) */
 	KJ_OP_RET,     /* ret A, B          ; return values R(A), ..., R(B)*/
+	KJ_OP_SETTABLE, /*settable A, B, C  ; table(R(A))[R(B)] = R(C) */
 } kj_opcode;
 
 static const char *KJ_OP_STRINGS[] = {
-	"loadnil", "loadb", "mov", "neg", "unm", "add", "sub", "mul", "div", "mod", "pow", "testset", "closure", "call", "test",
-	"jump", "eq", "lt", "lte",  "scall", "ret"
+	"loadnil", "loadb", "mov", "neg", "unm", "add", "sub", "mul", "div", "mod", "pow", "testset", "closure",
+	"call", "mcall", "globals", "newtable", "gettable", "test", "jump", "eq", "lt", "lte", "scall", "ret", "settable"
 };
 
 /* Instructions */
@@ -717,7 +736,7 @@ static const uint MAX_REGISTER_VALUE = 255;
 static const int MAX_BX_INTEGER = 131071;
 
 /** Returns whether opcode @op involves writing into register A. */
-static inline koji_bool opcode_has_target(kj_opcode op) { return op <= KJ_OP_CALL; }
+static inline koji_bool opcode_has_target(kj_opcode op) { return op <= KJ_OP_GETTABLE; }
 
 /** Encodes an instruction with arguments A and Bx. */
 static inline kj_instruction encode_ABx(kj_opcode op, int A, int Bx)
@@ -772,15 +791,33 @@ typedef struct kj_closure
 }
 kj_closure;
 
-static const char *KJ_VALUE_TYPE_STRING[] = { "nil", "bool", "int", "real", "closure" };
+static const char *KJ_VALUE_TYPE_STRING[] = { "nil", "bool", "int", "real", "string", "table", "closure" };
 
 typedef struct kj_string
 {
 	uint references;
 	uint length;
-	uint capacity;
 	char* data;
 } kj_string;
+
+typedef struct kj_table_entry kj_table_entry;
+
+typedef struct kj_table
+{
+	uint capacity;
+	uint size;
+	struct kj_table_entry* entries;
+} kj_table;
+
+#define KJ_TABLE_DEFAULT_CAPACITY 10
+
+typedef uint64 hash_t;
+
+typedef struct
+{
+	uint references;
+	kj_table table;
+} kj_value_table;
 
 /* Definition */
 struct kj_value
@@ -788,13 +825,20 @@ struct kj_value
 	koji_type type;
 	union
 	{
-		koji_bool    boolean;
-		koji_integer integer;
-		koji_real    real;
-		kj_string*   string;
-		void*        object;
-		kj_closure   closure; // fixme
+		koji_bool       boolean;
+		koji_integer    integer;
+		koji_real       real;
+		kj_string*      string;
+		kj_value_table* table;
+		void*           object;
+		kj_closure      closure; // fixme
 	};
+};
+
+struct kj_table_entry
+{
+	kj_value key;
+	kj_value value;
 };
 
 /* helper macro to access a string object in a string value */
@@ -821,6 +865,7 @@ static void prototype_delete(koji_prototype* p);
 /**
 * Frees a reference to prototype @p and deletes it if zero.
 */
+
 static inline void prototype_release(koji_prototype* p)
 {
 	if (--p->references == 0)
@@ -829,15 +874,35 @@ static inline void prototype_release(koji_prototype* p)
 
 /* kj_value functions */
 
+static void table_init(kj_table* table, size_t capacity);
+static void table_destruct(kj_table* table);
+
 static inline void value_destroy(kj_value* v)
 {
 	switch (v->type)
 	{
+		case KOJI_TYPE_NIL:
+		case KOJI_TYPE_BOOL:
+		case KOJI_TYPE_INT:
+		case KOJI_TYPE_REAL:
+			break;
+
 		case KOJI_TYPE_STRING:
 		{
 			uint* references = (uint*)v->object;
 			if ((*references)-- == 1)
 				free(v->object);
+			break;
+		}
+
+		case KOJI_TYPE_TABLE:
+		{
+			uint* references = (uint*)v->object;
+			if ((*references)-- == 1)
+			{
+				table_destruct(&v->table->table);
+				free(v->table);
+			}
 			break;
 		}
 
@@ -877,18 +942,26 @@ static inline void value_set_real(kj_value* v, koji_real real)
 	v->real = real;
 }
 
-static  void value_set_new_string(kj_value* v, uint length)
+static void value_set_string(kj_value* v, uint length)
 {
 	value_destroy(v);
 	v->type = KOJI_TYPE_STRING;
 	v->string = malloc(sizeof(kj_string) + length + 1);
 	v->string->references = 1;
 	v->string->length = 0;
-	v->string->capacity = length + 1;
 	v->string->data = (char*)v->string + sizeof(kj_string);
 }
 
-static inline void value_make_closure(kj_value* v, koji_prototype* proto)
+static void value_set_table(kj_value* v)
+{
+	value_destroy(v);
+	v->type = KOJI_TYPE_TABLE;
+	v->table = malloc(sizeof(kj_value_table));
+	v->table->references = 1;
+	table_init(&v->table->table, KJ_TABLE_DEFAULT_CAPACITY);
+}
+
+static inline void value_set_closure(kj_value* v, koji_prototype* proto)
 {
 	value_destroy(v);
 	++proto->references;
@@ -896,9 +969,10 @@ static inline void value_make_closure(kj_value* v, koji_prototype* proto)
 	v->closure = (kj_closure) { proto };
 }
 
-static inline void value_copy(kj_value* dest, const kj_value* src)
+static inline void value_set(kj_value* dest, const kj_value* src)
 {
 	if (dest == src) return;
+
 	value_destroy(dest);
 	*dest = *src;
 
@@ -906,6 +980,7 @@ static inline void value_copy(kj_value* dest, const kj_value* src)
 	switch (dest->type)
 	{
 		case KOJI_TYPE_STRING:
+		case KOJI_TYPE_TABLE:
 			++*(uint*)(dest->object); /* bump up the reference */
 			break;
 
@@ -915,6 +990,165 @@ static inline void value_copy(kj_value* dest, const kj_value* src)
 
 		default: break;
 	}
+}
+
+/* table functions */
+static inline hash_t rehash(hash_t k)
+{
+	k ^= k >> 33;
+	k *= 0xff51afd7ed558ccdLLU;
+	k ^= k >> 33;
+	k *= 0xc4ceb9fe1a85ec53LLU;
+	k ^= k >> 33;
+	return k;
+}
+
+static hash_t value_hash(kj_value value)
+{
+	hash_t h;
+	switch (value.type)
+	{
+		case KOJI_TYPE_NIL: h = 0; break;
+		case KOJI_TYPE_STRING:
+			h = 5381;
+			for (char* ch = value.string->data; *ch; ++ch)
+				h = ((h << 5) + h) + *ch; /* hash * 33 + c */
+			return h;
+		default: h = (hash_t)value.object; break;
+	}
+	hash_t k = value.type == KOJI_TYPE_NIL ? 0 : (hash_t)value.object;
+	k ^= 1ULL << value.type;
+	return rehash(k);
+}
+
+static koji_bool value_equals(kj_value const* lhs, kj_value const* rhs)
+{
+	if (lhs == rhs) return KJ_TRUE;
+	if (lhs->type != rhs->type) return KJ_FALSE;
+	if (lhs->type == KOJI_TYPE_NIL) return KJ_TRUE;
+	if (lhs->type == KOJI_TYPE_STRING)
+		return lhs->string->length == rhs->string->length && !memcmp(lhs->string->data, rhs->string->data, lhs->string->length);
+	return lhs->object == rhs->object;
+}
+
+static void table_init(kj_table* table, size_t capacity)
+{
+	table->size = 0;
+	table->capacity = capacity;
+	table->entries = malloc(sizeof(kj_table_entry) * capacity);
+	memset(table->entries, 0, sizeof(kj_table_entry) * table->capacity);
+}
+
+static void table_destruct(kj_table* table)
+{
+	/* destroy key-value pairs */
+	kj_table_entry* entries = table->entries;
+
+	for (uint i = 0; i < table->capacity; ++i)
+	{
+		value_destroy(&entries[i].key);
+		value_destroy(&entries[i].value);
+	}
+
+	/* free the table memory */
+	free(table->entries);
+}
+
+static kj_table_entry* _table_find_entry(kj_table* table, kj_value const* key)
+{
+	kj_table_entry* entries = table->entries;
+	hash_t hash = value_hash(*key);
+	uint64 index = hash % table->capacity;
+
+	while (entries[index].key.type != KOJI_TYPE_NIL && !value_equals(&entries[index].key, key))
+	{
+		index = (index + 1) % table->capacity;
+	}
+
+	return &entries[index];
+}
+
+static koji_bool _table_reserve(kj_table* table, size_t size)
+{
+	if (size == 0 || size <= table->capacity * 8 / 10) return KJ_FALSE;
+
+	size_t old_capacity = table->capacity;
+	size_t new_capacity;
+
+	/* compute new capacity */
+	if (old_capacity == 0)
+	{
+		size_t double_size = size * 2;
+		new_capacity = 10u > double_size ? 10u : double_size;
+	}
+	else
+	{
+		new_capacity = table->capacity;
+		while (size > new_capacity * 8 / 10) new_capacity *= 2;
+	}
+
+	/* create the new type with the new capacity */
+	kj_table_entry* old_entries = table->entries;
+	table->capacity = new_capacity;
+	table->entries = malloc(sizeof(kj_table_entry) * new_capacity);
+
+	/* rehash */
+	for (size_t i = 0; i < old_capacity; ++i)
+	{
+		if (old_entries[i].key.type != KOJI_TYPE_NIL)
+		{
+			kj_table_entry* entry = _table_find_entry(table, &old_entries[i].key);
+			assert(entry->key.type == KOJI_TYPE_NIL);
+			entry->key = old_entries[i].key;
+			entry->value = old_entries[i].value;
+		}
+	}
+	
+	/* free old table without calling value destructors */
+	free(old_entries);
+
+	return KJ_TRUE;
+}
+
+static koji_bool table_put(kj_table* table, kj_value const* key, kj_value const* value)
+{
+	assert(key->type != KOJI_TYPE_NIL && "Nil values cannot be used as table keys.");
+
+	/* if capacity is zero (new hash-table) reserve at least the space for one element */
+	_table_reserve(table, table->size + 1);
+
+	/* find the right entry for given value in the table*/
+	kj_table_entry* entry = _table_find_entry(table, key);
+
+	if (entry->key.type != KOJI_TYPE_NIL)
+	{
+		/* value already in the table, update the entry with the new value (which could be different if
+		 * user specified a custom == operator) */
+		value_set(&entry->value, value);
+
+		/* no entry added */
+		return KJ_FALSE;
+	}
+
+	/* value's not in the table, can't use the move assignment, need to create the value */
+	value_set(&entry->key, key);
+	value_set(&entry->value, value);
+
+	/* a new item has been added to the hash table */
+	++table->size;
+
+	return KJ_TRUE;
+}
+
+static kj_value* table_get(kj_table* table, kj_value const* key)
+{
+	assert(key->type != KOJI_TYPE_NIL && "Nil values cannot be used as table keys.");
+
+	/* find the right entry for given value in the table*/
+	kj_table_entry* entry = _table_find_entry(table, key);
+
+	/* return null if the key is nil, i.e. key not found */
+	return &entry->value;
 }
 
 /**
@@ -950,6 +1184,7 @@ static void prototype_dump(koji_prototype* p, int level, int index)
 
 	printf("#const %d, #args %d, #temps %d, #instr %d, #proto %d\n",
 		p->constants.size, p->nargs, p->ntemporaries, p->instructions.size, p->prototypes.size);
+
 	for (uint i = 0; i < p->instructions.size; ++i)
 	{
 		printf("[%d] ", i);
@@ -963,11 +1198,16 @@ static void prototype_dump(koji_prototype* p, int level, int index)
 
 		switch (op)
 		{
+		case KJ_OP_NEWTABLE:
+			printf("%s\t%d\t", opstr, A);
+			break;
+
 		case KJ_OP_MOV: case KJ_OP_NEG: case KJ_OP_LOADNIL: case KJ_OP_RET:
-			printf("%s\t%d, %d\t", opstr, A, Bx);
+			printf("%s\t\t%d, %d\t", opstr, A, Bx);
 			goto print_constant;
 
-		case KJ_OP_ADD: case KJ_OP_SUB: case KJ_OP_MUL: case KJ_OP_DIV: case KJ_OP_MOD: case KJ_OP_POW: case KJ_OP_CALL:
+		case KJ_OP_ADD: case KJ_OP_SUB: case KJ_OP_MUL: case KJ_OP_DIV: case KJ_OP_MOD: case KJ_OP_POW: case KJ_OP_CALL: case KJ_OP_MCALL:
+		case KJ_OP_SETTABLE: case KJ_OP_GETTABLE:
 			printf("%s\t%d, %d, %d", opstr, A, B, C);
 			Bx = C;
 
@@ -984,6 +1224,10 @@ static void prototype_dump(koji_prototype* p, int level, int index)
 				default: assert(0);
 				}
 			}
+			break;
+
+		case KJ_OP_GLOBALS:
+			printf("%s\t%d", opstr, A);
 			break;
 
 		case KJ_OP_TEST:
@@ -1408,6 +1652,7 @@ typedef enum
 	KC_EXPR_TYPE_REAL,
 	KC_EXPR_TYPE_STRING,
 	KC_EXPR_TYPE_REGISTER,
+	KC_EXPR_TYPE_ACCESSOR,
 	KC_EXPR_TYPE_EQ,
 	KC_EXPR_TYPE_LT,
 	KC_EXPR_TYPE_LTE,
@@ -1487,6 +1732,17 @@ static inline kc_expr kc_expr_string(kj_compiler* c, uint length)
 static inline kc_expr kc_expr_register(int location)
 {
 	return (kc_expr) { KC_EXPR_TYPE_REGISTER, .location = location, .positive = KJ_TRUE };
+}
+
+/**
+* Makes and returns an accessor expression as in "table[key]" for @location.
+*/
+static inline kc_expr kc_expr_accessor(int object_location, int accessor_name_location)
+{
+	return (kc_expr) { KC_EXPR_TYPE_ACCESSOR,
+		.lhs = object_location,
+		.rhs = accessor_name_location,
+		.positive = KJ_TRUE };
 }
 
 /**
@@ -1602,9 +1858,13 @@ static inline kc_expr kc_expr_to_any_register(kj_compiler* c, kc_expr e, int tar
 			}
 
 		case KC_EXPR_TYPE_REGISTER:
-			if (e.positive)
-				return e;
+			if (e.positive) return e;
 			kc_emit(c, encode_ABx(KJ_OP_NEG, target_hint, e.location));
+			return kc_expr_register(target_hint);
+
+		case KC_EXPR_TYPE_ACCESSOR:
+			kc_emit(c, encode_ABC(KJ_OP_GETTABLE, target_hint, e.lhs, e.rhs));
+			if (!e.positive) kc_emit(c, encode_ABx(KJ_OP_NEG, target_hint, target_hint));
 			return kc_expr_register(target_hint);
 
 		case KC_EXPR_TYPE_EQ: case KC_EXPR_TYPE_LT: case KC_EXPR_TYPE_LTE:
@@ -1703,7 +1963,7 @@ static inline kc_binop kc_token_to_binop(kj_token tok)
 static int kc_use_temporary(kj_compiler* c, kc_expr const* e)
 {
 	int old_temporaries = c->temporaries;
-	if (e->type == KC_EXPR_TYPE_REGISTER && e->location == c->temporaries)
+	if ((e->type == KC_EXPR_TYPE_REGISTER || e->type == KC_EXPR_TYPE_ACCESSOR) && e->location == c->temporaries)
 	{
 		++c->temporaries;
 		return old_temporaries;
@@ -1856,6 +2116,13 @@ static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* 
 
 	switch (c->lex->lookahead)
 	{
+		/* global table */
+		case kw_globals:
+			lex(c->lex);
+			kc_emit(c, encode_ABx(KJ_OP_GLOBALS, es->target_register, 0));
+			expr = kc_expr_register(es->target_register);
+			break;
+
 		/* literals */
 		case kw_true: lex(c->lex); expr = kc_expr_boolean(KJ_TRUE); break;
 		case kw_false: lex(c->lex); expr = kc_expr_boolean(KJ_FALSE); break;
@@ -1948,25 +2215,121 @@ static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* 
 			expr = kc_parse_closure(c, es);
 			break;
 
+		case '{': /* table */
+		{
+			lex(c->lex);
+
+			expr = kc_expr_register(es->target_register);
+			int temps = kc_use_temporary(c, &expr);
+			kc_emit(c, encode_ABx(KJ_OP_NEWTABLE, expr.location, 0));
+
+			if (c->lex->lookahead != '}')
+			{
+				do 
+				{
+					/* parse key */
+					kc_expr key;
+					if (c->lex->lookahead == tok_identifier)
+					{
+						key = kc_expr_string(c, c->lex->token_string_length);
+						memcpy(key.string.data, c->lex->token_string, c->lex->token_string_length + 1);
+						lex(c->lex);
+						key = kc_expr_to_any_register(c, key, c->temporaries);
+					}
+					else
+					{
+						key = kc_parse_expression_to_any_register(c, c->temporaries);
+					}
+					int temps2 = kc_use_temporary(c, &key);
+					kc_expect(c, ':');
+					kc_expr value = kc_parse_expression_to_any_register(c, c->temporaries);
+					kc_emit(c, encode_ABC(KJ_OP_SETTABLE, expr.location, key.location, value.location));
+					c->temporaries = temps2;
+				} while (kc_accept(c, ','));
+			}
+			kc_expect(c, '}');
+			c->temporaries = temps;
+			break;
+		}
+
 		default: kc_syntax_error(c, sourceloc);
 	}
 
 	// parse function calls
-	while (c->lex->lookahead == '(')
+	for (;;)
 	{
-		int first_arg_reg = c->temporaries;
-		int nargs = kc_parse_function_call_args(c);
-		if (expr.type != KC_EXPR_TYPE_REGISTER)
+		switch (c->lex->lookahead)
 		{
-			compile_error(c->lex->error_handler, sourceloc, "cannot call value of type %s.", KC_EXPR_TYPE_TYPE_TO_STRING[expr.type]);
-			return KC_EXPR_NIL;
-		}
-		kc_emit(c, encode_ABC(KJ_OP_CALL, first_arg_reg, expr.location, nargs));
-		expr = kc_expr_register(first_arg_reg);
-		c->temporaries = first_arg_reg;
-	}
+			case '(':
+			{
+				/* this holds the first argument or the object the function is called onto */
+				int first_arg_reg = c->temporaries;
 
-	return expr;
+				/* if expr is an accessor, this is a "method" call. Put the object in the first temporary */
+				if (expr.type == KC_EXPR_TYPE_ACCESSOR)
+				{
+					if (expr.lhs != first_arg_reg) kc_emit(c, encode_ABx(KJ_OP_MOV, first_arg_reg, expr.lhs));
+					++c->temporaries;
+				}
+
+				/* parse the function call arguments */
+				int nargs = kc_parse_function_call_args(c);
+
+				kj_opcode op;
+				int regB;
+
+				if (expr.type == KC_EXPR_TYPE_ACCESSOR)
+				{
+					op = KJ_OP_MCALL;
+					regB = expr.rhs;
+				}
+				else if (expr.type == KC_EXPR_TYPE_REGISTER)
+				{
+					op = KJ_OP_CALL;
+					regB = expr.location;
+				}
+				else
+				{
+					compile_error(c->lex->error_handler, sourceloc, "cannot call value of type %s.", KC_EXPR_TYPE_TYPE_TO_STRING[expr.type]);
+					return KC_EXPR_NIL;
+				}
+
+				/* emit the appropriate call instruction */
+				kc_emit(c, encode_ABC(op, first_arg_reg, regB, nargs));
+
+				/* the result now lives in */
+				expr = kc_expr_register(first_arg_reg);
+
+				/* restore the temporaries count */
+				c->temporaries = first_arg_reg;
+
+				break;
+			}
+
+			case '.':
+			{
+				lex(c->lex);
+				kc_check(c, tok_identifier);
+				expr = kc_expr_to_any_register(c, expr, es->target_register);
+				
+				int temps = kc_use_temporary(c, &expr);
+
+				kc_expr key = kc_expr_string(c, c->lex->token_string_length);
+				memcpy(key.string.data, c->lex->token_string, c->lex->token_string_length + 1);
+				key = kc_expr_to_any_register(c, key, es->target_register);
+
+				c->temporaries = temps;
+				
+				expr = kc_expr_accessor(expr.location, key.location);
+
+				lex(c->lex); // identifier
+				break;
+			}
+
+			default:
+				return expr;
+		}
+	}
 }
 
 /**
@@ -2745,7 +3108,7 @@ static void kc_parse_module(kj_compiler* c)
 
 	kc_emit(c, encode_ABx(KJ_OP_RET, 0, 0));
 
-	// prototype_dump(c->proto, 0, 0); (fixme)
+	prototype_dump(c->proto, 0, 0); //(fixme)
 }
 
 /**
@@ -2798,6 +3161,12 @@ cleanup:
 
 #pragma endregion
 
+#pragma region Table
+
+
+
+#pragma endregion
+
 //---------------------------------------------------------------------------------------------------------------------
 #pragma region State
 
@@ -2835,6 +3204,7 @@ struct koji_state
 	kj_static_functions static_host_functions;
 	array_type(ks_frame) framestack;
 	array_type(kj_value) valuestack;
+	kj_value_table globals;
 	uint sp;
 };
 
@@ -2954,31 +3324,16 @@ static inline void ks_binop_add(koji_state* s, kj_value* dest, const kj_value* l
 	{
 		if (rhs->type != KOJI_TYPE_STRING) goto error;
 
-		/* is dest a string and the total string fits in its buffer? */
-		if (dest->type == KOJI_TYPE_STRING
-			&& dest->string->references == 1
-			&& dest != rhs
-			&& lhs->string->length + rhs->string->length + 1 <= dest->string->capacity
-			)
-		{
-			/* no need to copy lhs into dest if they're the same string */
-			if (dest != lhs)
-			{
-				memcpy(dest->string, lhs->string, lhs->string->length);
-			}
-			
-			/* copy rhs content into dest*/
-			memcpy(dest->string->data + dest->string->length, rhs->string->data, rhs->string->length + 1);
-		}
-		else
-		{
-			/* create a new string */
-			value_set_new_string(dest, lhs->string->length + rhs->string->length);
-			memcpy(dest->string->data, lhs->string->data, lhs->string->length); /* copy lhs */
-			memcpy(dest->string->data + lhs->string->length, rhs->string->data, rhs->string->length + 1); /* copy rhs */
-		}
+		/* create a new string */
+		kj_value temp = { KOJI_TYPE_NIL };
+		value_set_string(&temp, lhs->string->length + rhs->string->length);
+		memcpy(temp.string->data, lhs->string->data, lhs->string->length); /* copy lhs */
+		memcpy(temp.string->data + lhs->string->length, rhs->string->data, rhs->string->length + 1); /* copy rhs */
 
 		dest->string->length = lhs->string->length + rhs->string->length;
+
+		value_destroy(dest);
+		*dest = temp;
 		return;
 	}
 
@@ -3002,21 +3357,19 @@ static inline void ks_binop_mul(koji_state* s, kj_value* dest, const kj_value* l
 
 		uint dest_length = (uint)(lhs->string->length * repetitions);
 
-		/* If dest is not a string or the total new string does not fit into its buffer create a
-		 * new string instead of using dest. */
-		if (dest->type != KOJI_TYPE_STRING
-			|| dest->string->references != 1
-			|| dest_length + 1 > dest->string->capacity)
-		{
-			value_set_new_string(dest, dest_length);
-		}
+		kj_value temp = { KOJI_TYPE_NIL };
+		value_set_string(&temp, dest_length);
 
 		/* copy lhs into dest 'rhs' times */
 		for (uint i = 0; i < repetitions; ++i)
-			memcpy(dest->string->data + lhs->string->length * i, lhs->string->data, lhs->string->length);
+			memcpy(temp.string->data + lhs->string->length * i, lhs->string->data, lhs->string->length);
 
-		dest->string->length = dest_length;
-		dest->string->data[dest_length] = '\0';
+		temp.string->length = dest_length;
+		temp.string->data[dest_length] = '\0';
+
+		value_destroy(dest);
+		*dest = temp;
+
 		return;
 	}
 
@@ -3122,25 +3475,6 @@ static inline const kj_value* ks_get(koji_state* s, ks_frame* currframe, int loc
 		currframe->proto->constants.data - location - 1;
 }
 
-static void ks_reset(koji_state* s)
-{
-	/* destroy all value on the stack */
-	for (uint i = 0; i < s->valuestack.size; ++i)
-		value_set_nil(s->valuestack.data + i);
-
-	/* release prototype references */
-	for (uint i = 0; i < s->framestack.size; ++i)
-		prototype_release(s->framestack.data[i].proto);
-	
-	array_destroy(&s->static_host_functions.functions);
-	array_destroy(&s->static_host_functions.name_buffer);
-	array_destroy(&s->valuestack);
-	array_destroy(&s->framestack);
-
-	s->sp = 0;
-	s->valid = KJ_TRUE;
-}
-
 static inline void ks_push_frame(koji_state* s, koji_prototype* proto, uint stackbase)
 {
 	ks_frame* frame = array_push(&s->framestack, ks_frame, 1);
@@ -3148,7 +3482,7 @@ static inline void ks_push_frame(koji_state* s, koji_prototype* proto, uint stac
 	frame->pc = 0;
 	frame->stackbase = stackbase;
 	array_push(&s->valuestack, kj_value, proto->ntemporaries);
-	for (int i = 0; i < proto->ntemporaries; ++i)
+	for (int i = proto->nargs, tot = proto->nargs + proto->ntemporaries; i < tot; ++i)
 		s->valuestack.data[frame->stackbase + i].type = KOJI_TYPE_NIL;
 }
 
@@ -3159,13 +3493,28 @@ koji_state* koji_create(void)
 	koji_state* s = malloc(sizeof(koji_state));
 	*s = (koji_state) { 0 };
 	s->valid = KJ_TRUE;
+	table_init(&s->globals.table, KJ_TABLE_DEFAULT_CAPACITY);
+	s->globals.references = 1;
 	return s;
 }
 
-
 void koji_destroy(koji_state* s)
 {
-	ks_reset(s);
+	/* destroy all value on the stack */
+	for (uint i = 0; i < s->valuestack.size; ++i)
+		value_set_nil(s->valuestack.data + i);
+
+	/* release prototype references */
+	for (uint i = 0; i < s->framestack.size; ++i)
+		prototype_release(s->framestack.data[i].proto);
+
+	array_destroy(&s->static_host_functions.functions);
+	array_destroy(&s->static_host_functions.name_buffer);
+	array_destroy(&s->valuestack);
+	array_destroy(&s->framestack);
+	assert(s->globals.references == 1);
+	table_destruct(&s->globals.table);
+
 	free(s);
 }
 
@@ -3209,7 +3558,7 @@ int koji_load(koji_state* s, const char* source_name, koji_stream_reader_fn stre
 
 	/* create a closure to main prototype and push it to the stack */
 	koji_push_nil(s);
-	value_make_closure(ks_top(s, -1), mainproto);
+	value_set_closure(ks_top(s, -1), mainproto);
 
 	return KOJI_RESULT_OK;
 }
@@ -3274,8 +3623,8 @@ newframe:
 	{
 		kj_instruction ins = instructions[curr_frame->pc++];
 
-#define KJXREGA ks_get_register(s, curr_frame, decode_A(ins))
-#define KJXARG(X) ks_get(s, curr_frame, decode_##X(ins))
+#define KSREGA ks_get_register(s, curr_frame, decode_A(ins))
+#define KSARG(X) ks_get(s, curr_frame, decode_##X(ins))
 
 		switch (decode_op(ins))
 		{
@@ -3285,50 +3634,59 @@ newframe:
 				break;
 
 			case KJ_OP_LOADB:
-				value_set_boolean(KJXREGA, (koji_bool)decode_B(ins));
+				value_set_boolean(KSREGA, (koji_bool)decode_B(ins));
 				curr_frame->pc += decode_C(ins);
 				break;
 
 			case KJ_OP_MOV:
-				value_copy(KJXREGA, KJXARG(Bx));
+				value_set(KSREGA, KSARG(Bx));
 				break;
 
 			case KJ_OP_NEG:
-				ks_op_neg(KJXREGA, KJXARG(Bx));
+				ks_op_neg(KSREGA, KSARG(Bx));
 				break;
 
 			case KJ_OP_UNM:
-				ks_op_unm(s, KJXREGA, KJXARG(Bx));
+				ks_op_unm(s, KSREGA, KSARG(Bx));
 				break;
 
 			case KJ_OP_ADD:
-				ks_binop_add(s, KJXREGA, KJXARG(B), KJXARG(C));
+				ks_binop_add(s, KSREGA, KSARG(B), KSARG(C));
 				break;
 
 			case KJ_OP_SUB:
-				ks_binop_sub(s, KJXREGA, KJXARG(B), KJXARG(C));
+				ks_binop_sub(s, KSREGA, KSARG(B), KSARG(C));
 				break;
 
 			case KJ_OP_MUL:
-				ks_binop_mul(s, KJXREGA, KJXARG(B), KJXARG(C));
+				ks_binop_mul(s, KSREGA, KSARG(B), KSARG(C));
 				break;
 
 			case KJ_OP_DIV:
-				ks_binop_div(s, KJXREGA, KJXARG(B), KJXARG(C));
+				ks_binop_div(s, KSREGA, KSARG(B), KSARG(C));
 				break;
 
 			case KJ_OP_MOD:
-				ks_binop_mod(s, KJXREGA, KJXARG(B), KJXARG(C));
+				ks_binop_mod(s, KSREGA, KSARG(B), KSARG(C));
 				break;
 
 			case KJ_OP_POW:
 				assert(0);
 				break;
 
+			case KJ_OP_GLOBALS:
+			{
+				kj_value* regA = KSREGA;
+				regA->type = KOJI_TYPE_TABLE;
+				regA->table = &s->globals;
+				++s->globals.references;
+				break;
+			}
+
 			case KJ_OP_TEST:
 			{
 				int newpc = curr_frame->pc + 1;
-				if (value_to_bool(KJXREGA) == decode_Bx(ins))
+				if (value_to_bool(KSREGA) == decode_Bx(ins))
 					newpc += decode_Bx(instructions[curr_frame->pc]);
 				curr_frame->pc = newpc;
 				break;
@@ -3337,10 +3695,10 @@ newframe:
 			case KJ_OP_TESTSET:
 			{
 				int newpc = curr_frame->pc + 1;
-				const kj_value* arg = KJXARG(B);
+				const kj_value* arg = KSARG(B);
 				if (value_to_bool(arg) == decode_C(ins))
 				{
-					value_copy(KJXREGA, arg);
+					value_set(KSREGA, arg);
 					newpc += decode_Bx(instructions[curr_frame->pc]);
 				}
 				curr_frame->pc = newpc;
@@ -3354,7 +3712,7 @@ newframe:
 			case KJ_OP_EQ:
 			{
 				int newpc = curr_frame->pc + 1;
-				if (ks_comp_eq(KJXREGA, KJXARG(B)) == decode_C(ins))
+				if (ks_comp_eq(KSREGA, KSARG(B)) == decode_C(ins))
 				{
 					newpc += decode_Bx(instructions[curr_frame->pc]);
 				}
@@ -3365,7 +3723,7 @@ newframe:
 			case KJ_OP_LT:
 			{
 				int newpc = curr_frame->pc + 1;
-				if (ks_comp_lt(KJXREGA, KJXARG(B)) == decode_C(ins))
+				if (ks_comp_lt(KSREGA, KSARG(B)) == decode_C(ins))
 				{
 					newpc += decode_Bx(instructions[curr_frame->pc]);
 				}
@@ -3376,7 +3734,7 @@ newframe:
 			case KJ_OP_LTE:
 			{
 				int newpc = curr_frame->pc + 1;
-				if (ks_comp_lte(KJXREGA, KJXARG(B)) == decode_C(ins))
+				if (ks_comp_lte(KSREGA, KSARG(B)) == decode_C(ins))
 				{
 					newpc += decode_Bx(instructions[curr_frame->pc]);
 				}
@@ -3387,13 +3745,13 @@ newframe:
 			case KJ_OP_CLOSURE:
 			{
 				assert((uint)decode_Bx(ins) < curr_frame->proto->prototypes.size);
-				value_make_closure(KJXREGA, curr_frame->proto->prototypes.data[decode_Bx(ins)]);
+				value_set_closure(KSREGA, curr_frame->proto->prototypes.data[decode_Bx(ins)]);
 				break;
 			}
 
 			case KJ_OP_CALL:
 			{
-				const kj_value* value = KJXARG(B);
+				const kj_value* value = KSARG(B);
 				if (value->type != KOJI_TYPE_CLOSURE)
 				{
 					ks_error(s, "cannot call value of type %s.", KJ_VALUE_TYPE_STRING[value->type]);
@@ -3427,7 +3785,7 @@ newframe:
 			{
 				int i = 0;
 				for (int reg = decode_A(ins), to_reg = decode_Bx(ins); reg < to_reg; ++reg, ++i)
-					value_copy(ks_get_register(s, curr_frame, i), ks_get(s, curr_frame, reg));
+					value_set(ks_get_register(s, curr_frame, i), ks_get(s, curr_frame, reg));
 				for (int end = curr_frame->proto->nargs + curr_frame->proto->ntemporaries; i < end; ++i)
 					value_set_nil(ks_get_register(s, curr_frame, i));
 				prototype_release(curr_frame->proto);
@@ -3436,13 +3794,36 @@ newframe:
 				goto newframe;
 			}
 
+			case KJ_OP_NEWTABLE:
+				value_set_table(KSREGA);
+				break;
+
+			case KJ_OP_SETTABLE:
+			{
+				kj_value* regA = KSREGA;
+				if (regA->type != KOJI_TYPE_TABLE)
+					ks_error(s, "table set operation performed on value of type %s.", KJ_VALUE_TYPE_STRING[regA->type]);
+				table_put(&regA->table->table, KSARG(B), KSARG(C));
+				break;
+			}
+
+			case KJ_OP_GETTABLE:
+			{
+				kj_value const* regB = KSARG(B);
+				if (regB->type != KOJI_TYPE_TABLE)
+					ks_error(s, "table get operation performed on value of type %s.", KJ_VALUE_TYPE_STRING[regB->type]);
+				value_set(KSREGA, table_get(&regB->table->table, KSARG(C)));
+				break;
+			}
+				
+
 			default:
 				assert(0 && "unsupported op code");
 				break;
 		}
 
-#undef KJREGA
-#undef KJXARG
+#undef KSREGA
+#undef KSARG
 	}
 }
 
