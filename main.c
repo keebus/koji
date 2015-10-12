@@ -17,6 +17,7 @@ int debug_fn(koji_state* s, int nargs)
 		case KOJI_TYPE_INT: printf("%lli", koji_to_int(s, i)); break;
 		case KOJI_TYPE_REAL: printf("%f", koji_to_real(s, i)); break;
 		case KOJI_TYPE_STRING: printf(koji_get_string(s, i)); break;
+		case KOJI_TYPE_TABLE: printf("table"); break;
 		default: printf("unknown\n");
 		}
 	}

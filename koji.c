@@ -1,7 +1,7 @@
 /*
-  * koji language. 2015 Canio Massimo Tristano
-  * Read LICENSE.txt for information about this software copyright and license.
-  */
+* koji language. 2015 Canio Massimo Tristano
+* Read LICENSE.txt for information about this software copyright and license.
+*/
 
 
 #include "koji.h"
@@ -67,8 +67,8 @@ typedef unsigned char ubyte;
 typedef array_type(void) void_array;
 
 /**
-  * Initializes an array instance to a valid empty array.
-	*/
+* Initializes an array instance to a valid empty array.
+*/
 static inline void array_init(void* array_)
 {
 	void_array* array = array_;
@@ -78,9 +78,9 @@ static inline void array_init(void* array_)
 }
 
 /*
-  * Makes sure that specified karray at @array_ of elements of size @element_size has enough capacity
-  * to store @new_capacity elements.
-  */
+* Makes sure that specified karray at @array_ of elements of size @element_size has enough capacity
+* to store @new_capacity elements.
+*/
 static koji_bool array_reserve(void *array_, uint element_size, uint new_capacity)
 {
 	void_array *array = array_;
@@ -109,12 +109,12 @@ static koji_bool array_reserve(void *array_, uint element_size, uint new_capacit
 }
 
 /**
-  * Resizes specified dynamic array @array_ containing elements of size @element_size to a new
-  * number of elements @new_size. If the array has enough capacity to contain @new_size elements
-  * then the function simply returns false. If the array instead is too small, the function
-  * allocates a new buffer large enough to contain @new_size, copies the old buffer to the new one,
-  * destroys the old buffer and returns true.
-  */
+* Resizes specified dynamic array @array_ containing elements of size @element_size to a new
+* number of elements @new_size. If the array has enough capacity to contain @new_size elements
+* then the function simply returns false. If the array instead is too small, the function
+* allocates a new buffer large enough to contain @new_size, copies the old buffer to the new one,
+* destroys the old buffer and returns true.
+*/
 static inline koji_bool array_resize(void *array_, uint element_size, uint new_size)
 {
 	void_array *array = array_;
@@ -124,8 +124,8 @@ static inline koji_bool array_resize(void *array_, uint element_size, uint new_s
 }
 
 /**
-  * Destroys the buffer contained in the array_t pointed by @array_.
-  */
+* Destroys the buffer contained in the array_t pointed by @array_.
+*/
 static inline void array_destroy(void *array_)
 {
 	void_array *array = array_;
@@ -136,9 +136,9 @@ static inline void array_destroy(void *array_)
 }
 
 /**
-  * (internal) Resizes @array_ to contain its current size plus @num_elements.
-  *  @returns a pointer to the first of new elements.
-  */
+* (internal) Resizes @array_ to contain its current size plus @num_elements.
+*  @returns a pointer to the first of new elements.
+*/
 static inline void* _array_push(void *array_, uint element_size, uint num_elements)
 {
 	void_array *array = array_;
@@ -148,14 +148,14 @@ static inline void* _array_push(void *array_, uint element_size, uint num_elemen
 }
 
 /**
-  * Expands @array contain @n new elements of specified @type and returns a pointer to the first
-  * new element.
-  */
+* Expands @array contain @n new elements of specified @type and returns a pointer to the first
+* new element.
+*/
 #define array_push(array, type, n) ((type*)_array_push(array, sizeof(type), n))
 
 /**
-  * Pushes @value of type @type to the back of @array.
-  */
+* Pushes @value of type @type to the back of @array.
+*/
 #define array_push_value(array, type, value) *(type*)_array_push(array, sizeof(type), 1) = value
 
 #pragma endregion
@@ -164,8 +164,8 @@ static inline void* _array_push(void *array_, uint element_size, uint num_elemen
 #pragma region Diagnostics
 
 /**
-  * Describes a specific location as in line and column in a specific source file.
-  */
+* Describes a specific location as in line and column in a specific source file.
+*/
 typedef struct kj_source_location
 {
 	const char *filename;
@@ -175,8 +175,8 @@ typedef struct kj_source_location
 kj_source_location;
 
 /**
-  * Type of the function set by the user that will handle any compilation or runtime error.
-  */
+* Type of the function set by the user that will handle any compilation or runtime error.
+*/
 typedef void(*kj_error_report_fn)(void *user_data, kj_source_location, const char *message);
 
 static void default_error_report_fn(void* user_data, kj_source_location sl, const char *message)
@@ -187,8 +187,8 @@ static void default_error_report_fn(void* user_data, kj_source_location sl, cons
 }
 
 /**
-  * Groups info about the error handler used during compilation and execution.
-  */
+* Groups info about the error handler used during compilation and execution.
+*/
 typedef struct kj_error_handler
 {
 	void *user_data;
@@ -198,9 +198,9 @@ typedef struct kj_error_handler
 kj_error_handler;
 
 /**
-  * Reports an issue at source location @sl with printf-like @format and arguments @args using
-  * specified handler @e.
-  */
+* Reports an issue at source location @sl with printf-like @format and arguments @args using
+* specified handler @e.
+*/
 static void reportv(kj_error_handler *e, kj_source_location sl, const char *format, va_list args)
 {
 	static const char *header_format = "at '%s' (%d:%d): ";
@@ -213,9 +213,9 @@ static void reportv(kj_error_handler *e, kj_source_location sl, const char *form
 }
 
 /**
-  * Reports an issue at source location @sl with printf-like @format and variadic arguments using
-  * specified handler @e.
-  */
+* Reports an issue at source location @sl with printf-like @format and variadic arguments using
+* specified handler @e.
+*/
 static void report(kj_error_handler *e, kj_source_location sl, const char *format, ...)
 {
 	va_list args;
@@ -225,9 +225,9 @@ static void report(kj_error_handler *e, kj_source_location sl, const char *forma
 }
 
 /**
-  * Reports the specified error message and jumps to the error handler code.
-  */
-static void compile_error(kj_error_handler *e, kj_source_location sl, const char *format, ...)
+* Reports the specified error message and jumps to the error handler code.
+*/
+static void compiler_error(kj_error_handler *e, kj_source_location sl, const char *format, ...)
 {
 	va_list args;
 	va_start(args, format);
@@ -242,9 +242,9 @@ static void compile_error(kj_error_handler *e, kj_source_location sl, const char
 #pragma region Lexer
 
 /**
-  * Value rapresenting an enumerated token value (e.g. kw_while) or a valid sequence of characters
-  * (e.g. '>=').
-  */
+* Value rapresenting an enumerated token value (e.g. kw_while) or a valid sequence of characters
+* (e.g. '>=').
+*/
 typedef int kj_token;
 
 enum
@@ -272,13 +272,13 @@ enum
 };
 
 /**
-  * A lexer scans a stream using a provided stream_reader matching tokens recognized by the
-  * language such as the "if" keyword, or a string, or an identifier. The parser then verifies that
-  * the sequence of tokens in an input source file scanned by the lexer is valid and generates the
-  * appropriate output bytecode.
-  * This lexer is implemented as a basic state machine that implements the language tokens regular
-  * expression.
-  */
+* A lexer scans a stream using a provided stream_reader matching tokens recognized by the
+* language such as the "if" keyword, or a string, or an identifier. The parser then verifies that
+* the sequence of tokens in an input source file scanned by the lexer is valid and generates the
+* appropriate output bytecode.
+* This lexer is implemented as a basic state machine that implements the language tokens regular
+* expression.
+*/
 typedef struct kj_lexer
 {
 	kj_error_handler *error_handler;
@@ -354,8 +354,8 @@ static inline int _lex_accept_char(kj_lexer *l, char ch)
 }
 
 /**
-  * @returns whether the next char is a valid name char.
-  */
+* @returns whether the next char is a valid name char.
+*/
 static inline koji_bool _lex_is_identifier_char(char ch, koji_bool first_char)
 {
 	return (ch >= 'A' && ch <= 'Z') ||
@@ -365,9 +365,9 @@ static inline koji_bool _lex_is_identifier_char(char ch, koji_bool first_char)
 }
 
 /**
-  * Scans the input for an name. \p first_char specifies whether this is the first name
-  * character read. It sets l->lookahead to the tok_identifier if some name was read and returns it.
-  */
+* Scans the input for an name. \p first_char specifies whether this is the first name
+* character read. It sets l->lookahead to the tok_identifier if some name was read and returns it.
+*/
 static inline kj_token _lex_scan_identifier(kj_lexer *l, koji_bool first_char)
 {
 	while (_lex_is_identifier_char(l->curr_char, first_char))
@@ -380,39 +380,39 @@ static inline kj_token _lex_scan_identifier(kj_lexer *l, koji_bool first_char)
 }
 
 /**
-  * Converts specified token @tok into its equivalent string and writs the reslt in @buffer of size
-  * @buffer_size.
-  */
+* Converts specified token @tok into its equivalent string and writs the reslt in @buffer of size
+* @buffer_size.
+*/
 static const char *lex_token_to_string(kj_token tok, char *buffer, uint buffer_size)
 {
 	switch (tok)
 	{
-		case tok_eos: return "end-of-stream";
-		case tok_integer: return "integer";
-		case tok_real: return "float";
-		case tok_string: return "string";
-		case tok_identifier: return "identifier";
-		case kw_def: return "def";
-		case kw_do: return "do";
-		case kw_else: return "else";
-		case kw_false: return "false";
-		case kw_globals: return "globals";
-		case kw_for: return "for";
-		case kw_if: return "if";
-		case kw_in: return "in";
-		case kw_return: return "return";
-		case kw_true: return "true";
-		case kw_var: return "var";
-		case kw_while: return "while";
-		default:
-			snprintf(buffer, buffer_size, "'%s'", (const char*)&tok);
-			return buffer;
+	case tok_eos: return "end-of-stream";
+	case tok_integer: return "integer";
+	case tok_real: return "float";
+	case tok_string: return "string";
+	case tok_identifier: return "identifier";
+	case kw_def: return "def";
+	case kw_do: return "do";
+	case kw_else: return "else";
+	case kw_false: return "false";
+	case kw_globals: return "globals";
+	case kw_for: return "for";
+	case kw_if: return "if";
+	case kw_in: return "in";
+	case kw_return: return "return";
+	case kw_true: return "true";
+	case kw_var: return "var";
+	case kw_while: return "while";
+	default:
+		snprintf(buffer, buffer_size, "'%s'", (const char*)&tok);
+		return buffer;
 	}
 }
 
 /*
-  * @returns a readable string for current lookahead (e.g. it returns "end-of-stream" for tok_eos)
-  */
+* @returns a readable string for current lookahead (e.g. it returns "end-of-stream" for tok_eos)
+*/
 static const char *lex_lookahead_to_string(kj_lexer *l)
 {
 	if (l->lookahead == tok_eos)
@@ -422,8 +422,8 @@ static const char *lex_lookahead_to_string(kj_lexer *l)
 }
 
 /**
-  * Scans the next token in the source stream and returns its type.
-  */
+* Scans the next token in the source stream and returns its type.
+*/
 static kj_token lex(kj_lexer *l)
 {
 	l->lookahead = tok_eos;
@@ -434,226 +434,226 @@ static kj_token lex(kj_lexer *l)
 		koji_bool decimal = false;
 		switch (l->curr_char)
 		{
-			case EOF:
-				return tok_eos;
+		case EOF:
+			return tok_eos;
 
-			case '\n':
-				l->newline = true;
+		case '\n':
+			l->newline = true;
 
-			case ' ': case '\r': case '\t':
-				_lex_skip(l);
-				break;
+		case ' ': case '\r': case '\t':
+			_lex_skip(l);
+			break;
 
-			case ',': case ';': case ':': case '(': case ')': case '[': case ']': case '{': case '}':
-				l->lookahead = l->curr_char;
-				_lex_push(l);
-				return l->lookahead;
+		case ',': case ';': case ':': case '(': case ')': case '[': case ']': case '{': case '}':
+			l->lookahead = l->curr_char;
+			_lex_push(l);
+			return l->lookahead;
 
 			/* strings */
-			case '"':
-			case '\'':
+		case '"':
+		case '\'':
+		{
+			char delimiter = l->curr_char;
+			_lex_skip(l);
+			while (l->curr_char != EOF && l->curr_char != delimiter)
 			{
-				char delimiter = l->curr_char;
-				_lex_skip(l);
-				while (l->curr_char != EOF && l->curr_char != delimiter)
-				{
-					_lex_push(l);
-				}
-				if (l->curr_char != delimiter)
-				{
-					compile_error(l->error_handler, l->source_location, "end-of-stream while scanning string.");
-					return l->lookahead = tok_eos;
-				}
-				_lex_skip(l);
-				return l->lookahead = tok_string;
+				_lex_push(l);
 			}
+			if (l->curr_char != delimiter)
+			{
+				compiler_error(l->error_handler, l->source_location, "end-of-stream while scanning string.");
+				return l->lookahead = tok_eos;
+			}
+			_lex_skip(l);
+			return l->lookahead = tok_string;
+		}
 
 			{
-			case '.':
+		case '.':
+			decimal = true;
+			_lex_push(l);
+			if (l->curr_char < '0' || l->curr_char > '9') return l->lookahead = '.';
+
+		case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
+			l->lookahead = decimal ? tok_real : tok_integer;
+
+			if (!decimal)
+			{
+				// First sequence of numbers before optional dot.
+				while (l->curr_char >= '0' && l->curr_char <= '9')
+					_lex_push(l);
+
+				if (l->curr_char == '.')
+				{
+					_lex_push(l);
+					decimal = true;
+				}
+			}
+
+			if (decimal)
+			{
+				l->lookahead = tok_real;
+
+				// Scan decimal part
+				while (l->curr_char >= '0' && l->curr_char <= '9')
+					_lex_push(l);
+			}
+			else if (l->curr_char == 'e')
+			{
 				decimal = true;
 				_lex_push(l);
-				if (l->curr_char < '0' || l->curr_char > '9') return l->lookahead = '.';
-
-			case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
-				l->lookahead = decimal ? tok_real : tok_integer;
-
-				if (!decimal)
-				{
-					// First sequence of numbers before optional dot.
-					while (l->curr_char >= '0' && l->curr_char <= '9')
-						_lex_push(l);
-
-					if (l->curr_char == '.')
-					{
-						_lex_push(l);
-						decimal = true;
-					}
-				}
-
-				if (decimal)
-				{
-					l->lookahead = tok_real;
-
-					// Scan decimal part
-					while (l->curr_char >= '0' && l->curr_char <= '9')
-						_lex_push(l);
-				}
-				else if (l->curr_char == 'e')
-				{
-					decimal = true;
+				while (l->curr_char >= '0' && l->curr_char <= '9')
 					_lex_push(l);
-					while (l->curr_char >= '0' && l->curr_char <= '9')
-						_lex_push(l);
-				}
-
-				if (decimal)
-				{
-					l->token_real = (koji_real)atof(l->token_string);
-				}
-				else
-				{
-					char *dummy;
-					l->token_int = (koji_integer)strtoll(l->token_string, &dummy, 10);
-				}
-
-				return l->lookahead;
 			}
 
-			case '!':
-				_lex_push(l);
-				return l->lookahead = (_lex_accept_char(l, '=') ? '!=' : '!');
+			if (decimal)
+			{
+				l->token_real = (koji_real)atof(l->token_string);
+			}
+			else
+			{
+				char *dummy;
+				l->token_int = (koji_integer)strtoll(l->token_string, &dummy, 10);
+			}
 
-			case '&':
-				_lex_push(l);
-				return l->lookahead = (_lex_accept_char(l, '&') ? '&&' : '&');
+			return l->lookahead;
+			}
 
-			case '|':
-				_lex_push(l);
-				return l->lookahead = (_lex_accept_char(l, '|') ? '||' : '|');
+		case '!':
+			_lex_push(l);
+			return l->lookahead = (_lex_accept_char(l, '=') ? '!=' : '!');
 
-			case '=':
-				_lex_push(l);
-				return l->lookahead = (_lex_accept_char(l, '=') ? '==' : '=');
+		case '&':
+			_lex_push(l);
+			return l->lookahead = (_lex_accept_char(l, '&') ? '&&' : '&');
 
-			case '<':
-				_lex_push(l);
-				return l->lookahead = (_lex_accept_char(l, '=') ? '<=' : '<');
+		case '|':
+			_lex_push(l);
+			return l->lookahead = (_lex_accept_char(l, '|') ? '||' : '|');
 
-			case '>':
-				_lex_push(l);
-				return l->lookahead = (_lex_accept_char(l, '=') ? '>=' : '>');
+		case '=':
+			_lex_push(l);
+			return l->lookahead = (_lex_accept_char(l, '=') ? '==' : '=');
 
-			case '+':
-				_lex_push(l);
-				return l->lookahead = (_lex_accept_char(l, '=') ? '+=' : '+');
+		case '<':
+			_lex_push(l);
+			return l->lookahead = (_lex_accept_char(l, '=') ? '<=' : '<');
 
-			case '-':
-				_lex_push(l);
-				return l->lookahead = (_lex_accept_char(l, '=') ? '-=' : '-');
+		case '>':
+			_lex_push(l);
+			return l->lookahead = (_lex_accept_char(l, '=') ? '>=' : '>');
 
-			case '*':
-				_lex_push(l);
-				return l->lookahead = (_lex_accept_char(l, '=') ? '*=' : '*');
+		case '+':
+			_lex_push(l);
+			return l->lookahead = (_lex_accept_char(l, '=') ? '+=' : '+');
 
-			case '/':
-				_lex_push(l);
-				if (_lex_accept_char(l, '='))
-					return l->lookahead = '/=';
-				else if (l->curr_char == '/') /* line-comment */
-				{
+		case '-':
+			_lex_push(l);
+			return l->lookahead = (_lex_accept_char(l, '=') ? '-=' : '-');
+
+		case '*':
+			_lex_push(l);
+			return l->lookahead = (_lex_accept_char(l, '=') ? '*=' : '*');
+
+		case '/':
+			_lex_push(l);
+			if (_lex_accept_char(l, '='))
+				return l->lookahead = '/=';
+			else if (l->curr_char == '/') /* line-comment */
+			{
+				_lex_skip(l);
+				_lex_clear_token_string(l);
+				while (l->curr_char != '\n' && l->curr_char != -1)
 					_lex_skip(l);
-					_lex_clear_token_string(l);
-					while (l->curr_char != '\n' && l->curr_char != -1)
-						_lex_skip(l);
-					break;
-				}
-				// todo add block comment /* */
-				return l->lookahead = '/';
+				break;
+			}
+			// todo add block comment /* */
+			return l->lookahead = '/';
 
-				/* keywords */
-			case 'd':
-				_lex_push(l);
-				l->lookahead = tok_identifier;
-				switch (l->curr_char)
-				{
-					case 'e':
-						_lex_push(l);
-						if (_lex_accept(l, "f")) l->lookahead = kw_def;
-						break;
-					case 'o': _lex_push(l); l->lookahead = kw_do; break;
-				}
-				return l->lookahead = _lex_scan_identifier(l, false);
-
+			/* keywords */
+		case 'd':
+			_lex_push(l);
+			l->lookahead = tok_identifier;
+			switch (l->curr_char)
+			{
 			case 'e':
 				_lex_push(l);
-				l->lookahead = tok_identifier;
-				if (_lex_accept(l, "lse")) l->lookahead = kw_else;
-				return l->lookahead = _lex_scan_identifier(l, false);
+				if (_lex_accept(l, "f")) l->lookahead = kw_def;
+				break;
+			case 'o': _lex_push(l); l->lookahead = kw_do; break;
+			}
+			return l->lookahead = _lex_scan_identifier(l, false);
 
-			case 'f':
-				_lex_push(l);
-				l->lookahead = tok_identifier;
-				switch (l->curr_char)
-				{
-					case 'a': _lex_push(l); if (_lex_accept(l, "lse")) l->lookahead = kw_false; break;
-					case 'o': _lex_push(l); if (_lex_accept(l, "r"))   l->lookahead = kw_for; break;
-				}
-				return l->lookahead = _lex_scan_identifier(l, false);
+		case 'e':
+			_lex_push(l);
+			l->lookahead = tok_identifier;
+			if (_lex_accept(l, "lse")) l->lookahead = kw_else;
+			return l->lookahead = _lex_scan_identifier(l, false);
 
-			case 'g':
-				_lex_push(l);
-				l->lookahead = tok_identifier;
-				if (_lex_accept(l, "lobals")) l->lookahead = kw_globals;
-				return l->lookahead = _lex_scan_identifier(l, false);
+		case 'f':
+			_lex_push(l);
+			l->lookahead = tok_identifier;
+			switch (l->curr_char)
+			{
+			case 'a': _lex_push(l); if (_lex_accept(l, "lse")) l->lookahead = kw_false; break;
+			case 'o': _lex_push(l); if (_lex_accept(l, "r"))   l->lookahead = kw_for; break;
+			}
+			return l->lookahead = _lex_scan_identifier(l, false);
 
-			case 'i':
-				_lex_push(l);
-				l->lookahead = tok_identifier;
-				switch (l->curr_char)
-				{
-					case 'f': _lex_push(l); l->lookahead = kw_if; break;
-					case 'n': _lex_push(l); l->lookahead = kw_in; break;
-				}
-				return l->lookahead = _lex_scan_identifier(l, false);
+		case 'g':
+			_lex_push(l);
+			l->lookahead = tok_identifier;
+			if (_lex_accept(l, "lobals")) l->lookahead = kw_globals;
+			return l->lookahead = _lex_scan_identifier(l, false);
 
-			case 'r':
-				_lex_push(l);
-				l->lookahead = tok_identifier;
-				if (_lex_accept(l, "eturn")) l->lookahead = kw_return;
-				return l->lookahead = _lex_scan_identifier(l, false);
+		case 'i':
+			_lex_push(l);
+			l->lookahead = tok_identifier;
+			switch (l->curr_char)
+			{
+			case 'f': _lex_push(l); l->lookahead = kw_if; break;
+			case 'n': _lex_push(l); l->lookahead = kw_in; break;
+			}
+			return l->lookahead = _lex_scan_identifier(l, false);
 
-			case 't':
-				_lex_push(l);
-				l->lookahead = tok_identifier;
-				if (_lex_accept(l, "rue")) l->lookahead = kw_true;
-				return l->lookahead = _lex_scan_identifier(l, false);
+		case 'r':
+			_lex_push(l);
+			l->lookahead = tok_identifier;
+			if (_lex_accept(l, "eturn")) l->lookahead = kw_return;
+			return l->lookahead = _lex_scan_identifier(l, false);
 
-			case 'v':
-				_lex_push(l);
-				l->lookahead = tok_identifier;
-				if (_lex_accept(l, "ar")) l->lookahead = kw_var;
-				return l->lookahead = _lex_scan_identifier(l, false);
+		case 't':
+			_lex_push(l);
+			l->lookahead = tok_identifier;
+			if (_lex_accept(l, "rue")) l->lookahead = kw_true;
+			return l->lookahead = _lex_scan_identifier(l, false);
 
-			case 'w':
-				_lex_push(l);
-				l->lookahead = tok_identifier;
-				if (_lex_accept(l, "hile")) l->lookahead = kw_while;
-				return l->lookahead = _lex_scan_identifier(l, false);
+		case 'v':
+			_lex_push(l);
+			l->lookahead = tok_identifier;
+			if (_lex_accept(l, "ar")) l->lookahead = kw_var;
+			return l->lookahead = _lex_scan_identifier(l, false);
 
-			default:
-				_lex_scan_identifier(l, true);
-				if (l->lookahead != tok_identifier)
-					compile_error(l->error_handler, l->source_location, "unexpected character '%c' found.", l->curr_char);
-				return l->lookahead;
+		case 'w':
+			_lex_push(l);
+			l->lookahead = tok_identifier;
+			if (_lex_accept(l, "hile")) l->lookahead = kw_while;
+			return l->lookahead = _lex_scan_identifier(l, false);
+
+		default:
+			_lex_scan_identifier(l, true);
+			if (l->lookahead != tok_identifier)
+				compiler_error(l->error_handler, l->source_location, "unexpected character '%c' found.", l->curr_char);
+			return l->lookahead;
 		}
 	}
 }
 
 /**
-  * Initializes an unitialized lexer instance @l to use specified error handler @e. Lexer will scan
-  * source using specified stream @stream_func and @stream_data, using @filename as the source origin
-  * descriptor.
-  */
+* Initializes an unitialized lexer instance @l to use specified error handler @e. Lexer will scan
+* source using specified stream @stream_func and @stream_data, using @filename as the source origin
+* descriptor.
+*/
 static void lex_init(kj_lexer *l, kj_error_handler *e, const char *filename, koji_stream_reader_fn stream_func,
 	void* stream_data)
 {
@@ -673,8 +673,8 @@ static void lex_init(kj_lexer *l, kj_error_handler *e, const char *filename, koj
 }
 
 /**
-  * Deinitializes an initialized lexer instance destroying its resources.
-  */
+* Deinitializes an initialized lexer instance destroying its resources.
+*/
 static void lex_close(kj_lexer *l)
 {
 	free(l->token_string);
@@ -688,6 +688,7 @@ static void lex_close(kj_lexer *l)
 /** Enumeration that lists all Virtual Machine opcodes */
 typedef enum kj_opcode
 {
+	/* operations that write into R(A) */
 	KJ_OP_LOADNIL, /* loadnil A, Bx;    ; R(A), ..., R(Bx) = nil */
 	KJ_OP_LOADB,   /* loadbool A, B, C  ; R(A) = bool(B) then jump by C */
 	KJ_OP_MOV,     /* mov A, Bx         ; R(A) = R(Bx) */
@@ -701,13 +702,11 @@ typedef enum kj_opcode
 	KJ_OP_POW,     /* pow A, B, C       ; R(A) = pow(R(B), R(C)) */
 	KJ_OP_TESTSET, /* testset A, B, C   ; if R(B) == (bool)C then R(A) = R(B) else jump 1 */
 	KJ_OP_CLOSURE, /* closure A, Bx     ; R(A) = closure for prototype Bx */
-	KJ_OP_CALL,    /* call A, B, C      ; call closure R(A) with C arguments starting at R(B) */
-	KJ_OP_MCALL,   /* call A, B, C      ; call object R(A) method with name R(B) with C arguments from R(A + 1) on */
 	KJ_OP_GLOBALS, /* globals A         ; get the global table into register A */
 	KJ_OP_NEWTABLE, /* newtable A       ; creates a new table in R(A) */
 	KJ_OP_GETTABLE, /* gettable A, B, C ; R(A) = table(R(B))[R(C)] */
 
-	// operations that do not write into a target register
+	/* operations that do not write into R(A) */
 	KJ_OP_TEST,    /* test A, Bx        ; if (bool)R(A) != (bool)B then jump 1 */
 	KJ_OP_JUMP,    /* jump Bx           ; jump by Bx instructions */
 	KJ_OP_EQ,      /* eq A, B, C        ; if (R(A) == R(B)) == (bool)C then nothing else jump 1 */
@@ -715,12 +714,14 @@ typedef enum kj_opcode
 	KJ_OP_LTE,     /* lte A, B, C       ; if (R(A) <= R(B)) == (bool)C then nothing else jump 1 */
 	KJ_OP_SCALL,   /* scall A, Bx       ; call static function at Bx with arguments starting from R(A) */
 	KJ_OP_RET,     /* ret A, B          ; return values R(A), ..., R(B)*/
-	KJ_OP_SETTABLE, /*settable A, B, C  ; table(R(A))[R(B)] = R(C) */
+	KJ_OP_SETTABLE,/* settable A, B, C  ; table(R(A))[R(B)] = R(C) */
+	KJ_OP_CALL,    /* call A, B, C      ; call closure R(B) with C arguments starting at R(A) */
+	KJ_OP_MCALL,   /* mcall A, B, C     ; call object R(A - 1) method with name R(B) with C arguments from R(A) on */
 } kj_opcode;
 
 static const char *KJ_OP_STRINGS[] = {
 	"loadnil", "loadb", "mov", "neg", "unm", "add", "sub", "mul", "div", "mod", "pow", "testset", "closure",
-	"call", "mcall", "globals", "newtable", "gettable", "test", "jump", "eq", "lt", "lte", "scall", "ret", "settable"
+	"globals", "newtable", "gettable", "test", "jump", "eq", "lt", "lte", "scall", "ret", "settable", "call", "mcall"
 };
 
 /* Instructions */
@@ -776,14 +777,14 @@ static inline void replace_Bx(kj_instruction *i, int Bx) { *i = (*i & 0x3FFF) | 
 static inline void replace_C(kj_instruction *i, int C) { *i = (*i & 0x7FFFFF) | (C << 23); }
 
 /**
-  * A value is the primary script data type. It is dynamically typed as it carries its type information at
-  * runtime.
-  */
+* A value is the primary script data type. It is dynamically typed as it carries its type information at
+* runtime.
+*/
 typedef struct kj_value kj_value;
 
 /**
-  * TODO
-  */
+* TODO
+*/
 typedef struct kj_closure
 {
 	koji_prototype* proto;
@@ -857,8 +858,8 @@ struct koji_prototype
 };
 
 /**
-  * (internal) Destroys prototype @p resources and frees its memory.
-  */
+* (internal) Destroys prototype @p resources and frees its memory.
+*/
 static void prototype_delete(koji_prototype* p);
 
 /**
@@ -880,37 +881,37 @@ static inline void value_destroy(kj_value* v)
 {
 	switch (v->type)
 	{
-		case KOJI_TYPE_NIL:
-		case KOJI_TYPE_BOOL:
-		case KOJI_TYPE_INT:
-		case KOJI_TYPE_REAL:
-			break;
+	case KOJI_TYPE_NIL:
+	case KOJI_TYPE_BOOL:
+	case KOJI_TYPE_INT:
+	case KOJI_TYPE_REAL:
+		break;
 
-		case KOJI_TYPE_STRING:
+	case KOJI_TYPE_STRING:
+	{
+		uint* references = (uint*)v->object;
+		if ((*references)-- == 1)
+			free(v->object);
+		break;
+	}
+
+	case KOJI_TYPE_TABLE:
+	{
+		uint* references = (uint*)v->object;
+		if ((*references)-- == 1)
 		{
-			uint* references = (uint*)v->object;
-			if ((*references)-- == 1)
-				free(v->object);
-			break;
+			table_destruct(&v->table->table);
+			free(v->table);
 		}
+		break;
+	}
 
-		case KOJI_TYPE_TABLE:
-		{
-			uint* references = (uint*)v->object;
-			if ((*references)-- == 1)
-			{
-				table_destruct(&v->table->table);
-				free(v->table);
-			}
-			break;
-		}
+	case KOJI_TYPE_CLOSURE:
+		/* check whether this closure was the last reference to the prototype module, if so destroy the module */
+		prototype_release(v->closure.proto);
+		break;
 
-		case KOJI_TYPE_CLOSURE:
-			/* check whether this closure was the last reference to the prototype module, if so destroy the module */
-			prototype_release(v->closure.proto);
-			break;
-
-		default: break;
+	default: break;
 	}
 }
 
@@ -978,16 +979,16 @@ static inline void value_set(kj_value* dest, const kj_value* src)
 	/* fixme */
 	switch (dest->type)
 	{
-		case KOJI_TYPE_STRING:
-		case KOJI_TYPE_TABLE:
-			++*(uint*)(dest->object); /* bump up the reference */
-			break;
+	case KOJI_TYPE_STRING:
+	case KOJI_TYPE_TABLE:
+		++*(uint*)(dest->object); /* bump up the reference */
+		break;
 
-		case KOJI_TYPE_CLOSURE: /* fixme */
-			++dest->closure.proto->references;
-			break;
+	case KOJI_TYPE_CLOSURE: /* fixme */
+		++dest->closure.proto->references;
+		break;
 
-		default: break;
+	default: break;
 	}
 }
 
@@ -1007,13 +1008,13 @@ static hash_t value_hash(kj_value value)
 	hash_t h;
 	switch (value.type)
 	{
-		case KOJI_TYPE_NIL: h = 0; break;
-		case KOJI_TYPE_STRING:
-			h = 5381;
-			for (char* ch = value.string->data; *ch; ++ch)
-				h = ((h << 5) + h) + *ch; /* hash * 33 + c */
-			return h;
-		default: h = (hash_t)value.object; break;
+	case KOJI_TYPE_NIL: h = 0; break;
+	case KOJI_TYPE_STRING:
+		h = 5381;
+		for (char* ch = value.string->data; *ch; ++ch)
+			h = ((h << 5) + h) + *ch; /* hash * 33 + c */
+		return h;
+	default: h = (hash_t)value.object; break;
 	}
 	hash_t k = value.type == KOJI_TYPE_NIL ? 0 : (hash_t)value.object;
 	k ^= 1ULL << value.type;
@@ -1102,7 +1103,7 @@ static koji_bool _table_reserve(kj_table* table, size_t size)
 			entry->value = old_entries[i].value;
 		}
 	}
-	
+
 	/* free old table without calling value destructors */
 	free(old_entries);
 
@@ -1122,7 +1123,7 @@ static koji_bool table_put(kj_table* table, kj_value const* key, kj_value const*
 	if (entry->key.type != KOJI_TYPE_NIL)
 	{
 		/* value already in the table, update the entry with the new value (which could be different if
-		 * user specified a custom == operator) */
+		* user specified a custom == operator) */
 		value_set(&entry->value, value);
 
 		/* no entry added */
@@ -1205,8 +1206,12 @@ static void prototype_dump(koji_prototype* p, int level, int index)
 			printf("%s\t\t%d, %d\t", opstr, A, Bx);
 			goto print_constant;
 
-		case KJ_OP_ADD: case KJ_OP_SUB: case KJ_OP_MUL: case KJ_OP_DIV: case KJ_OP_MOD: case KJ_OP_POW: case KJ_OP_CALL: case KJ_OP_MCALL:
-		case KJ_OP_SETTABLE: case KJ_OP_GETTABLE:
+		case KJ_OP_ADD: case KJ_OP_SUB: case KJ_OP_MUL: case KJ_OP_DIV: case KJ_OP_MOD: case KJ_OP_POW: case KJ_OP_CALL:
+			printf("%s\t\t%d, %d, %d", opstr, A, B, C);
+			Bx = C;
+			goto print_constant;
+
+		case KJ_OP_SETTABLE: case KJ_OP_GETTABLE: case KJ_OP_MCALL:
 			printf("%s\t%d, %d, %d", opstr, A, B, C);
 			Bx = C;
 
@@ -1263,9 +1268,9 @@ static void prototype_dump(koji_prototype* p, int level, int index)
 }
 
 /**
-  * A static function is a C function registered by the user *before* compiling scripts. These
-  * should be low level library functions that might are called often (e.g. sqrt).
-  */
+* A static function is a C function registered by the user *before* compiling scripts. These
+* should be low level library functions that might are called often (e.g. sqrt).
+*/
 typedef struct kj_static_function
 {
 	uint name_string_offset;
@@ -1274,8 +1279,8 @@ typedef struct kj_static_function
 } kj_static_function;
 
 /**
-  * Collection of static functions.
-  */
+* Collection of static functions.
+*/
 typedef struct kj_static_functions
 {
 	array_type(char) name_buffer;
@@ -1283,9 +1288,9 @@ typedef struct kj_static_functions
 } kj_static_functions;
 
 /**
-  * Searches for a static function with name @name and @nargs number of arguments in @fns and returns its index in
-  * fns->functions if found, -1 otherwise.
-  */
+* Searches for a static function with name @name and @nargs number of arguments in @fns and returns its index in
+* fns->functions if found, -1 otherwise.
+*/
 static int static_functions_fetch(kj_static_functions const* fns, const char* name, int nargs)
 {
 	int best_candidate = -1;
@@ -1307,8 +1312,8 @@ static int static_functions_fetch(kj_static_functions const* fns, const char* na
 #pragma region Compiler
 
 /**
-  * A local variable is simply a named and reserved stack register offset.
-  */
+* A local variable is simply a named and reserved stack register offset.
+*/
 typedef struct
 {
 	uint identifier_offset;
@@ -1317,8 +1322,8 @@ typedef struct
 
 
 /**
- * A label is a dynamic array of the indices of the instructions that branch to it.
- */
+* A label is a dynamic array of the indices of the instructions that branch to it.
+*/
 typedef array_type(uint) kc_label;
 
 
@@ -1388,8 +1393,8 @@ static void* allocator_alloc(kj_allocation_page** head, uint size, uint alignmen
 #pragma endregion
 
 /**
- * Holds the state of a compilation execution.
- */
+* Holds the state of a compilation execution.
+*/
 typedef struct kj_compiler
 {
 	kj_allocation_page* allocator;
@@ -1406,16 +1411,16 @@ typedef struct kj_compiler
 /* Auxiliary parsing functions */
 
 /**
-  * Formats and reports a syntax error (unexpected <token>).
-  */
+* Formats and reports a syntax error (unexpected <token>).
+*/
 static void kc_syntax_error(kj_compiler* c, kj_source_location sourceloc)
 {
-	compile_error(c->lex->error_handler, sourceloc, "unexpected %s.", lex_lookahead_to_string(c->lex));
+	compiler_error(c->lex->error_handler, sourceloc, "unexpected %s.", lex_lookahead_to_string(c->lex));
 }
 
 /**
-  * Scans next token if lookahead is @tok. Returns whether a new token was scanned.
-  */
+* Scans next token if lookahead is @tok. Returns whether a new token was scanned.
+*/
 static inline koji_bool kc_accept(kj_compiler* c, kj_token tok)
 {
 	if (c->lex->lookahead == tok)
@@ -1427,21 +1432,21 @@ static inline koji_bool kc_accept(kj_compiler* c, kj_token tok)
 }
 
 /**
-  * Reports a compilation error if lookhead differs from @tok.
-  */
+* Reports a compilation error if lookhead differs from @tok.
+*/
 static inline void kc_check(kj_compiler* c, kj_token tok)
 {
 	if (c->lex->lookahead != tok)
 	{
 		char token_string_buffer[64];
-		compile_error(c->lex->error_handler, c->lex->source_location, "missing %s before '%s'.",
+		compiler_error(c->lex->error_handler, c->lex->source_location, "missing %s before '%s'.",
 			lex_token_to_string(tok, token_string_buffer, 64), lex_lookahead_to_string(c->lex));
 	}
 }
 
 /**
-  * Checks that lookahead is @tok then scans next token.
-  */
+* Checks that lookahead is @tok then scans next token.
+*/
 static inline void kc_expect(kj_compiler* c, kj_token tok)
 {
 	kc_check(c, tok);
@@ -1449,8 +1454,8 @@ static inline void kc_expect(kj_compiler* c, kj_token tok)
 }
 
 /**
-  * Returns an "end of statement" token is found (newline, ';', '}' or end-of-stream) and "eats" it.
-  */
+* Returns an "end of statement" token is found (newline, ';', '}' or end-of-stream) and "eats" it.
+*/
 static inline koji_bool kc_accept_end_of_stmt(kj_compiler* c)
 {
 	if (kc_accept(c, ';')) return true;
@@ -1460,8 +1465,8 @@ static inline koji_bool kc_accept_end_of_stmt(kj_compiler* c)
 }
 
 /**
-  * Expects an end of statement.
-  */
+* Expects an end of statement.
+*/
 static inline void kc_expect_end_of_stmt(kj_compiler* c)
 {
 	if (!kc_accept_end_of_stmt(c)) kc_syntax_error(c, c->lex->source_location);
@@ -1470,8 +1475,8 @@ static inline void kc_expect_end_of_stmt(kj_compiler* c)
 /* Constants management */
 
 /**
-  * Searches a constant in value @k and adds it if not found, then it returns its index.
-  */
+* Searches a constant in value @k and adds it if not found, then it returns its index.
+*/
 static inline int _kc_fetch_primitive_constant(kj_compiler* c, kj_value k)
 {
 	for (uint i = 0; i < c->proto->constants.size; ++i)
@@ -1496,8 +1501,8 @@ static inline int kc_fetch_constant_int(kj_compiler* c, koji_integer k)
 }
 
 /**
-  * Fetches or defines if not found a real constant @k and returns its index.
-  */
+* Fetches or defines if not found a real constant @k and returns its index.
+*/
 static inline int kc_fetch_constant_real(kj_compiler* c, koji_real k)
 {
 	return _kc_fetch_primitive_constant(c, (kj_value) { KOJI_TYPE_REAL, .real = k });
@@ -1520,41 +1525,46 @@ static inline int kc_fetch_constant_string(kj_compiler* c, const char* k)
 	int index = c->proto->constants.size;
 	kj_value* constant = array_push(&c->proto->constants, kj_value, 1);
 	constant->type = KOJI_TYPE_STRING;
-	
+
 	/* create the string object */
 	uint str_length = strlen(k);
 	kj_string* string = malloc(sizeof(kj_string) + str_length + 1);
 	constant->object = string;
 
 	/* setup the string object so that it always holds a reference (it is never destroyed)
-	 * and the actual string buffer is right after the string object in memory (same allocation) */
+	* and the actual string buffer is right after the string object in memory (same allocation) */
 	string->references = 1;
 	string->length = str_length;
 	string->data = (char*)string + sizeof(kj_string);
 	memcpy(string->data, k, str_length + 1);
-	
+
 	return index;
 }
 
 /* instruction emission */
 
+static inline ubyte _kj_max_ub(ubyte a, ubyte b)
+{
+	return a > b ? a : b;
+}
+
 /**
-  * Pushes instruction @i to current prototype instructions.
-  */
+* Pushes instruction @i to current prototype instructions.
+*/
 static inline void kc_emit(kj_compiler* c, kj_instruction i)
 {
-	if (opcode_has_target(decode_op(i)))
+	kj_opcode const op = decode_op(i);
+	if (opcode_has_target(op))
 	{
-		ubyte ntemporaries = (ubyte)decode_A(i) + 1;
-		c->proto->ntemporaries = c->proto->ntemporaries < ntemporaries ? ntemporaries : c->proto->ntemporaries;
+		c->proto->ntemporaries = _kj_max_ub(c->proto->ntemporaries, (ubyte)decode_A(i) + 1);
 	}
 	array_push_value(&c->proto->instructions, kj_instruction, i);
 }
 
 /**
-  * Computes and returns the offset specified from instruction index to the next instruction
-  * that will be emitted in current prototype.
-  */
+* Computes and returns the offset specified from instruction index to the next instruction
+* that will be emitted in current prototype.
+*/
 static inline int kc_offset_to_next_instruction(kj_compiler* c, int from_instruction_index)
 {
 	return c->proto->instructions.size - from_instruction_index - 1;
@@ -1563,9 +1573,9 @@ static inline int kc_offset_to_next_instruction(kj_compiler* c, int from_instruc
 /* Jump instruction related */
 
 /**
-  * Writes the offset to jump instructions contained in @label starting from @begin to target
-  * instruction index target_index.
-  */
+* Writes the offset to jump instructions contained in @label starting from @begin to target
+* instruction index target_index.
+*/
 static void kc_bind_label_to(kj_compiler* c, kc_label* label, uint begin, int target_index)
 {
 	for (uint i = begin, size = label->size; i < size; ++i)
@@ -1577,9 +1587,9 @@ static void kc_bind_label_to(kj_compiler* c, kc_label* label, uint begin, int ta
 }
 
 /**
-  * Binds jump instructions in @label starting from @begin to the next instruction that will be
-  * emitted to current prototype.
-  */
+* Binds jump instructions in @label starting from @begin to the next instruction that will be
+* emitted to current prototype.
+*/
 static inline void kc_bind_label_here(kj_compiler* c, kc_label* label, uint begin)
 {
 	kc_bind_label_to(c, label, begin, c->proto->instructions.size);
@@ -1588,8 +1598,8 @@ static inline void kc_bind_label_here(kj_compiler* c, kc_label* label, uint begi
 /* local variables */
 
 /**
-  * Adds an identifier string to the compiler buffer and returns the string offset within it.
-  */
+* Adds an identifier string to the compiler buffer and returns the string offset within it.
+*/
 static uint kc_push_identifier(kj_compiler* c, const char* identifier, uint identifier_size)
 {
 	char* my_identifier = array_push(&c->identifiers, char, identifier_size + 1);
@@ -1598,9 +1608,9 @@ static uint kc_push_identifier(kj_compiler* c, const char* identifier, uint iden
 }
 
 /**
-  * Searches for a local named @identifier from current prototype up to the main one and returns
-  * a pointer to it if found, null otherwise.
-  */
+* Searches for a local named @identifier from current prototype up to the main one and returns
+* a pointer to it if found, null otherwise.
+*/
 static kc_local* kc_fetch_local(kj_compiler* c, const char* identifier)
 {
 	for (int i = c->locals.size - 1; i >= 0; --i)
@@ -1614,9 +1624,9 @@ static kc_local* kc_fetch_local(kj_compiler* c, const char* identifier)
 }
 
 /**
-  * Defines a new local variable in current prototype with an identifier starting at
-  * identifier_offset preiously pushed through _push_identifier().
-  */
+* Defines a new local variable in current prototype with an identifier starting at
+* identifier_offset preiously pushed through _push_identifier().
+*/
 static void kc_define_local(kj_compiler* c, uint identifier_offset)
 {
 	kc_local* var = array_push(&c->locals, kc_local, 1);
@@ -1628,10 +1638,10 @@ static void kc_define_local(kj_compiler* c, uint identifier_offset)
 /* Expressions */
 
 /**
-  * A state structure used to contain information about expression parsing and compilation
-  * such as the desired target register, whether the expression should be negated and the
-  * indices of new jump instructions in compiler state global true/false labels.
-  */
+* A state structure used to contain information about expression parsing and compilation
+* such as the desired target register, whether the expression should be negated and the
+* indices of new jump instructions in compiler state global true/false labels.
+*/
 typedef struct kc_expr_state
 {
 	int target_register;
@@ -1641,8 +1651,8 @@ typedef struct kc_expr_state
 } kc_expr_state;
 
 /**
-  * Enumeration of the types an expression can take.
-  */
+* Enumeration of the types an expression can take.
+*/
 typedef enum
 {
 	KC_EXPR_TYPE_NIL,
@@ -1658,13 +1668,13 @@ typedef enum
 } kc_expr_type;
 
 static const char* KC_EXPR_TYPE_TYPE_TO_STRING[] = { "nil", "bool", "int", "real", "string", "register",
-	"bool", "bool", "bool" };
+"bool", "bool", "bool" };
 
 /**
-  * An expr is the result of a subexpression during compilation. For optimal bytecode generation
-  * expression are actually compiled to registers lazily, at the last moment possible so that
-  * simple optimizations such as operations on constants can be performed.
-  */
+* An expr is the result of a subexpression during compilation. For optimal bytecode generation
+* expression are actually compiled to registers lazily, at the last moment possible so that
+* simple optimizations such as operations on constants can be performed.
+*/
 typedef struct kc_expr
 {
 	kc_expr_type type;
@@ -1673,7 +1683,7 @@ typedef struct kc_expr
 		koji_integer integer;
 		koji_real real;
 		int location;
-		struct  
+		struct
 		{
 			uint length;
 			char* data;
@@ -1690,44 +1700,45 @@ typedef struct kc_expr
 static const kc_expr KC_EXPR_NIL = { .type = KC_EXPR_TYPE_NIL, .positive = true };
 
 /**
-  * Makes and returns a boolean expr of specified @value.
-  */
+* Makes and returns a boolean expr of specified @value.
+*/
 static inline kc_expr kc_expr_boolean(koji_bool value)
 {
 	return (kc_expr) { KC_EXPR_TYPE_BOOL, .integer = value, .positive = true };
 }
 
 /**
-  * Makes and returns a integer expr of specified @value.
-  */
+* Makes and returns a integer expr of specified @value.
+*/
 static inline kc_expr kc_expr_integer(koji_integer value)
 {
 	return (kc_expr) { KC_EXPR_TYPE_INT, .integer = value, .positive = true };
 }
 
 /**
-  * Makes and returns a real expr of specified @value.
-  */
+* Makes and returns a real expr of specified @value.
+*/
 static inline kc_expr kc_expr_real(koji_real value)
 {
 	return (kc_expr) { KC_EXPR_TYPE_REAL, .real = value, .positive = true };
 }
 
 /**
-  * Makes and returns a string expr of specified @string.
-  */
+* Makes and returns a string expr of specified @string.
+*/
 static inline kc_expr kc_expr_string(kj_compiler* c, uint length)
 {
 	return (kc_expr) {
 		KC_EXPR_TYPE_STRING,
-		.string.length = length,
-		.string.data = allocator_alloc(&c->allocator, length + 1, 1),
-		.positive = true };
+			.string.length = length,
+			.string.data = allocator_alloc(&c->allocator, length + 1, 1),
+			.positive = true
+	};
 }
 
 /**
-  * Makes and returns a register expr of specified @location.
-  */
+* Makes and returns a register expr of specified @location.
+*/
 static inline kc_expr kc_expr_register(int location)
 {
 	return (kc_expr) { KC_EXPR_TYPE_REGISTER, .location = location, .positive = true };
@@ -1738,16 +1749,18 @@ static inline kc_expr kc_expr_register(int location)
 */
 static inline kc_expr kc_expr_accessor(int object_location, int accessor_name_location)
 {
-	return (kc_expr) { KC_EXPR_TYPE_ACCESSOR,
-		.lhs = object_location,
-		.rhs = accessor_name_location,
-		.positive = true };
+	return (kc_expr) {
+		KC_EXPR_TYPE_ACCESSOR,
+			.lhs = object_location,
+			.rhs = accessor_name_location,
+			.positive = true
+	};
 }
 
 /**
-  * Makes and returns a comparison expr of specified @type between @lhs_location and @rhs_location
-  * against test value @test_value.
-  */
+* Makes and returns a comparison expr of specified @type between @lhs_location and @rhs_location
+* against test value @test_value.
+*/
 static inline kc_expr kc_expr_comparison(kc_expr_type type, koji_bool test_value, int lhs_location,
 	int rhs_location)
 {
@@ -1755,68 +1768,68 @@ static inline kc_expr kc_expr_comparison(kc_expr_type type, koji_bool test_value
 }
 
 /**
-  * Returns whether expression @type is a constant (bool, int or real).
-  */
+* Returns whether expression @type is a constant (bool, int or real).
+*/
 static inline koji_bool kc_expr_is_constant(kc_expr_type type)
 {
 	return type >= KC_EXPR_TYPE_BOOL && type <= KC_EXPR_TYPE_STRING;
 }
 
 /**
-  * Returns whether an expression of specified @expr can be *statically* converted to a bool.
-  */
+* Returns whether an expression of specified @expr can be *statically* converted to a bool.
+*/
 static inline koji_bool kc_expr_is_bool_convertible(kc_expr_type type) { return type <= KC_EXPR_TYPE_REAL; }
 
 /**
-  * Returns whether an expression of specified @type is a comparison.
-  */
+* Returns whether an expression of specified @type is a comparison.
+*/
 static inline koji_bool kc_expr_is_comparison(kc_expr_type type) { return type >= KC_EXPR_TYPE_EQ; }
 
 /**
-  * Converts @expr to a boolean. kc_expr_is_bool_convertible(expr) must return true.
-  */
+* Converts @expr to a boolean. kc_expr_is_bool_convertible(expr) must return true.
+*/
 static inline koji_bool kc_expr_to_bool(kc_expr expr)
 {
 	switch (expr.type)
 	{
-		case KC_EXPR_TYPE_NIL:
-			return 0;
+	case KC_EXPR_TYPE_NIL:
+		return 0;
 
-		case KC_EXPR_TYPE_BOOL:
-		case KC_EXPR_TYPE_INT:
-			return expr.integer != 0;
+	case KC_EXPR_TYPE_BOOL:
+	case KC_EXPR_TYPE_INT:
+		return expr.integer != 0;
 
-		case KC_EXPR_TYPE_REAL:
-			return expr.real != 0;
+	case KC_EXPR_TYPE_REAL:
+		return expr.real != 0;
 
-		default: assert(0); return 0;
+	default: assert(0); return 0;
 	}
 }
 
 /**
-  * Converts @expr to a real. Value is casted if expr is a constant, otherwise it returns zero.
-  */
+* Converts @expr to a real. Value is casted if expr is a constant, otherwise it returns zero.
+*/
 static inline koji_real kc_expr_to_real(kc_expr expr)
 {
 	switch (expr.type)
 	{
-		case KC_EXPR_TYPE_BOOL:
-		case KC_EXPR_TYPE_INT:
-			return (koji_real)expr.integer;
+	case KC_EXPR_TYPE_BOOL:
+	case KC_EXPR_TYPE_INT:
+		return (koji_real)expr.integer;
 
-		case KC_EXPR_TYPE_REAL:
-			return expr.real;
+	case KC_EXPR_TYPE_REAL:
+		return expr.real;
 
-		default:
-			return 0;
+	default:
+		return 0;
 	}
 }
 
 /**
-  * Compiles expression @e to a register and returns the expression (of type KC_EXPR_TYPE_REGISTER)
-  * containing the value that was contained in @e.
-  * If @e needs to be moved to some register (e.g. it is a boolean value), @target_hint is used.
-  */
+* Compiles expression @e to a register and returns the expression (of type KC_EXPR_TYPE_REGISTER)
+* containing the value that was contained in @e.
+* If @e needs to be moved to some register (e.g. it is a boolean value), @target_hint is used.
+*/
 static inline kc_expr kc_expr_to_any_register(kj_compiler* c, kc_expr e, int target_hint)
 {
 	uint constant_index;
@@ -1824,62 +1837,62 @@ static inline kc_expr kc_expr_to_any_register(kj_compiler* c, kc_expr e, int tar
 
 	switch (e.type)
 	{
-		case KC_EXPR_TYPE_NIL:
-			kc_emit(c, encode_ABx(KJ_OP_LOADNIL, target_hint, target_hint));
+	case KC_EXPR_TYPE_NIL:
+		kc_emit(c, encode_ABx(KJ_OP_LOADNIL, target_hint, target_hint));
+		return kc_expr_register(target_hint);
+
+	case KC_EXPR_TYPE_BOOL:
+		kc_emit(c, encode_ABC(KJ_OP_LOADB, target_hint, (koji_bool)e.integer, 0));
+		return kc_expr_register(target_hint);
+
+	case KC_EXPR_TYPE_INT:
+		constant_index = kc_fetch_constant_int(c, e.integer);
+		goto make_constant;
+
+	case KC_EXPR_TYPE_REAL: constant_index = kc_fetch_constant_real(c, e.real);
+		goto make_constant;
+
+	case KC_EXPR_TYPE_STRING: constant_index = kc_fetch_constant_string(c, e.string.data);
+		goto make_constant;
+
+	make_constant:
+		location = -(int)constant_index - 1;
+		if (constant_index <= MAX_REGISTER_VALUE)
+		{
+			// constant is small enough to be used as direct index
+			return kc_expr_register(location);
+		}
+		else
+		{
+			// constant too large, load it into a temporary register
+			kc_emit(c, encode_ABx(KJ_OP_MOV, target_hint, location));
 			return kc_expr_register(target_hint);
+		}
 
-		case KC_EXPR_TYPE_BOOL:
-			kc_emit(c, encode_ABC(KJ_OP_LOADB, target_hint, (koji_bool)e.integer, 0));
-			return kc_expr_register(target_hint);
+	case KC_EXPR_TYPE_REGISTER:
+		if (e.positive) return e;
+		kc_emit(c, encode_ABx(KJ_OP_NEG, target_hint, e.location));
+		return kc_expr_register(target_hint);
 
-		case KC_EXPR_TYPE_INT:
-			constant_index = kc_fetch_constant_int(c, e.integer);
-			goto make_constant;
+	case KC_EXPR_TYPE_ACCESSOR:
+		kc_emit(c, encode_ABC(KJ_OP_GETTABLE, target_hint, e.lhs, e.rhs));
+		if (!e.positive) kc_emit(c, encode_ABx(KJ_OP_NEG, target_hint, target_hint));
+		return kc_expr_register(target_hint);
 
-		case KC_EXPR_TYPE_REAL: constant_index = kc_fetch_constant_real(c, e.real);
-			goto make_constant;
+	case KC_EXPR_TYPE_EQ: case KC_EXPR_TYPE_LT: case KC_EXPR_TYPE_LTE:
+		kc_emit(c, encode_ABC(KJ_OP_EQ + e.type - KC_EXPR_TYPE_EQ, e.lhs, e.positive, e.rhs));
+		kc_emit(c, encode_ABx(KJ_OP_JUMP, 0, 1));
+		kc_emit(c, encode_ABC(KJ_OP_LOADB, target_hint, false, 1));
+		kc_emit(c, encode_ABC(KJ_OP_LOADB, target_hint, true, 0));
+		return kc_expr_register(target_hint);
 
-		case KC_EXPR_TYPE_STRING: constant_index = kc_fetch_constant_string(c, e.string.data);
-			goto make_constant;
-
-		make_constant:
-			location = -(int)constant_index - 1;
-			if (constant_index <= MAX_REGISTER_VALUE)
-			{
-				// constant is small enough to be used as direct index
-				return kc_expr_register(location);
-			}
-			else
-			{
-				// constant too large, load it into a temporary register
-				kc_emit(c, encode_ABx(KJ_OP_MOV, target_hint, location));
-				return kc_expr_register(target_hint);
-			}
-
-		case KC_EXPR_TYPE_REGISTER:
-			if (e.positive) return e;
-			kc_emit(c, encode_ABx(KJ_OP_NEG, target_hint, e.location));
-			return kc_expr_register(target_hint);
-
-		case KC_EXPR_TYPE_ACCESSOR:
-			kc_emit(c, encode_ABC(KJ_OP_GETTABLE, target_hint, e.lhs, e.rhs));
-			if (!e.positive) kc_emit(c, encode_ABx(KJ_OP_NEG, target_hint, target_hint));
-			return kc_expr_register(target_hint);
-
-		case KC_EXPR_TYPE_EQ: case KC_EXPR_TYPE_LT: case KC_EXPR_TYPE_LTE:
-			kc_emit(c, encode_ABC(KJ_OP_EQ + e.type - KC_EXPR_TYPE_EQ, e.lhs, e.positive, e.rhs));
-			kc_emit(c, encode_ABx(KJ_OP_JUMP, 0, 1));
-			kc_emit(c, encode_ABC(KJ_OP_LOADB, target_hint, false, 1));
-			kc_emit(c, encode_ABC(KJ_OP_LOADB, target_hint, true, 0));
-			return kc_expr_register(target_hint);
-
-		default: assert(0); return KC_EXPR_NIL;
+	default: assert(0); return KC_EXPR_NIL;
 	}
 }
 
 /**
-  * Emits the appropriate instructions so that expression e value is written to register @target.
-  */
+* Emits the appropriate instructions so that expression e value is written to register @target.
+*/
 static void kc_move_expr_to_register(kj_compiler* c, kc_expr e, int target)
 {
 	e = kc_expr_to_any_register(c, e, target);
@@ -1905,8 +1918,8 @@ static void kc_move_expr_to_register(kj_compiler* c, kc_expr e, int target)
 }
 
 /**
-  * Enumeration of binary operators.
-  */
+* Enumeration of binary operators.
+*/
 typedef enum
 {
 	KC_BINOP_INVALID,
@@ -1929,36 +1942,36 @@ static const char* KC_BINOP_TO_STR[] = { "<invalid>", "&&", "||", "==", "!=", "<
 "+", "-", "*", "/", "%" };
 
 /**
-  * Converts token @tok to the corresponding binary operator.
-  */
+* Converts token @tok to the corresponding binary operator.
+*/
 static inline kc_binop kc_token_to_binop(kj_token tok)
 {
 	switch (tok)
 	{
-		case '&&': return KC_BINOP_LOGICAL_AND;
-		case '||': return KC_BINOP_LOGICAL_OR;
-		case '==': return KC_BINOP_EQ;
-		case '!=': return KC_BINOP_NEQ;
-		case '<':  return KC_BINOP_LT;
-		case '<=': return KC_BINOP_LTE;
-		case '>':  return KC_BINOP_GT;
-		case '>=': return KC_BINOP_GTE;
-		case '+':  return KC_BINOP_ADD;
-		case '-':  return KC_BINOP_SUB;
-		case '*':  return KC_BINOP_MUL;
-		case '/':  return KC_BINOP_DIV;
-		case '%':  return KC_BINOP_MOD;
-		default:   return KC_BINOP_INVALID;
+	case '&&': return KC_BINOP_LOGICAL_AND;
+	case '||': return KC_BINOP_LOGICAL_OR;
+	case '==': return KC_BINOP_EQ;
+	case '!=': return KC_BINOP_NEQ;
+	case '<':  return KC_BINOP_LT;
+	case '<=': return KC_BINOP_LTE;
+	case '>':  return KC_BINOP_GT;
+	case '>=': return KC_BINOP_GTE;
+	case '+':  return KC_BINOP_ADD;
+	case '-':  return KC_BINOP_SUB;
+	case '*':  return KC_BINOP_MUL;
+	case '/':  return KC_BINOP_DIV;
+	case '%':  return KC_BINOP_MOD;
+	default:   return KC_BINOP_INVALID;
 	}
 }
 
 /**
-  * If expression @e is a register of location equal to current free register, it bumps up the free
-  * register counter. It returns the old temporary register regardless whether if the current
-  * temporary register was bumped up.
-  * After using the new temporary you must restore the temporary register c->temporary to the value
-  * returned by this function.
-  */
+* If expression @e is a register of location equal to current free register, it bumps up the free
+* register counter. It returns the old temporary register regardless whether if the current
+* temporary register was bumped up.
+* After using the new temporary you must restore the temporary register c->temporary to the value
+* returned by this function.
+*/
 static int kc_use_temporary(kj_compiler* c, kc_expr const* e)
 {
 	int old_temporaries = c->temporaries;
@@ -1971,45 +1984,45 @@ static int kc_use_temporary(kj_compiler* c, kc_expr const* e)
 }
 
 /**
-  * Compiles the logical negation of expression @e. It returns the negated result.
-  */
+* Compiles the logical negation of expression @e. It returns the negated result.
+*/
 static kc_expr kc_negate(kc_expr e)
 {
 	switch (e.type)
 	{
-		case KC_EXPR_TYPE_NIL:
-			return kc_expr_boolean(true);
+	case KC_EXPR_TYPE_NIL:
+		return kc_expr_boolean(true);
 
-		case KC_EXPR_TYPE_INT:
-		case KC_EXPR_TYPE_REAL:
-			return kc_expr_boolean(!kc_expr_to_bool(e));
+	case KC_EXPR_TYPE_INT:
+	case KC_EXPR_TYPE_REAL:
+		return kc_expr_boolean(!kc_expr_to_bool(e));
 
-		default:
-			e.positive = !e.positive;
-			return e;
+	default:
+		e.positive = !e.positive;
+		return e;
 	}
 }
 
 /**
-  * Compiles the unary minus of expression @e and returns the result.
-  */
+* Compiles the unary minus of expression @e and returns the result.
+*/
 static kc_expr kc_unary_minus(kj_compiler* c, const kc_expr_state* es, kj_source_location sourceloc, kc_expr e)
 {
 	switch (e.type)
 	{
-		case KC_EXPR_TYPE_INT:
-			return kc_expr_integer(-e.integer);
+	case KC_EXPR_TYPE_INT:
+		return kc_expr_integer(-e.integer);
 
-		case KC_EXPR_TYPE_REAL:
-			return kc_expr_real(-e.real);
+	case KC_EXPR_TYPE_REAL:
+		return kc_expr_real(-e.real);
 
-		case KC_EXPR_TYPE_REGISTER:
-			kc_emit(c, encode_ABx(KJ_OP_NEG, es->target_register, e.location));
-			return kc_expr_register(es->target_register);
+	case KC_EXPR_TYPE_REGISTER:
+		kc_emit(c, encode_ABx(KJ_OP_NEG, es->target_register, e.location));
+		return kc_expr_register(es->target_register);
 
-		default:
-			compile_error(c->lex->error_handler, sourceloc,
-				"cannot apply operator unary minus to a value of type %s.", KC_EXPR_TYPE_TYPE_TO_STRING[e.type]);
+	default:
+		compiler_error(c->lex->error_handler, sourceloc,
+			"cannot apply operator unary minus to a value of type %s.", KC_EXPR_TYPE_TYPE_TO_STRING[e.type]);
 	}
 	return KC_EXPR_NIL;
 }
@@ -2020,9 +2033,9 @@ static kc_expr kc_parse_expression_to_any_register(kj_compiler* c, int target);
 static inline void kc_parse_block(kj_compiler* c);
 
 /**
-  * Parses and compiles a closure starting from arguments declaration (therefore excluded "def" and
-  * eventual identifier). It returns the register expr with the location of the compiled closure.
-  */
+* Parses and compiles a closure starting from arguments declaration (therefore excluded "def" and
+* eventual identifier). It returns the register expr with the location of the compiled closure.
+*/
 static kc_expr kc_parse_closure(kj_compiler* c, const kc_expr_state* es)
 {
 	ubyte num_args = 0;
@@ -2038,19 +2051,21 @@ static kc_expr kc_parse_closure(kj_compiler* c, const kc_expr_state* es)
 	c->proto->references = 1;
 	array_push_value(&oldproto->prototypes, koji_prototype*, c->proto);
 
-	kc_expect(c, '(');
-	if (c->lex->lookahead != ')')
+	if (kc_accept(c, '('))
 	{
-		do
+		if (c->lex->lookahead != ')')
 		{
-			kc_check(c, tok_identifier);
-			uint id_offset = kc_push_identifier(c, c->lex->token_string, c->lex->token_string_length);
-			lex(c->lex);
-			kc_define_local(c, id_offset);
-			++num_args;
-		} while (kc_accept(c, ','));
+			do
+			{
+				kc_check(c, tok_identifier);
+				uint id_offset = kc_push_identifier(c, c->lex->token_string, c->lex->token_string_length);
+				lex(c->lex);
+				kc_define_local(c, id_offset);
+				++num_args;
+			} while (kc_accept(c, ','));
+		}
+		kc_expect(c, ')');
 	}
-	kc_expect(c, ')');
 
 	if (kc_accept(c, '=>'))
 	{
@@ -2074,10 +2089,10 @@ static kc_expr kc_parse_closure(kj_compiler* c, const kc_expr_state* es)
 }
 
 /**
-  * Parses and compiles a function call arguments "(arg1, arg2, ..)" and returns the number of arguments. Before calling
-  * this function save the current temporary as arguments will be compiled to temporaries staring from current. It's
-  * responsibility of the caller to restore the temporary register.
-  */
+* Parses and compiles a function call arguments "(arg1, arg2, ..)" and returns the number of arguments. Before calling
+* this function save the current temporary as arguments will be compiled to temporaries staring from current. It's
+* responsibility of the caller to restore the temporary register.
+*/
 static int kc_parse_function_call_args(kj_compiler* c)
 {
 	int nargs = 0;
@@ -2106,8 +2121,8 @@ static int kc_parse_function_call_args(kj_compiler* c)
 }
 
 /**
-  * Parses and returns a primary expression such as a constant or a function call.
-  */
+* Parses and returns a primary expression such as a constant or a function call.
+*/
 static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* es)
 {
 	kc_expr expr = { KC_EXPR_TYPE_NIL };
@@ -2116,142 +2131,170 @@ static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* 
 	switch (c->lex->lookahead)
 	{
 		/* global table */
-		case kw_globals:
-			lex(c->lex);
-			kc_emit(c, encode_ABx(KJ_OP_GLOBALS, es->target_register, 0));
-			expr = kc_expr_register(es->target_register);
-			break;
+	case kw_globals:
+		lex(c->lex);
+		kc_emit(c, encode_ABx(KJ_OP_GLOBALS, es->target_register, 0));
+		expr = kc_expr_register(es->target_register);
+		break;
 
 		/* literals */
-		case kw_true: lex(c->lex); expr = kc_expr_boolean(true); break;
-		case kw_false: lex(c->lex); expr = kc_expr_boolean(false); break;
-		case tok_integer: expr = kc_expr_integer(c->lex->token_int); lex(c->lex); break;
-		case tok_real: expr = kc_expr_real(c->lex->token_real); lex(c->lex); break;
-		case tok_string:
-			expr = kc_expr_string(c, c->lex->token_string_length);
-			memcpy(expr.string.data, c->lex->token_string, c->lex->token_string_length + 1);
-			lex(c->lex);
-			break;
+	case kw_true: lex(c->lex); expr = kc_expr_boolean(true); break;
+	case kw_false: lex(c->lex); expr = kc_expr_boolean(false); break;
+	case tok_integer: expr = kc_expr_integer(c->lex->token_int); lex(c->lex); break;
+	case tok_real: expr = kc_expr_real(c->lex->token_real); lex(c->lex); break;
+	case tok_string:
+		expr = kc_expr_string(c, c->lex->token_string_length);
+		memcpy(expr.string.data, c->lex->token_string, c->lex->token_string_length + 1);
+		lex(c->lex);
+		break;
 
-		case '(': /* subexpression */
-			lex(c->lex);
-			expr = kc_parse_expression(c, es);
-			kc_expect(c, ')');
-			break;
+	case '(': /* subexpression */
+		lex(c->lex);
+		expr = kc_parse_expression(c, es);
+		kc_expect(c, ')');
+		break;
 
-		case '!': /* not */
+	case '!': /* not */
+	{
+		koji_bool negated = true;
+		lex(c->lex);
+		while (kc_accept(c, '!')) negated = !negated;
+		kc_expr_state my_es = *es;
+		my_es.negated = my_es.negated ^ negated;
+		expr = kc_parse_primary_expression(c, &my_es);
+		if (negated) expr = kc_negate(expr);
+		break;
+	}
+
+	case '-': /* unary minus */
+	{
+		koji_bool minus = true;
+		lex(c->lex);
+		while (kc_accept(c, '-')) minus = !minus;
+		expr = kc_parse_primary_expression(c, es);
+		if (minus) expr = kc_unary_minus(c, es, sourceloc, expr);
+		break;
+	}
+
+	case tok_identifier: /* variable */
+	{
+		/* we need to scan the token after the identifier so copy it to a temporary on the stack */
+		char* id = alloca(c->lex->token_string_length + 1);
+		memcpy(id, c->lex->token_string, c->lex->token_string_length + 1);
+		lex(c->lex);
+
+		/* identifier refers to a local variable? */
+		kc_local* var = kc_fetch_local(c, id);
+		if (var)
 		{
-			koji_bool negated = true;
-			lex(c->lex);
-			while (kc_accept(c, '!')) negated = !negated;
-			kc_expr_state my_es = *es;
-			my_es.negated = my_es.negated ^ negated;
-			expr = kc_parse_primary_expression(c, &my_es);
-			if (negated) expr = kc_negate(expr);
+			expr = kc_expr_register(var->location);
 			break;
 		}
 
-		case '-': /* unary minus */
+		/* identifier refers to a static function? */
+		int nargs = -1;
+		if (c->lex->lookahead == '(')
 		{
-			koji_bool minus = true;
-			lex(c->lex);
-			while (kc_accept(c, '-')) minus = !minus;
-			expr = kc_parse_primary_expression(c, es);
-			if (minus) expr = kc_unary_minus(c, es, sourceloc, expr);
-			break;
-		}
+			int first_arg_reg = c->temporaries;
+			nargs = kc_parse_function_call_args(c);
 
-		case tok_identifier: /* variable */
-		{
-			/* we need to scan the token after the identifier so copy it to a temporary on the stack */
-			char* id = alloca(c->lex->token_string_length + 1);
-			memcpy(id, c->lex->token_string, c->lex->token_string_length + 1);
-			lex(c->lex);
-
-			/* identifier refers to a local variable? */
-			kc_local* var = kc_fetch_local(c, id);
-			if (var)
+			uint fn_index = static_functions_fetch(c->static_functions, id, nargs);
+			if (fn_index != -1)
 			{
-				expr = kc_expr_register(var->location);
-				break;
-			}
-
-			/* identifier refers to a static function? */
-			int nargs = -1;
-			if (c->lex->lookahead == '(')
-			{
-				int first_arg_reg = c->temporaries;
-				nargs = kc_parse_function_call_args(c);
-
-				uint fn_index = static_functions_fetch(c->static_functions, id, nargs);
-				if (fn_index != -1)
+				const kj_static_function* fn = c->static_functions->functions.data + fn_index;
+				if (fn->nargs != nargs)
 				{
-					const kj_static_function* fn = c->static_functions->functions.data + fn_index;
-					if (fn->nargs != nargs)
-					{
-						compile_error(c->lex->error_handler, sourceloc, "static function '%s' does not take %d argument/s but %d.",
-							id, nargs, fn->nargs);
-						break;
-					}
-
-					// call is to a static host function, emit the appropriate instruction and reset the number of used registers
-					kc_emit(c, encode_ABx(KJ_OP_SCALL, first_arg_reg, fn_index));
-					c->temporaries = first_arg_reg;
-
-					// all args will be popped and return values put into the first arg register.
-					expr = kc_expr_register(first_arg_reg);
+					compiler_error(c->lex->error_handler, sourceloc, "static function '%s' does not take %d argument/s but %d.",
+						id, nargs, fn->nargs);
 					break;
 				}
-			}
 
-			(void)nargs;
-			compile_error(c->lex->error_handler, sourceloc, "undeclared local variable '%s'.", id);
-			break;
+				// call is to a static host function, emit the appropriate instruction and reset the number of used registers
+				kc_emit(c, encode_ABx(KJ_OP_SCALL, first_arg_reg, fn_index));
+				c->temporaries = first_arg_reg;
+
+				// all args will be popped and return values put into the first arg register.
+				expr = kc_expr_register(first_arg_reg);
+				break;
+			}
 		}
 
-		case kw_def: /* closure */
-			lex(c->lex);
-			expr = kc_parse_closure(c, es);
-			break;
+		(void)nargs;
+		compiler_error(c->lex->error_handler, sourceloc, "undeclared local variable '%s'.", id);
+		break;
+	}
 
-		case '{': /* table */
+	case kw_def: /* closure */
+		lex(c->lex);
+		expr = kc_parse_closure(c, es);
+		break;
+
+	case '{': /* table */
+	{
+		lex(c->lex);
+
+		expr = kc_expr_register(es->target_register);
+		int temps = kc_use_temporary(c, &expr);
+		kc_emit(c, encode_ABx(KJ_OP_NEWTABLE, expr.location, 0));
+
+		if (c->lex->lookahead != '}')
 		{
-			lex(c->lex);
+			koji_integer index = 0;
+			koji_bool has_key = false;
 
-			expr = kc_expr_register(es->target_register);
-			int temps = kc_use_temporary(c, &expr);
-			kc_emit(c, encode_ABx(KJ_OP_NEWTABLE, expr.location, 0));
-
-			if (c->lex->lookahead != '}')
+			do
 			{
-				do 
-				{
-					/* parse key */
-					kc_expr key;
-					if (c->lex->lookahead == tok_identifier)
-					{
-						key = kc_expr_string(c, c->lex->token_string_length);
-						memcpy(key.string.data, c->lex->token_string, c->lex->token_string_length + 1);
-						lex(c->lex);
-						key = kc_expr_to_any_register(c, key, c->temporaries);
-					}
-					else
-					{
-						key = kc_parse_expression_to_any_register(c, c->temporaries);
-					}
-					int temps2 = kc_use_temporary(c, &key);
-					kc_expect(c, ':');
-					kc_expr value = kc_parse_expression_to_any_register(c, c->temporaries);
-					kc_emit(c, encode_ABC(KJ_OP_SETTABLE, expr.location, key.location, value.location));
-					c->temporaries = temps2;
-				} while (kc_accept(c, ','));
-			}
-			kc_expect(c, '}');
-			c->temporaries = temps;
-			break;
-		}
+				/* parse key */
+				kc_expr key, value;
 
-		default: kc_syntax_error(c, sourceloc);
+				if (c->lex->lookahead == tok_identifier)
+				{
+					key = kc_expr_string(c, c->lex->token_string_length);
+					memcpy(key.string.data, c->lex->token_string, c->lex->token_string_length + 1);
+					lex(c->lex);
+					key = kc_expr_to_any_register(c, key, c->temporaries);
+					kc_expect(c, ':');
+					has_key = true;
+				}
+				else
+				{
+					kj_source_location sl = c->lex->source_location;
+					key = kc_parse_expression_to_any_register(c, c->temporaries);
+					if (kc_accept(c, ':'))
+					{
+						has_key = true;
+					}
+					else if (has_key)
+					{
+						compiler_error(c->lex->error_handler, sl, "cannot leave key undefined after table entry with explicit key.");
+					}
+				}
+
+				/* key might be occupying last temporary */
+				int temps2 = kc_use_temporary(c, &key);
+
+				if (has_key)
+				{
+					/* parse value */
+					value = kc_parse_expression_to_any_register(c, c->temporaries);
+				}
+				else
+				{
+					value = key;
+					key = kc_expr_to_any_register(c, kc_expr_integer(index++), c->temporaries);
+				}
+
+				c->temporaries = temps2;
+				kc_emit(c, encode_ABC(KJ_OP_SETTABLE, expr.location, key.location, value.location));
+
+			} while (kc_accept(c, ','));
+		}
+		kc_expect(c, '}');
+		c->temporaries = temps;
+		break;
+	}
+
+	default: kc_syntax_error(c, sourceloc);
 	}
 
 	/* remember this is a dot expression e.g. ".to_string"; if what follows is a call, dot expressions calls
@@ -2263,108 +2306,107 @@ static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* 
 	{
 		switch (c->lex->lookahead)
 		{
-			case '(':
+		case '(':
+		{
+			/* this holds the first argument or the object the function is called onto */
+			int args_location = c->temporaries;
+
+			kj_opcode op;
+			int closure_or_key_location;
+
+			if (expr.type == KC_EXPR_TYPE_ACCESSOR)
 			{
-				/* this holds the first argument or the object the function is called onto */
-				int args_or_method_object_loc = c->temporaries;
-
-				kj_opcode op;
-				int closure_or_key_loc;
-
-				if (expr.type == KC_EXPR_TYPE_ACCESSOR)
+				/* if expr is a dot expression, use the mcall opcode that will access the prototype table if
+				* function name is not found, otherwise expr is like "value["key"]()", which is compiled as
+				* a simple table get followed by closure call */
+				if (dot_accessor)
 				{
-					/* if expr is a dot expression, use the mcall opcode that will access the prototype table if
-					* function name is not found, otherwise expr is like "value["key"]()", which is compiled as
-					* a simple table get followed by closure call */
-					if (dot_accessor)
-					{
-						/* if expr is an accessor, this is a "method" call. Put the object in the first temporary */
-						if (expr.lhs != args_or_method_object_loc) kc_emit(c, encode_ABx(KJ_OP_MOV, args_or_method_object_loc, expr.lhs));
-						++c->temporaries;
-
-						op = KJ_OP_MCALL;
-						closure_or_key_loc = expr.rhs;
-					}
-					else
-					{
-						kc_emit(c, encode_ABC(KJ_OP_GETTABLE, args_or_method_object_loc, expr.lhs, expr.rhs));
-						++c->temporaries;
-
-						op = KJ_OP_CALL;
-						closure_or_key_loc = args_or_method_object_loc;
-						args_or_method_object_loc = c->temporaries;
-					}
-
-				}
-				else if (expr.type == KC_EXPR_TYPE_REGISTER)
-				{
-					op = KJ_OP_CALL;
-					closure_or_key_loc = expr.location;
+					/* if expr is an accessor, this is a "method" call. Put the object in the first temporary */
+					if (expr.lhs != args_location) kc_emit(c, encode_ABx(KJ_OP_MOV, args_location, expr.lhs));
+					
+					op = KJ_OP_MCALL;
+					args_location = ++c->temporaries;
+					closure_or_key_location = expr.rhs;					
 				}
 				else
 				{
-					compile_error(c->lex->error_handler, sourceloc, "cannot call value of type %s.", KC_EXPR_TYPE_TYPE_TO_STRING[expr.type]);
-					return KC_EXPR_NIL;
+					kc_emit(c, encode_ABC(KJ_OP_GETTABLE, args_location, expr.lhs, expr.rhs));
+
+					op = KJ_OP_CALL;
+					closure_or_key_location = c->temporaries++;
+					args_location = c->temporaries;
 				}
 
-				/* parse the function call arguments */
-				int nargs = kc_parse_function_call_args(c);
-
-				/* memory optimization: if call has no args, put the return value to the fetched closure temp
-				 * instead of one above (no need for the temporary after the call, saves up one register) */
-				if (nargs == 0 && expr.type && !dot_accessor)
-				{
-					args_or_method_object_loc = closure_or_key_loc;
-				}
-
-				/* emit the appropriate call instruction */
-				kc_emit(c, encode_ABC(op, args_or_method_object_loc, closure_or_key_loc, nargs));
-
-				/* the result now lives in */
-				expr = kc_expr_register(args_or_method_object_loc);
-
-				/* restore the temporaries count */
-				c->temporaries = args_or_method_object_loc;
-
-				break;
 			}
-
-			case '.': // object.identifier
+			else if (expr.type == KC_EXPR_TYPE_REGISTER)
 			{
-				lex(c->lex);
-
-				/* compile the expr to a register */
-				kc_check(c, tok_identifier);
-				expr = kc_expr_to_any_register(c, expr, es->target_register);
-				int temps = kc_use_temporary(c, &expr);
-
-				/* now parse the key identifier and compile it to a register */
-				kc_expr key = kc_expr_string(c, c->lex->token_string_length);
-				memcpy(key.string.data, c->lex->token_string, c->lex->token_string_length + 1);
-				key = kc_expr_to_any_register(c, key, es->target_register);
-				c->temporaries = temps;
-
-				/* expr now is the accessor "expr.key" */
-				expr = kc_expr_accessor(expr.location, key.location);
-
-				lex(c->lex); // identifier
-				
-				dot_accessor = true;
-				
-				continue; // skips the "dot_accessor = false" statement after the switch
+				op = KJ_OP_CALL;
+				closure_or_key_location = expr.location;
 			}
-
-			case '[': // table[expr]
+			else
 			{
-				lex(c->lex);
-				kc_expr key = kc_parse_expression_to_any_register(c, es->target_register);
-				kc_expect(c, ']');
-				expr = kc_expr_accessor(expr.location, key.location);
-				break;
+				compiler_error(c->lex->error_handler, sourceloc, "cannot call value of type %s.", KC_EXPR_TYPE_TYPE_TO_STRING[expr.type]);
+				return KC_EXPR_NIL;
 			}
 
-			default:
-				return expr;
+			/* parse the function call arguments */
+			int nargs = kc_parse_function_call_args(c);
+
+			/* memory optimization: if call has no args, put the return value to the fetched closure temp
+			* instead of one above (no need for the temporary after the call, saves up one register) */
+			if (nargs == 0 && expr.type && !dot_accessor)
+			{
+				args_location = closure_or_key_location;
+			}
+
+			/* emit the appropriate call instruction */
+			kc_emit(c, encode_ABC(op, args_location, closure_or_key_location, nargs));
+
+			/* the result now lives in */
+			expr = kc_expr_register(args_location);
+
+			/* restore the temporaries count */
+			c->temporaries = args_location;
+
+			break;
+		}
+
+		case '.': // object.identifier
+		{
+			lex(c->lex);
+
+			/* compile the expr to a register */
+			kc_check(c, tok_identifier);
+			expr = kc_expr_to_any_register(c, expr, es->target_register);
+			int temps = kc_use_temporary(c, &expr);
+
+			/* now parse the key identifier and compile it to a register */
+			kc_expr key = kc_expr_string(c, c->lex->token_string_length);
+			memcpy(key.string.data, c->lex->token_string, c->lex->token_string_length + 1);
+			key = kc_expr_to_any_register(c, key, es->target_register);
+			c->temporaries = temps;
+
+			/* expr now is the accessor "expr.key" */
+			expr = kc_expr_accessor(expr.location, key.location);
+
+			lex(c->lex); // identifier
+
+			dot_accessor = true;
+
+			continue; // skips the "dot_accessor = false" statement after the switch
+		}
+
+		case '[': // table[expr]
+		{
+			lex(c->lex);
+			kc_expr key = kc_parse_expression_to_any_register(c, es->target_register);
+			kc_expect(c, ']');
+			expr = kc_expr_accessor(expr.location, key.location);
+			break;
+		}
+
+		default:
+			return expr;
 		}
 
 		dot_accessor = false;
@@ -2372,17 +2414,17 @@ static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* 
 }
 
 /**
-  * Compiles the lhs of a logical expression if @op is such and lhs is a register or comparison.
-  * Only called by _parse_binary_expr_rhs() before parsing its rhs.
-  * In a nutshell, the purpose of this function is to patch th current early out branches to the true
-  * or false label depending on @op, the truth value (positivity) of lhs and whether the whole expression
-  * should be negated (as stated by @es).
-  * What this function does is: compiles the comparison if lhs is one, or emit the test/testset if
-  * is a register if say op is an OR then it patches all existing branches to false in the compiled
-  * expression represented by lhs to this point so that the future rhs will "try again" the OR. The
-  * opposite holds for AND (jumps to true are patched to evaluate the future rhs because evaluating
-  * only the lhs to true is not enough in an AND).
-  */
+* Compiles the lhs of a logical expression if @op is such and lhs is a register or comparison.
+* Only called by _parse_binary_expr_rhs() before parsing its rhs.
+* In a nutshell, the purpose of this function is to patch th current early out branches to the true
+* or false label depending on @op, the truth value (positivity) of lhs and whether the whole expression
+* should be negated (as stated by @es).
+* What this function does is: compiles the comparison if lhs is one, or emit the test/testset if
+* is a register if say op is an OR then it patches all existing branches to false in the compiled
+* expression represented by lhs to this point so that the future rhs will "try again" the OR. The
+* opposite holds for AND (jumps to true are patched to evaluate the future rhs because evaluating
+* only the lhs to true is not enough in an AND).
+*/
 static void kc_compile_logical_operation(kj_compiler* c, const kc_expr_state* es, kc_binop op, kc_expr lhs)
 {
 	if ((lhs.type != KC_EXPR_TYPE_REGISTER && !kc_expr_is_comparison(lhs.type))
@@ -2396,23 +2438,23 @@ static void kc_compile_logical_operation(kj_compiler* c, const kc_expr_state* es
 	/* compile condition */
 	switch (lhs.type)
 	{
-		case KC_EXPR_TYPE_REGISTER:
-			if (!lhs.positive == es->negated)
-			{
-				kc_emit(c, encode_ABC(KJ_OP_TESTSET, es->target_register, lhs.location, test_value));
-			}
-			else
-			{
-				assert(lhs.location >= 0); // is non-constant
-				kc_emit(c, encode_ABC(KJ_OP_TEST, lhs.location, !test_value, 0));
-			}
-			break;
+	case KC_EXPR_TYPE_REGISTER:
+		if (!lhs.positive == es->negated)
+		{
+			kc_emit(c, encode_ABC(KJ_OP_TESTSET, es->target_register, lhs.location, test_value));
+		}
+		else
+		{
+			assert(lhs.location >= 0); // is non-constant
+			kc_emit(c, encode_ABC(KJ_OP_TEST, lhs.location, !test_value, 0));
+		}
+		break;
 
-		case KC_EXPR_TYPE_EQ: case KC_EXPR_TYPE_LT: case KC_EXPR_TYPE_LTE:
-			kc_emit(c, encode_ABC(KJ_OP_EQ + lhs.type - KC_EXPR_TYPE_EQ, lhs.lhs, lhs.rhs, (lhs.positive ^ es->negated) ^ !test_value));
-			break;
+	case KC_EXPR_TYPE_EQ: case KC_EXPR_TYPE_LT: case KC_EXPR_TYPE_LTE:
+		kc_emit(c, encode_ABC(KJ_OP_EQ + lhs.type - KC_EXPR_TYPE_EQ, lhs.lhs, lhs.rhs, (lhs.positive ^ es->negated) ^ !test_value));
+		break;
 
-		default: assert(false);
+	default: assert(false);
 	}
 
 	// push jump instruction index to the appropriate label.
@@ -2454,10 +2496,10 @@ static void kc_compile_logical_operation(kj_compiler* c, const kc_expr_state* es
 }
 
 /**
-  * Helper function for parse_binary_expression_rhs() that actually compiles the binary operation
-  * between @lhs and @rhs. This function also checks whether the operation can be optimized to a
-  * constant if possible before falling back to emitting the actual instructions.
-  */
+* Helper function for parse_binary_expression_rhs() that actually compiles the binary operation
+* between @lhs and @rhs. This function also checks whether the operation can be optimized to a
+* constant if possible before falling back to emitting the actual instructions.
+*/
 static kc_expr _compile_binary_expression(kj_compiler* c, const kc_expr_state* es, const kj_source_location sourceloc,
 	kc_binop binop, kc_expr lhs, kc_expr rhs)
 {
@@ -2466,153 +2508,153 @@ static kc_expr _compile_binary_expression(kj_compiler* c, const kc_expr_state* e
 	case binop:\
 		if (lhs.type == KC_EXPR_TYPE_NIL || rhs.type == KC_EXPR_TYPE_NIL) goto error;\
 		if (kc_expr_is_constant(lhs.type) && kc_expr_is_constant(rhs.type))\
-		{\
+				{\
 			if (lhs.type == KC_EXPR_TYPE_BOOL || rhs.type == KC_EXPR_TYPE_BOOL) goto error;\
 			if (lhs.type == KC_EXPR_TYPE_REAL || rhs.type == KC_EXPR_TYPE_REAL)\
 				lhs = kc_expr_real(kc_expr_to_real(lhs) opchar kc_expr_to_real(rhs));\
-			else\
+						else\
 				lhs.integer = lhs.integer opchar rhs.integer;\
 			return lhs;\
-		}\
+				}\
 		break;
 
 	// make a binary operator between our lhs and the rhs
 	//lhs = compile_binary_operation(c, es, sourceloc, binop, lhs, rhs);
 	switch (binop)
 	{
-		case KC_BINOP_ADD:
-			if (lhs.type == KC_EXPR_TYPE_NIL || rhs.type == KC_EXPR_TYPE_NIL) goto error;
-			if (kc_expr_is_constant(lhs.type) && kc_expr_is_constant(rhs.type))
+	case KC_BINOP_ADD:
+		if (lhs.type == KC_EXPR_TYPE_NIL || rhs.type == KC_EXPR_TYPE_NIL) goto error;
+		if (kc_expr_is_constant(lhs.type) && kc_expr_is_constant(rhs.type))
+		{
+			if (lhs.type == KC_EXPR_TYPE_BOOL || rhs.type == KC_EXPR_TYPE_BOOL)
+				goto error;
+			if ((lhs.type == KC_EXPR_TYPE_STRING) != (rhs.type == KC_EXPR_TYPE_STRING))
+				goto error;
+			if (lhs.type == KC_EXPR_TYPE_REAL || rhs.type == KC_EXPR_TYPE_REAL)
+				lhs = kc_expr_real(kc_expr_to_real(lhs) + kc_expr_to_real(rhs));
+			else if (lhs.type == KC_EXPR_TYPE_STRING && rhs.type == KC_EXPR_TYPE_STRING)
 			{
-				if (lhs.type == KC_EXPR_TYPE_BOOL || rhs.type == KC_EXPR_TYPE_BOOL)
-					goto error;
-				if ((lhs.type == KC_EXPR_TYPE_STRING) != (rhs.type == KC_EXPR_TYPE_STRING))
-					goto error;
-				if (lhs.type == KC_EXPR_TYPE_REAL || rhs.type == KC_EXPR_TYPE_REAL)
-					lhs = kc_expr_real(kc_expr_to_real(lhs) + kc_expr_to_real(rhs));
-				else if (lhs.type == KC_EXPR_TYPE_STRING && rhs.type == KC_EXPR_TYPE_STRING)
-				{
-					kc_expr temp = kc_expr_string(c, lhs.string.length + rhs.string.length);
-					memcpy(temp.string.data, lhs.string.data, lhs.string.length);
-					memcpy(temp.string.data + lhs.string.length, rhs.string.data, rhs.string.length + 1);
-					lhs = temp;
-				}
-				else
-					lhs.integer = lhs.integer + rhs.integer;
-				return lhs;
+				kc_expr temp = kc_expr_string(c, lhs.string.length + rhs.string.length);
+				memcpy(temp.string.data, lhs.string.data, lhs.string.length);
+				memcpy(temp.string.data + lhs.string.length, rhs.string.data, rhs.string.length + 1);
+				lhs = temp;
 			}
-			break;
+			else
+				lhs.integer = lhs.integer + rhs.integer;
+			return lhs;
+		}
+		break;
 
 		MAKEBINOP(KC_BINOP_SUB, -)
-		MAKEBINOP(KC_BINOP_MUL, *)
-		MAKEBINOP(KC_BINOP_DIV, / )
+			MAKEBINOP(KC_BINOP_MUL, *)
+			MAKEBINOP(KC_BINOP_DIV, / )
 
-		case KC_BINOP_MOD:
-			if (lhs.type == KC_EXPR_TYPE_NIL || rhs.type == KC_EXPR_TYPE_NIL) goto error;
-			if (kc_expr_is_constant(lhs.type) && kc_expr_is_constant(rhs.type))
-			{
-				if (lhs.type == KC_EXPR_TYPE_BOOL || rhs.type == KC_EXPR_TYPE_BOOL) goto error;
-				if (lhs.type == KC_EXPR_TYPE_REAL || rhs.type == KC_EXPR_TYPE_REAL) goto error;
-				lhs.integer %= rhs.integer;
-				return lhs;
-			}
-			break;
-
-			/* lhs is a register and we assume that Compiler has called "prepare_logical_operator_lhs" before calling this hence
-			the testset instruction has already been emitted. */
-		case KC_BINOP_LOGICAL_AND:
-			lhs = (kc_expr_is_bool_convertible(lhs.type) && !kc_expr_to_bool(lhs)) ? kc_expr_boolean(false) : rhs;
-			return lhs;
-
-		case KC_BINOP_LOGICAL_OR:
-			lhs = (kc_expr_is_bool_convertible(lhs.type) && kc_expr_to_bool(lhs)) ? kc_expr_boolean(true) : rhs;
-			return lhs;
-
-		case KC_BINOP_EQ:
-		case KC_BINOP_NEQ:
+	case KC_BINOP_MOD:
+		if (lhs.type == KC_EXPR_TYPE_NIL || rhs.type == KC_EXPR_TYPE_NIL) goto error;
+		if (kc_expr_is_constant(lhs.type) && kc_expr_is_constant(rhs.type))
 		{
-			koji_bool invert = binop == KC_BINOP_NEQ;
-			if (lhs.type == KC_EXPR_TYPE_NIL || rhs.type == KC_EXPR_TYPE_NIL)
-			{
-				lhs = kc_expr_boolean(((lhs.type == KC_EXPR_TYPE_NIL) == (rhs.type == KC_EXPR_TYPE_NIL)) ^ invert);
-				return lhs;
-			}
+			if (lhs.type == KC_EXPR_TYPE_BOOL || rhs.type == KC_EXPR_TYPE_BOOL) goto error;
+			if (lhs.type == KC_EXPR_TYPE_REAL || rhs.type == KC_EXPR_TYPE_REAL) goto error;
+			lhs.integer %= rhs.integer;
+			return lhs;
+		}
+		break;
 
-			if (kc_expr_is_constant(lhs.type) && kc_expr_is_constant(rhs.type))
-			{
-				if ((lhs.type == KC_EXPR_TYPE_BOOL) != (rhs.type == KC_EXPR_TYPE_BOOL))
-					goto error;
-				if (lhs.type == KC_EXPR_TYPE_BOOL)
-					lhs = kc_expr_boolean((lhs.integer == rhs.integer) ^ invert);
-				if (lhs.type == KC_EXPR_TYPE_REAL || rhs.type == KC_EXPR_TYPE_REAL)
-					lhs = kc_expr_boolean((kc_expr_to_real(lhs) == kc_expr_to_real(rhs)) ^ invert);
+		/* lhs is a register and we assume that Compiler has called "prepare_logical_operator_lhs" before calling this hence
+		the testset instruction has already been emitted. */
+	case KC_BINOP_LOGICAL_AND:
+		lhs = (kc_expr_is_bool_convertible(lhs.type) && !kc_expr_to_bool(lhs)) ? kc_expr_boolean(false) : rhs;
+		return lhs;
+
+	case KC_BINOP_LOGICAL_OR:
+		lhs = (kc_expr_is_bool_convertible(lhs.type) && kc_expr_to_bool(lhs)) ? kc_expr_boolean(true) : rhs;
+		return lhs;
+
+	case KC_BINOP_EQ:
+	case KC_BINOP_NEQ:
+	{
+		koji_bool invert = binop == KC_BINOP_NEQ;
+		if (lhs.type == KC_EXPR_TYPE_NIL || rhs.type == KC_EXPR_TYPE_NIL)
+		{
+			lhs = kc_expr_boolean(((lhs.type == KC_EXPR_TYPE_NIL) == (rhs.type == KC_EXPR_TYPE_NIL)) ^ invert);
+			return lhs;
+		}
+
+		if (kc_expr_is_constant(lhs.type) && kc_expr_is_constant(rhs.type))
+		{
+			if ((lhs.type == KC_EXPR_TYPE_BOOL) != (rhs.type == KC_EXPR_TYPE_BOOL))
+				goto error;
+			if (lhs.type == KC_EXPR_TYPE_BOOL)
 				lhs = kc_expr_boolean((lhs.integer == rhs.integer) ^ invert);
-				return lhs;
-			}
-			break;
+			if (lhs.type == KC_EXPR_TYPE_REAL || rhs.type == KC_EXPR_TYPE_REAL)
+				lhs = kc_expr_boolean((kc_expr_to_real(lhs) == kc_expr_to_real(rhs)) ^ invert);
+			lhs = kc_expr_boolean((lhs.integer == rhs.integer) ^ invert);
+			return lhs;
+		}
+		break;
+	}
+
+	case KC_BINOP_LT:
+	case KC_BINOP_GTE:
+	{
+		koji_bool invert = binop == KC_BINOP_GTE;
+		if (lhs.type == KC_EXPR_TYPE_NIL)
+		{
+			lhs = kc_expr_boolean((rhs.type == KC_EXPR_TYPE_NIL) == invert);
+			return lhs;
 		}
 
-		case KC_BINOP_LT:
-		case KC_BINOP_GTE:
+		if (rhs.type == KC_EXPR_TYPE_NIL)
 		{
-			koji_bool invert = binop == KC_BINOP_GTE;
-			if (lhs.type == KC_EXPR_TYPE_NIL)
-			{
-				lhs = kc_expr_boolean((rhs.type == KC_EXPR_TYPE_NIL) == invert);
-				return lhs;
-			}
+			lhs = kc_expr_boolean((lhs.type == KC_EXPR_TYPE_NIL) != invert);
+			return lhs;
+		}
 
-			if (rhs.type == KC_EXPR_TYPE_NIL)
-			{
-				lhs = kc_expr_boolean((lhs.type == KC_EXPR_TYPE_NIL) != invert);
-				return lhs;
-			}
-
-			if (kc_expr_is_constant(lhs.type) && kc_expr_is_constant(rhs.type))
-			{
-				if ((lhs.type == KC_EXPR_TYPE_BOOL) != (rhs.type == KC_EXPR_TYPE_BOOL))
-					goto error;
-				if (lhs.type == KC_EXPR_TYPE_BOOL)
-					lhs = kc_expr_boolean((lhs.integer < rhs.integer) ^ invert);
-				if (lhs.type == KC_EXPR_TYPE_REAL || rhs.type == KC_EXPR_TYPE_REAL)
-					lhs = kc_expr_boolean((kc_expr_to_real(lhs) < kc_expr_to_real(rhs)) ^ invert);
+		if (kc_expr_is_constant(lhs.type) && kc_expr_is_constant(rhs.type))
+		{
+			if ((lhs.type == KC_EXPR_TYPE_BOOL) != (rhs.type == KC_EXPR_TYPE_BOOL))
+				goto error;
+			if (lhs.type == KC_EXPR_TYPE_BOOL)
 				lhs = kc_expr_boolean((lhs.integer < rhs.integer) ^ invert);
-				return lhs;
-			}
-			break;
+			if (lhs.type == KC_EXPR_TYPE_REAL || rhs.type == KC_EXPR_TYPE_REAL)
+				lhs = kc_expr_boolean((kc_expr_to_real(lhs) < kc_expr_to_real(rhs)) ^ invert);
+			lhs = kc_expr_boolean((lhs.integer < rhs.integer) ^ invert);
+			return lhs;
 		}
+		break;
+	}
 
-		case KC_BINOP_LTE:
-		case KC_BINOP_GT:
+	case KC_BINOP_LTE:
+	case KC_BINOP_GT:
+	{
+		koji_bool invert = binop == KC_BINOP_GT;
+		if (lhs.type == KC_EXPR_TYPE_NIL)
 		{
-			koji_bool invert = binop == KC_BINOP_GT;
-			if (lhs.type == KC_EXPR_TYPE_NIL)
-			{
-				lhs = kc_expr_boolean((rhs.type == KC_EXPR_TYPE_NIL) == invert);
-				return lhs;
-			}
-
-			if (rhs.type == KC_EXPR_TYPE_NIL)
-			{
-				lhs = kc_expr_boolean((lhs.type == KC_EXPR_TYPE_NIL) != invert);
-				return lhs;
-			}
-
-			if (kc_expr_is_constant(lhs.type) && kc_expr_is_constant(rhs.type))
-			{
-				if ((lhs.type == KC_EXPR_TYPE_BOOL) != (rhs.type == KC_EXPR_TYPE_BOOL))
-					goto error;
-				if (lhs.type == KC_EXPR_TYPE_BOOL)
-					lhs = kc_expr_boolean((lhs.integer <= rhs.integer) ^ invert);
-				if (lhs.type == KC_EXPR_TYPE_REAL || rhs.type == KC_EXPR_TYPE_REAL)
-					lhs = kc_expr_boolean((kc_expr_to_real(lhs) <= kc_expr_to_real(rhs)) ^ invert);
-				lhs = kc_expr_boolean((lhs.integer <= rhs.integer) ^ invert);
-				return lhs;
-			}
-			break;
+			lhs = kc_expr_boolean((rhs.type == KC_EXPR_TYPE_NIL) == invert);
+			return lhs;
 		}
 
-		default: break;
+		if (rhs.type == KC_EXPR_TYPE_NIL)
+		{
+			lhs = kc_expr_boolean((lhs.type == KC_EXPR_TYPE_NIL) != invert);
+			return lhs;
+		}
+
+		if (kc_expr_is_constant(lhs.type) && kc_expr_is_constant(rhs.type))
+		{
+			if ((lhs.type == KC_EXPR_TYPE_BOOL) != (rhs.type == KC_EXPR_TYPE_BOOL))
+				goto error;
+			if (lhs.type == KC_EXPR_TYPE_BOOL)
+				lhs = kc_expr_boolean((lhs.integer <= rhs.integer) ^ invert);
+			if (lhs.type == KC_EXPR_TYPE_REAL || rhs.type == KC_EXPR_TYPE_REAL)
+				lhs = kc_expr_boolean((kc_expr_to_real(lhs) <= kc_expr_to_real(rhs)) ^ invert);
+			lhs = kc_expr_boolean((lhs.integer <= rhs.integer) ^ invert);
+			return lhs;
+		}
+		break;
+	}
+
+	default: break;
 	}
 
 	// if we get here, lhs or rhs is a register, the binary operation instruction must be omitted.
@@ -2648,7 +2690,7 @@ static kc_expr _compile_binary_expression(kj_compiler* c, const kc_expr_state* e
 
 	// the binary operation between lhs and rhs is invalid
 error:
-	compile_error(c->lex->error_handler, sourceloc, "cannot make binary operation '%s' between values"
+	compiler_error(c->lex->error_handler, sourceloc, "cannot make binary operation '%s' between values"
 		" of type '%s' and '%s'.", KC_BINOP_TO_STR[binop], KC_EXPR_TYPE_TYPE_TO_STRING[lhs.type], KC_EXPR_TYPE_TYPE_TO_STRING[rhs.type]);
 	return (kc_expr) { KC_EXPR_TYPE_NIL };
 
@@ -2656,9 +2698,9 @@ error:
 }
 
 /**
-  * Parses and compiles the potential right hand side of a binary expression if binary operators
-  * are found.
-  */
+* Parses and compiles the potential right hand side of a binary expression if binary operators
+* are found.
+*/
 static kc_expr kc_parse_binary_expression_rhs(kj_compiler* c, const kc_expr_state* es, kc_expr lhs, int precedence)
 {
 	static const int precedences[] = { -1, 1, 0, 2, 2, 3, 3, 3, 3, 4, 4, 5, 5, 5 };
@@ -2715,9 +2757,9 @@ static kc_expr kc_parse_binary_expression_rhs(kj_compiler* c, const kc_expr_stat
 }
 
 /**
-  * Parses a full expression and returns it. Note that the returned expr is not guaranteed to be in
-  * a register.
-  */
+* Parses a full expression and returns it. Note that the returned expr is not guaranteed to be in
+* a register.
+*/
 static kc_expr kc_parse_expression(kj_compiler* c, const kc_expr_state* es)
 {
 	kc_expr_state my_es = *es;
@@ -2736,26 +2778,26 @@ static kc_expr kc_parse_expression(kj_compiler* c, const kc_expr_state* es)
 
 		switch (lhs.type)
 		{
-			case KC_EXPR_TYPE_REGISTER:
-				if (lhs.location < 0 || !lhs.positive) goto error; // more checks for lvalue
-				kc_move_expr_to_register(c, kc_parse_expression_to_any_register(c, c->temporaries), lhs.location);
-				return lhs;
+		case KC_EXPR_TYPE_REGISTER:
+			if (lhs.location < 0 || !lhs.positive) goto error; // more checks for lvalue
+			kc_move_expr_to_register(c, kc_parse_expression_to_any_register(c, c->temporaries), lhs.location);
+			return lhs;
 
-			default: goto error;
+		default: goto error;
 		}
 	}
 
 	return kc_parse_binary_expression_rhs(c, &my_es, lhs, 0);
 
 error:
-	compile_error(c->lex->error_handler, sourceloc, "lhs of assignment is not an lvalue.");
+	compiler_error(c->lex->error_handler, sourceloc, "lhs of assignment is not an lvalue.");
 	return KC_EXPR_NIL;
 }
 
 /**
-  * Parses and compiles an expression, then it makes sure that the final result is written to some
-  * register; it could be @target_hint or something else.
-  */
+* Parses and compiles an expression, then it makes sure that the final result is written to some
+* register; it could be @target_hint or something else.
+*/
 static kc_expr kc_parse_expression_to_any_register(kj_compiler* c, int target_hint)
 {
 	instructions* instructions = &c->proto->instructions;
@@ -2892,10 +2934,10 @@ done:
 }
 
 /**
-  * Parses and compiles an expression only focusing on emitting appropriate branching instructions
-  * to the true or false branch. The expression parsed & compiled is tested against @truth_value, i.e.
-  * if the expression is @truth_value (true or false) then it branches to *true*, otherwise to false.
-  */
+* Parses and compiles an expression only focusing on emitting appropriate branching instructions
+* to the true or false branch. The expression parsed & compiled is tested against @truth_value, i.e.
+* if the expression is @truth_value (true or false) then it branches to *true*, otherwise to false.
+*/
 static void _kc_parse_condition(kj_compiler* c, koji_bool test_value)
 {
 	instructions* instructions = &c->proto->instructions;
@@ -2931,8 +2973,8 @@ static void _kc_parse_condition(kj_compiler* c, koji_bool test_value)
 static void kc_parse_block_stmts(kj_compiler* c);
 
 /**
-  * Parses and compiles an entire "{ stmts... }" block.
-  */
+* Parses and compiles an entire "{ stmts... }" block.
+*/
 static inline void kc_parse_block(kj_compiler* c)
 {
 	kc_expect(c, '{');
@@ -2941,8 +2983,8 @@ static inline void kc_parse_block(kj_compiler* c)
 }
 
 /**
-  * Parses and compiles an if statement.
-  */
+* Parses and compiles an if statement.
+*/
 static void kc_parse_if_stmt(kj_compiler* c)
 {
 	instructions* instructions = &c->proto->instructions;
@@ -2987,8 +3029,8 @@ static void kc_parse_if_stmt(kj_compiler* c)
 }
 
 /**
-  * Parses and compiles a while statement.
-  */
+* Parses and compiles a while statement.
+*/
 static void kc_parse_while_stmt(kj_compiler* c)
 {
 	kc_expect(c, kw_while);
@@ -3016,8 +3058,8 @@ static void kc_parse_while_stmt(kj_compiler* c)
 }
 
 /**
-  * Parses and compiles a do-while statement.
-  */
+* Parses and compiles a do-while statement.
+*/
 static void kc_parse_do_while_stmt(kj_compiler* c)
 {
 	kc_expect(c, kw_do);
@@ -3046,8 +3088,8 @@ static void kc_parse_do_while_stmt(kj_compiler* c)
 }
 
 /**
-  * Parses and compiles a single statement of any kind.
-  */
+* Parses and compiles a single statement of any kind.
+*/
 static void kc_parse_statement(kj_compiler* c)
 {
 	/* reset the temporaries allocator every statement */
@@ -3055,76 +3097,76 @@ static void kc_parse_statement(kj_compiler* c)
 
 	switch (c->lex->lookahead)
 	{
-		case '{':
-			lex(c->lex);
-			kc_parse_block_stmts(c);
-			kc_expect(c, '}');
-			break;
+	case '{':
+		lex(c->lex);
+		kc_parse_block_stmts(c);
+		kc_expect(c, '}');
+		break;
 
-		case kw_var:
-			// eat var
-			lex(c->lex);
+	case kw_var:
+		// eat var
+		lex(c->lex);
 
-			// push the identifier
-			kc_check(c, tok_identifier);
-			uint identifier_offset = kc_push_identifier(c, c->lex->token_string, c->lex->token_string_length);
-			lex(c->lex);
+		// push the identifier
+		kc_check(c, tok_identifier);
+		uint identifier_offset = kc_push_identifier(c, c->lex->token_string, c->lex->token_string_length);
+		lex(c->lex);
 
-			// parse initialization expression, if any
-			if (kc_accept(c, '='))
-			{
-				kc_expr expr = kc_parse_expression_to_any_register(c, c->temporaries);
-				kc_move_expr_to_register(c, expr, c->temporaries);
-			}
-			else
-			{
-				kc_emit(c, encode_ABx(KJ_OP_LOADNIL, c->temporaries, c->temporaries));
-			}
-
-			/* declare the variable */
-			kc_define_local(c, identifier_offset);
-
-			kc_expect_end_of_stmt(c);
-			break;
-
-		case kw_if:
-			kc_parse_if_stmt(c);
-			break;
-
-		case kw_while:
-			kc_parse_while_stmt(c);
-			break;
-
-		case kw_do:
-			kc_parse_do_while_stmt(c);
-			break;
-
-		case kw_return:
+		// parse initialization expression, if any
+		if (kc_accept(c, '='))
 		{
-			lex(c->lex);
-			int oldur = c->temporaries;
-			do
-			{
-				kc_expr e = kc_parse_expression_to_any_register(c, c->temporaries);
-				kc_move_expr_to_register(c, e, c->temporaries++);
-			} while (kc_accept(c, ','));
-			kc_emit(c, encode_ABx(KJ_OP_RET, oldur, c->temporaries));
-			c->temporaries = oldur;
-			kc_expect_end_of_stmt(c);
-			break;
+			kc_expr expr = kc_parse_expression_to_any_register(c, c->temporaries);
+			kc_move_expr_to_register(c, expr, c->temporaries);
+		}
+		else
+		{
+			kc_emit(c, encode_ABx(KJ_OP_LOADNIL, c->temporaries, c->temporaries));
 		}
 
-		default: /* evaluate expression */
+		/* declare the variable */
+		kc_define_local(c, identifier_offset);
+
+		kc_expect_end_of_stmt(c);
+		break;
+
+	case kw_if:
+		kc_parse_if_stmt(c);
+		break;
+
+	case kw_while:
+		kc_parse_while_stmt(c);
+		break;
+
+	case kw_do:
+		kc_parse_do_while_stmt(c);
+		break;
+
+	case kw_return:
+	{
+		lex(c->lex);
+		int oldur = c->temporaries;
+		do
 		{
-			kc_parse_expression_to_any_register(c, c->temporaries);
-			kc_expect_end_of_stmt(c);
-		}
+			kc_expr e = kc_parse_expression_to_any_register(c, c->temporaries);
+			kc_move_expr_to_register(c, e, c->temporaries++);
+		} while (kc_accept(c, ','));
+		kc_emit(c, encode_ABx(KJ_OP_RET, oldur, c->temporaries));
+		c->temporaries = oldur;
+		kc_expect_end_of_stmt(c);
+		break;
+	}
+
+	default: /* evaluate expression */
+	{
+		kc_parse_expression_to_any_register(c, c->temporaries);
+		kc_expect_end_of_stmt(c);
+	}
 	}
 }
 
 /**
-  * Parses and compiles the content of a block, i.e. the instructions between '{' and '}'.
-	*/
+* Parses and compiles the content of a block, i.e. the instructions between '{' and '}'.
+*/
 static void kc_parse_block_stmts(kj_compiler* c)
 {
 	uint num_variables = c->locals.size;
@@ -3136,8 +3178,8 @@ static void kc_parse_block_stmts(kj_compiler* c)
 }
 
 /**
-  * Parses and compiles and entire module, i.e. a source file.
-	*/
+* Parses and compiles and entire module, i.e. a source file.
+*/
 static void kc_parse_module(kj_compiler* c)
 {
 	while (c->lex->lookahead != tok_eos)
@@ -3151,9 +3193,9 @@ static void kc_parse_module(kj_compiler* c)
 }
 
 /**
-  * It compiles a stream containing a source string to a koji module, reporting any error to specified
-  * @error_handler (todo). This function is called by the koji_state in its load* functions.
-	*/
+* It compiles a stream containing a source string to a koji module, reporting any error to specified
+* @error_handler (todo). This function is called by the koji_state in its load* functions.
+*/
 static koji_prototype* compile(const char* source_name, koji_stream_reader_fn stream_func, void* stream_data,
 	const kj_static_functions* local_variable)
 {
@@ -3252,7 +3294,7 @@ static void ks_error(koji_state* s, const char* format, ...)
 	(void)s; // fixme
 	va_list args;
 	va_start(args, format);
-	
+
 	printf("koji runtime error: ");
 	vprintf(format, args);
 	printf("\n");
@@ -3309,12 +3351,12 @@ static inline void ks_op_neg(kj_value* dest, const kj_value* src)
 {
 	switch (src->type)
 	{
-		case KOJI_TYPE_NIL: value_set_boolean(dest, true);
-		case KOJI_TYPE_BOOL: value_set_boolean(dest, !src->boolean);
-		case KOJI_TYPE_INT: value_set_boolean(dest, !src->integer);
-		case KOJI_TYPE_STRING: value_set_boolean(dest, src->string->length == 0);
-		case KOJI_TYPE_REAL: value_set_boolean(dest, !src->real);
-		case KOJI_TYPE_CLOSURE: value_set_boolean(dest, true);
+	case KOJI_TYPE_NIL: value_set_boolean(dest, true);
+	case KOJI_TYPE_BOOL: value_set_boolean(dest, !src->boolean);
+	case KOJI_TYPE_INT: value_set_boolean(dest, !src->integer);
+	case KOJI_TYPE_STRING: value_set_boolean(dest, src->string->length == 0);
+	case KOJI_TYPE_REAL: value_set_boolean(dest, !src->real);
+	case KOJI_TYPE_CLOSURE: value_set_boolean(dest, true);
 	}
 }
 
@@ -3322,11 +3364,11 @@ static inline void ks_op_unm(koji_state* s, kj_value* dest, const kj_value* src)
 {
 	switch (src->type)
 	{
-		case KOJI_TYPE_INT: value_set_integer(dest, -src->integer); break;
-		case KOJI_TYPE_REAL: value_set_real(dest, -src->real); break;
-			
-		default:
-			ks_error(s, "cannot apply unary minus operation to a %s value.", KJ_VALUE_TYPE_STRING[src->type]);
+	case KOJI_TYPE_INT: value_set_integer(dest, -src->integer); break;
+	case KOJI_TYPE_REAL: value_set_real(dest, -src->real); break;
+
+	default:
+		ks_error(s, "cannot apply unary minus operation to a %s value.", KJ_VALUE_TYPE_STRING[src->type]);
 	}
 }
 
@@ -3417,7 +3459,7 @@ static inline void ks_binop_mul(koji_state* s, kj_value* dest, const kj_value* l
 
 static inline void ks_binop_div(koji_state* s, kj_value* dest, const kj_value* lhs, const kj_value* rhs)
 {
-	KS_BINOP(/)
+	KS_BINOP(/ )
 }
 
 #undef KS_BINOP
@@ -3426,14 +3468,14 @@ static inline void ks_binop_mod(koji_state* s, kj_value* dest, const kj_value* l
 {
 	switch (lhs->type)
 	{
-		case KOJI_TYPE_INT:
-			switch (lhs->type)
-			{
-				case KOJI_TYPE_INT: value_set_integer(dest, lhs->integer + rhs->integer); return;
-				default: goto error;
-			}
-
+	case KOJI_TYPE_INT:
+		switch (lhs->type)
+		{
+		case KOJI_TYPE_INT: value_set_integer(dest, lhs->integer + rhs->integer); return;
 		default: goto error;
+		}
+
+	default: goto error;
 	}
 
 error:
@@ -3445,11 +3487,11 @@ static inline koji_bool ks_comp_eq(const kj_value* lhs, const kj_value* rhs)
 {
 	switch (lhs->type)
 	{
-		case KOJI_TYPE_NIL: return rhs->type == KOJI_TYPE_NIL;
-		case KOJI_TYPE_BOOL: return rhs->type == KOJI_TYPE_BOOL && lhs->boolean == rhs->boolean;
-		case KOJI_TYPE_INT: return rhs->type == KOJI_TYPE_REAL ? lhs->integer == rhs->real : lhs->integer == value_to_int(rhs);
-		case KOJI_TYPE_REAL: return lhs->real == value_to_real(rhs);
-		default: assert(!"implement me");
+	case KOJI_TYPE_NIL: return rhs->type == KOJI_TYPE_NIL;
+	case KOJI_TYPE_BOOL: return rhs->type == KOJI_TYPE_BOOL && lhs->boolean == rhs->boolean;
+	case KOJI_TYPE_INT: return rhs->type == KOJI_TYPE_REAL ? lhs->integer == rhs->real : lhs->integer == value_to_int(rhs);
+	case KOJI_TYPE_REAL: return lhs->real == value_to_real(rhs);
+	default: assert(!"implement me");
 	}
 	return 0;
 }
@@ -3458,11 +3500,11 @@ static inline koji_bool ks_comp_lt(const kj_value* lhs, const kj_value* rhs)
 {
 	switch (lhs->type)
 	{
-		case KOJI_TYPE_NIL: return rhs->type != KOJI_TYPE_NIL;
-		case KOJI_TYPE_BOOL: return lhs->boolean < value_to_int(rhs);
-		case KOJI_TYPE_INT: return lhs->integer < value_to_int(rhs);
-		case KOJI_TYPE_REAL: return lhs->real < value_to_real(rhs);
-		default: assert(!"implement me");
+	case KOJI_TYPE_NIL: return rhs->type != KOJI_TYPE_NIL;
+	case KOJI_TYPE_BOOL: return lhs->boolean < value_to_int(rhs);
+	case KOJI_TYPE_INT: return lhs->integer < value_to_int(rhs);
+	case KOJI_TYPE_REAL: return lhs->real < value_to_real(rhs);
+	default: assert(!"implement me");
 	}
 	return 0;
 }
@@ -3471,11 +3513,11 @@ static inline koji_bool ks_comp_lte(const kj_value* lhs, const kj_value* rhs)
 {
 	switch (lhs->type)
 	{
-		case KOJI_TYPE_NIL: return true;
-		case KOJI_TYPE_BOOL: return lhs->boolean <= value_to_int(rhs);
-		case KOJI_TYPE_INT: return lhs->integer <= value_to_int(rhs);
-		case KOJI_TYPE_REAL: return lhs->real <= value_to_real(rhs);
-		default: assert(!"implement me");
+	case KOJI_TYPE_NIL: return true;
+	case KOJI_TYPE_BOOL: return lhs->boolean <= value_to_int(rhs);
+	case KOJI_TYPE_INT: return lhs->integer <= value_to_int(rhs);
+	case KOJI_TYPE_REAL: return lhs->real <= value_to_real(rhs);
+	default: assert(!"implement me");
 	}
 	return 0;
 }
@@ -3667,198 +3709,228 @@ newframe:
 
 		switch (decode_op(ins))
 		{
-			case KJ_OP_LOADNIL:
-				for (uint r = decode_A(ins), to = r + decode_Bx(ins); r < to; ++r)
-					value_set_nil(ks_get_register(s, curr_frame, r));
-				break;
+		case KJ_OP_LOADNIL:
+			for (uint r = decode_A(ins), to = r + decode_Bx(ins); r < to; ++r)
+				value_set_nil(ks_get_register(s, curr_frame, r));
+			break;
 
-			case KJ_OP_LOADB:
-				value_set_boolean(KSREGA, (koji_bool)decode_B(ins));
-				curr_frame->pc += decode_C(ins);
-				break;
+		case KJ_OP_LOADB:
+			value_set_boolean(KSREGA, (koji_bool)decode_B(ins));
+			curr_frame->pc += decode_C(ins);
+			break;
 
-			case KJ_OP_MOV:
-				value_set(KSREGA, KSARG(Bx));
-				break;
+		case KJ_OP_MOV:
+			value_set(KSREGA, KSARG(Bx));
+			break;
 
-			case KJ_OP_NEG:
-				ks_op_neg(KSREGA, KSARG(Bx));
-				break;
+		case KJ_OP_NEG:
+			ks_op_neg(KSREGA, KSARG(Bx));
+			break;
 
-			case KJ_OP_UNM:
-				ks_op_unm(s, KSREGA, KSARG(Bx));
-				break;
+		case KJ_OP_UNM:
+			ks_op_unm(s, KSREGA, KSARG(Bx));
+			break;
 
-			case KJ_OP_ADD:
-				ks_binop_add(s, KSREGA, KSARG(B), KSARG(C));
-				break;
+		case KJ_OP_ADD:
+			ks_binop_add(s, KSREGA, KSARG(B), KSARG(C));
+			break;
 
-			case KJ_OP_SUB:
-				ks_binop_sub(s, KSREGA, KSARG(B), KSARG(C));
-				break;
+		case KJ_OP_SUB:
+			ks_binop_sub(s, KSREGA, KSARG(B), KSARG(C));
+			break;
 
-			case KJ_OP_MUL:
-				ks_binop_mul(s, KSREGA, KSARG(B), KSARG(C));
-				break;
+		case KJ_OP_MUL:
+			ks_binop_mul(s, KSREGA, KSARG(B), KSARG(C));
+			break;
 
-			case KJ_OP_DIV:
-				ks_binop_div(s, KSREGA, KSARG(B), KSARG(C));
-				break;
+		case KJ_OP_DIV:
+			ks_binop_div(s, KSREGA, KSARG(B), KSARG(C));
+			break;
 
-			case KJ_OP_MOD:
-				ks_binop_mod(s, KSREGA, KSARG(B), KSARG(C));
-				break;
+		case KJ_OP_MOD:
+			ks_binop_mod(s, KSREGA, KSARG(B), KSARG(C));
+			break;
 
-			case KJ_OP_POW:
-				assert(0);
-				break;
+		case KJ_OP_POW:
+			assert(0);
+			break;
 
-			case KJ_OP_GLOBALS:
+		case KJ_OP_GLOBALS:
+		{
+			kj_value* regA = KSREGA;
+			regA->type = KOJI_TYPE_TABLE;
+			regA->table = &s->globals;
+			++s->globals.references;
+			break;
+		}
+
+		case KJ_OP_TEST:
+		{
+			int newpc = curr_frame->pc + 1;
+			if (value_to_bool(KSREGA) == decode_Bx(ins))
+				newpc += decode_Bx(instructions[curr_frame->pc]);
+			curr_frame->pc = newpc;
+			break;
+		}
+
+		case KJ_OP_TESTSET:
+		{
+			int newpc = curr_frame->pc + 1;
+			const kj_value* arg = KSARG(B);
+			if (value_to_bool(arg) == decode_C(ins))
 			{
-				kj_value* regA = KSREGA;
-				regA->type = KOJI_TYPE_TABLE;
-				regA->table = &s->globals;
-				++s->globals.references;
-				break;
+				value_set(KSREGA, arg);
+				newpc += decode_Bx(instructions[curr_frame->pc]);
 			}
+			curr_frame->pc = newpc;
+			break;
+		}
 
-			case KJ_OP_TEST:
+		case KJ_OP_JUMP:
+			curr_frame->pc += decode_Bx(ins);
+			break;
+
+		case KJ_OP_EQ:
+		{
+			int newpc = curr_frame->pc + 1;
+			if (ks_comp_eq(KSREGA, KSARG(B)) == decode_C(ins))
 			{
-				int newpc = curr_frame->pc + 1;
-				if (value_to_bool(KSREGA) == decode_Bx(ins))
-					newpc += decode_Bx(instructions[curr_frame->pc]);
-				curr_frame->pc = newpc;
-				break;
+				newpc += decode_Bx(instructions[curr_frame->pc]);
 			}
+			curr_frame->pc = newpc;
+			break;
+		}
 
-			case KJ_OP_TESTSET:
+		case KJ_OP_LT:
+		{
+			int newpc = curr_frame->pc + 1;
+			if (ks_comp_lt(KSREGA, KSARG(B)) == decode_C(ins))
 			{
-				int newpc = curr_frame->pc + 1;
-				const kj_value* arg = KSARG(B);
-				if (value_to_bool(arg) == decode_C(ins))
-				{
-					value_set(KSREGA, arg);
-					newpc += decode_Bx(instructions[curr_frame->pc]);
-				}
-				curr_frame->pc = newpc;
-				break;
+				newpc += decode_Bx(instructions[curr_frame->pc]);
 			}
+			curr_frame->pc = newpc;
+			break;
+		}
 
-			case KJ_OP_JUMP:
-				curr_frame->pc += decode_Bx(ins);
-				break;
-
-			case KJ_OP_EQ:
+		case KJ_OP_LTE:
+		{
+			int newpc = curr_frame->pc + 1;
+			if (ks_comp_lte(KSREGA, KSARG(B)) == decode_C(ins))
 			{
-				int newpc = curr_frame->pc + 1;
-				if (ks_comp_eq(KSREGA, KSARG(B)) == decode_C(ins))
-				{
-					newpc += decode_Bx(instructions[curr_frame->pc]);
-				}
-				curr_frame->pc = newpc;
-				break;
+				newpc += decode_Bx(instructions[curr_frame->pc]);
 			}
+			curr_frame->pc = newpc;
+			break;
+		}
 
-			case KJ_OP_LT:
+		case KJ_OP_CLOSURE:
+		{
+			assert((uint)decode_Bx(ins) < curr_frame->proto->prototypes.size);
+			value_set_closure(KSREGA, curr_frame->proto->prototypes.data[decode_Bx(ins)]);
+			break;
+		}
+
+		case KJ_OP_CALL:
+		{
+			const kj_value* value = KSARG(B);
+			if (value->type != KOJI_TYPE_CLOSURE)
 			{
-				int newpc = curr_frame->pc + 1;
-				if (ks_comp_lt(KSREGA, KSARG(B)) == decode_C(ins))
-				{
-					newpc += decode_Bx(instructions[curr_frame->pc]);
-				}
-				curr_frame->pc = newpc;
-				break;
+				ks_error(s, "cannot call value of type %s.", KJ_VALUE_TYPE_STRING[value->type]);
+				return KOJI_RESULT_FAIL; // temp
 			}
-
-			case KJ_OP_LTE:
+			koji_prototype* proto = value->closure.proto;
+			uint ncallargs = decode_C(ins);
+			if (proto->nargs != ncallargs)
 			{
-				int newpc = curr_frame->pc + 1;
-				if (ks_comp_lte(KSREGA, KSARG(B)) == decode_C(ins))
-				{
-					newpc += decode_Bx(instructions[curr_frame->pc]);
-				}
-				curr_frame->pc = newpc;
-				break;
+				ks_error(s, "closure at (TODO) takes %d number of arguments (%d provided).", proto->nargs, ncallargs);
+				return KOJI_RESULT_FAIL; // temp
 			}
+			++proto->references;
+			/* push a new frame onto the stack with stack base at register A offset from current frame stack base */
+			ks_push_frame(s, proto, curr_frame->stackbase + decode_A(ins));
+			goto newframe;
+		}
 
-			case KJ_OP_CLOSURE:
+		case KJ_OP_SCALL:
+		{
+			const kj_static_function* sfun = s->static_host_functions.functions.data + decode_Bx(ins);
+			uint sp = s->sp;
+			s->sp = curr_frame->stackbase + decode_A(ins) + sfun->nargs;
+			int nretvalues = sfun->function(s, sfun->nargs);
+			if (nretvalues == 0) value_set_nil(ks_get_register(s, curr_frame, s->sp));
+			s->sp = sp;
+			break;
+		}
+
+		case KJ_OP_MCALL:
+		{
+			const int regA = decode_A(ins);
+			kj_value* obj = ks_get_register(s, curr_frame, regA - 1);
+			if (obj->type != KOJI_TYPE_TABLE)
 			{
-				assert((uint)decode_Bx(ins) < curr_frame->proto->prototypes.size);
-				value_set_closure(KSREGA, curr_frame->proto->prototypes.data[decode_Bx(ins)]);
-				break;
+				ks_error(s, "cannot call method on object of type %s", KJ_VALUE_TYPE_STRING[obj->type]);
+				return KOJI_RESULT_FAIL; // temp
 			}
+			const kj_value* key = KSARG(B);
+			kj_value* closure = table_get(&obj->table->table, key);
 
-			case KJ_OP_CALL:
+			/* todo: refactor this */
+			if (closure->type != KOJI_TYPE_CLOSURE)
 			{
-				const kj_value* value = KSARG(B);
-				if (value->type != KOJI_TYPE_CLOSURE)
-				{
-					ks_error(s, "cannot call value of type %s.", KJ_VALUE_TYPE_STRING[value->type]);
-					return KOJI_RESULT_FAIL; // temp
-				}
-				koji_prototype* proto = value->closure.proto;
-				uint ncallargs = decode_C(ins);
-				if (proto->nargs != ncallargs)
-				{
-					ks_error(s, "closure at (TODO) takes %d number of arguments (%d provided).", proto->nargs, ncallargs);
-					return KOJI_RESULT_FAIL; // temp
-				}
-				++proto->references;
-				/* push a new frame onto the stack with stack base at register A offset from current frame stack base */
-				ks_push_frame(s, proto, curr_frame->stackbase + decode_A(ins));
-				goto newframe;
+				ks_error(s, "cannot call value of type %s.", KJ_VALUE_TYPE_STRING[closure->type]);
+				return KOJI_RESULT_FAIL; // temp
 			}
-
-			case KJ_OP_SCALL:
+			koji_prototype* proto = closure->closure.proto;
+			uint ncallargs = decode_C(ins);
+			if (proto->nargs != ncallargs)
 			{
-				const kj_static_function* sfun = s->static_host_functions.functions.data + decode_Bx(ins);
-				uint sp = s->sp;
-				s->sp = curr_frame->stackbase + decode_A(ins) + sfun->nargs;
-				int nretvalues = sfun->function(s, sfun->nargs);
-				if (nretvalues == 0) value_set_nil(ks_get_register(s, curr_frame, s->sp));
-				s->sp = sp;
-				break;
+				ks_error(s, "closure at (TODO) takes %d number of arguments (%d provided).", proto->nargs, ncallargs);
+				return KOJI_RESULT_FAIL; // temp
 			}
+			++proto->references;
+			/* push a new frame onto the stack with stack base at register A offset from current frame stack base */
+			ks_push_frame(s, proto, curr_frame->stackbase + regA);
+			goto newframe;
+		}
 
-			case KJ_OP_RET:
-			{
-				int i = 0;
-				for (int reg = decode_A(ins), to_reg = decode_Bx(ins); reg < to_reg; ++reg, ++i)
-					value_set(ks_get_register(s, curr_frame, i), ks_get(s, curr_frame, reg));
-				for (int end = curr_frame->proto->nargs + curr_frame->proto->ntemporaries; i < end; ++i)
-					value_set_nil(ks_get_register(s, curr_frame, i));
-				prototype_release(curr_frame->proto);
-				--s->framestack.size;
-				if (s->framestack.size == 0) return KOJI_RESULT_OK;
-				goto newframe;
-			}
+		case KJ_OP_RET:
+		{
+			int i = 0;
+			for (int reg = decode_A(ins), to_reg = decode_Bx(ins); reg < to_reg; ++reg, ++i)
+				value_set(ks_get_register(s, curr_frame, i), ks_get(s, curr_frame, reg));
+			for (int end = curr_frame->proto->nargs + curr_frame->proto->ntemporaries; i < end; ++i)
+				value_set_nil(ks_get_register(s, curr_frame, i));
+			prototype_release(curr_frame->proto);
+			--s->framestack.size;
+			if (s->framestack.size == 0) return KOJI_RESULT_OK;
+			goto newframe;
+		}
 
-			case KJ_OP_NEWTABLE:
-				value_set_table(KSREGA);
-				break;
+		case KJ_OP_NEWTABLE:
+			value_set_table(KSREGA);
+			break;
 
-			case KJ_OP_SETTABLE:
-			{
-				kj_value* regA = KSREGA;
-				if (regA->type != KOJI_TYPE_TABLE)
-					ks_error(s, "table set operation performed on value of type %s.", KJ_VALUE_TYPE_STRING[regA->type]);
-				table_put(&regA->table->table, KSARG(B), KSARG(C));
-				break;
-			}
+		case KJ_OP_SETTABLE:
+		{
+			kj_value* regA = KSREGA;
+			if (regA->type != KOJI_TYPE_TABLE)
+				ks_error(s, "table set operation performed on value of type %s.", KJ_VALUE_TYPE_STRING[regA->type]);
+			table_put(&regA->table->table, KSARG(B), KSARG(C));
+			break;
+		}
 
-			case KJ_OP_GETTABLE:
-			{
-				kj_value const* regB = KSARG(B);
-				if (regB->type != KOJI_TYPE_TABLE)
-					ks_error(s, "table get operation performed on value of type %s.", KJ_VALUE_TYPE_STRING[regB->type]);
-				value_set(KSREGA, table_get(&regB->table->table, KSARG(C)));
-				break;
-			}
-				
+		case KJ_OP_GETTABLE:
+		{
+			kj_value const* regB = KSARG(B);
+			if (regB->type != KOJI_TYPE_TABLE)
+				ks_error(s, "table get operation performed on value of type %s.", KJ_VALUE_TYPE_STRING[regB->type]);
+			value_set(KSREGA, table_get(&regB->table->table, KSARG(C)));
+			break;
+		}
 
-			default:
-				assert(0 && "unsupported op code");
-				break;
+		default:
+			assert(0 && "unsupported op code");
+			break;
 		}
 
 #undef KSREGA
