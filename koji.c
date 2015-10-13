@@ -266,6 +266,7 @@ enum
 	kw_if,
 	kw_in,
 	kw_return,
+	kw_this,
 	kw_true,
 	kw_var,
 	kw_while,
@@ -401,6 +402,7 @@ static const char *lex_token_to_string(kj_token tok, char *buffer, uint buffer_s
 	case kw_if: return "if";
 	case kw_in: return "in";
 	case kw_return: return "return";
+	case kw_this: return "this";
 	case kw_true: return "true";
 	case kw_var: return "var";
 	case kw_while: return "while";
@@ -625,7 +627,11 @@ static kj_token lex(kj_lexer *l)
 		case 't':
 			_lex_push(l);
 			l->lookahead = tok_identifier;
-			if (_lex_accept(l, "rue")) l->lookahead = kw_true;
+			switch (l->curr_char)
+			{
+				case 'h': _lex_push(l); if (_lex_accept(l, "is")) l->lookahead = kw_this; break;
+				case 'r': _lex_push(l); if (_lex_accept(l, "ue")) l->lookahead = kw_true; break;
+			}
 			return l->lookahead = _lex_scan_identifier(l, false);
 
 		case 'v':
@@ -705,6 +711,7 @@ typedef enum kj_opcode
 	KJ_OP_GLOBALS, /* globals A         ; get the global table into register A */
 	KJ_OP_NEWTABLE, /* newtable A       ; creates a new table in R(A) */
 	KJ_OP_GETTABLE, /* gettable A, B, C ; R(A) = table(R(B))[R(C)] */
+	KJ_OP_THIS,     /* this A           ; R(A) = this */
 
 	/* operations that do not write into R(A) */
 	KJ_OP_TEST,    /* test A, Bx        ; if (bool)R(A) != (bool)B then jump 1 */
@@ -721,7 +728,7 @@ typedef enum kj_opcode
 
 static const char *KJ_OP_STRINGS[] = {
 	"loadnil", "loadb", "mov", "neg", "unm", "add", "sub", "mul", "div", "mod", "pow", "testset", "closure",
-	"globals", "newtable", "gettable", "test", "jump", "eq", "lt", "lte", "scall", "ret", "settable", "call", "mcall"
+	"globals", "newtable", "gettable", "this", "test", "jump", "eq", "lt", "lte", "scall", "ret", "settable", "call", "mcall"
 };
 
 /* Instructions */
@@ -736,7 +743,7 @@ static const uint MAX_REGISTER_VALUE = 255;
 static const int MAX_BX_INTEGER = 131071;
 
 /** Returns whether opcode @op involves writing into register A. */
-static inline koji_bool opcode_has_target(kj_opcode op) { return op <= KJ_OP_GETTABLE; }
+static inline koji_bool opcode_has_target(kj_opcode op) { return op <= KJ_OP_THIS; }
 
 /** Encodes an instruction with arguments A and Bx. */
 static inline kj_instruction encode_ABx(kj_opcode op, int A, int Bx)
@@ -813,10 +820,11 @@ typedef struct kj_table
 
 typedef uint64 hash_t;
 
-typedef struct
+typedef struct kj_value_table
 {
 	uint references;
 	kj_table table;
+	struct kj_value_table* metatable;
 } kj_value_table;
 
 /* Definition */
@@ -877,6 +885,16 @@ static inline void prototype_release(koji_prototype* p)
 static void table_init(kj_table* table, size_t capacity);
 static void table_destruct(kj_table* table);
 
+static inline void _value_table_destroy(kj_value_table* vt)
+{
+	if (vt->references-- == 1)
+	{
+		if (vt->metatable) _value_table_destroy(vt->metatable);
+		table_destruct(&vt->table);
+		free(vt);
+	}
+}
+
 static inline void value_destroy(kj_value* v)
 {
 	switch (v->type)
@@ -896,15 +914,8 @@ static inline void value_destroy(kj_value* v)
 	}
 
 	case KOJI_TYPE_TABLE:
-	{
-		uint* references = (uint*)v->object;
-		if ((*references)-- == 1)
-		{
-			table_destruct(&v->table->table);
-			free(v->table);
-		}
+		_value_table_destroy(v->table);
 		break;
-	}
 
 	case KOJI_TYPE_CLOSURE:
 		/* check whether this closure was the last reference to the prototype module, if so destroy the module */
@@ -942,7 +953,7 @@ static inline void value_set_real(kj_value* v, koji_real real)
 	v->real = real;
 }
 
-static void value_set_string(kj_value* v, uint length)
+static void value_new_string(kj_value* v, uint length)
 {
 	value_destroy(v);
 	v->type = KOJI_TYPE_STRING;
@@ -952,16 +963,24 @@ static void value_set_string(kj_value* v, uint length)
 	v->string->data = (char*)v->string + sizeof(kj_string);
 }
 
-static void value_set_table(kj_value* v)
+static inline void value_set_table(kj_value* v, kj_value_table* table)
+{
+	value_destroy(v);
+	v->table = table;
+	++v->table->references;
+}
+
+static inline void value_new_table(kj_value* v)
 {
 	value_destroy(v);
 	v->type = KOJI_TYPE_TABLE;
 	v->table = malloc(sizeof(kj_value_table));
 	v->table->references = 1;
+	v->table->metatable = KJ_NULL;
 	table_init(&v->table->table, KJ_TABLE_DEFAULT_CAPACITY);
 }
 
-static inline void value_set_closure(kj_value* v, koji_prototype* proto)
+static inline void value_new_closure(kj_value* v, koji_prototype* proto)
 {
 	value_destroy(v);
 	++proto->references;
@@ -1230,7 +1249,7 @@ static void prototype_dump(koji_prototype* p, int level, int index)
 			}
 			break;
 
-		case KJ_OP_GLOBALS:
+		case KJ_OP_GLOBALS: case KJ_OP_THIS:
 			printf("%s\t%d", opstr, A);
 			break;
 
@@ -2137,6 +2156,12 @@ static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* 
 		expr = kc_expr_register(es->target_register);
 		break;
 
+	case kw_this:
+		lex(c->lex);
+		kc_emit(c, encode_ABx(KJ_OP_THIS, es->target_register, 0));
+		expr = kc_expr_register(es->target_register);
+		break;
+
 		/* literals */
 	case kw_true: lex(c->lex); expr = kc_expr_boolean(true); break;
 	case kw_false: lex(c->lex); expr = kc_expr_boolean(false); break;
@@ -2384,6 +2409,7 @@ static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* 
 			kc_expr key = kc_expr_string(c, c->lex->token_string_length);
 			memcpy(key.string.data, c->lex->token_string, c->lex->token_string_length + 1);
 			key = kc_expr_to_any_register(c, key, es->target_register);
+
 			c->temporaries = temps;
 
 			/* expr now is the accessor "expr.key" */
@@ -2767,23 +2793,30 @@ static kc_expr kc_parse_expression(kj_compiler* c, const kc_expr_state* es)
 	my_es.false_jumps_begin = c->false_label.size;
 
 	kj_source_location sourceloc = c->lex->source_location;
-	koji_bool peek_identifier = c->lex->lookahead == tok_identifier;
-
 	kc_expr lhs = kc_parse_primary_expression(c, &my_es);
 
 	/* parse chain of assignments if any */
 	if (kc_accept(c, '='))
 	{
-		if (!peek_identifier) goto error;
+		if (!lhs.positive) goto error;
 
 		switch (lhs.type)
 		{
-		case KC_EXPR_TYPE_REGISTER:
-			if (lhs.location < 0 || !lhs.positive) goto error; // more checks for lvalue
-			kc_move_expr_to_register(c, kc_parse_expression_to_any_register(c, c->temporaries), lhs.location);
-			return lhs;
+			case KC_EXPR_TYPE_REGISTER:
+				if (lhs.location < 0 || lhs.location >= (int)c->locals.size) goto error; // more checks for lvalue
+				kc_move_expr_to_register(c, kc_parse_expression_to_any_register(c, c->temporaries), lhs.location);
+				return lhs;
 
-		default: goto error;
+			case KC_EXPR_TYPE_ACCESSOR:
+			{
+				int temps = kc_use_temporary(c, &lhs);
+				kc_expr rhs = kc_parse_expression_to_any_register(c, c->temporaries);
+				kc_emit(c, encode_ABC(KJ_OP_SETTABLE, lhs.lhs, lhs.rhs, rhs.location));
+				c->temporaries = temps;
+				return rhs;
+			}
+
+			default: goto error;
 		}
 	}
 
@@ -3264,17 +3297,20 @@ static char ks_file_stream_reader(void* data)
 	return (char)fgetc(data);
 }
 
-// A frame contains all the necessary information to run a script function (closure).
+/* Contains all the necessary information to run a script function (closure) */
 typedef struct ks_frame
 {
-	// The function prototype this frame is executing.
+	/* the function prototype this frame is executing */
 	koji_prototype* proto;
 
-	// The program counter (current instruction index).
+	/* the program counter (current instruction index) */
 	uint pc;
 
-	// Value stack base, i.e. the index of the first value in the stack for this frame.
+	/* value stack base, i.e. the index of the first value in the stack for this frame */
 	int stackbase;
+
+	/* the this object for this frame */
+	kj_value this;
 
 } ks_frame;
 
@@ -3407,7 +3443,7 @@ static inline void ks_binop_add(koji_state* s, kj_value* dest, const kj_value* l
 
 		/* create a new string */
 		kj_value temp = { KOJI_TYPE_NIL };
-		value_set_string(&temp, lhs->string->length + rhs->string->length);
+		value_new_string(&temp, lhs->string->length + rhs->string->length);
 		memcpy(temp.string->data, lhs->string->data, lhs->string->length); /* copy lhs */
 		memcpy(temp.string->data + lhs->string->length, rhs->string->data, rhs->string->length + 1); /* copy rhs */
 
@@ -3439,7 +3475,7 @@ static inline void ks_binop_mul(koji_state* s, kj_value* dest, const kj_value* l
 		uint dest_length = (uint)(lhs->string->length * repetitions);
 
 		kj_value temp = { KOJI_TYPE_NIL };
-		value_set_string(&temp, dest_length);
+		value_new_string(&temp, dest_length);
 
 		/* copy lhs into dest 'rhs' times */
 		for (uint i = 0; i < repetitions; ++i)
@@ -3556,15 +3592,58 @@ static inline const kj_value* ks_get(koji_state* s, ks_frame* currframe, int loc
 		currframe->proto->constants.data - location - 1;
 }
 
-static inline void ks_push_frame(koji_state* s, koji_prototype* proto, uint stackbase)
+static inline void ks_push_frame(koji_state* s, koji_prototype* proto, uint stackbase, kj_value this)
 {
 	ks_frame* frame = array_push(&s->framestack, ks_frame, 1);
 	frame->proto = proto;
 	frame->pc = 0;
 	frame->stackbase = stackbase;
+	frame->this = this;
 	array_push(&s->valuestack, kj_value, proto->ntemporaries);
 	for (int i = proto->nargs, tot = proto->nargs + proto->ntemporaries; i < tot; ++i)
 		s->valuestack.data[frame->stackbase + i].type = KOJI_TYPE_NIL;
+}
+
+/* standard functions */
+static int kjstd_set_metatable(koji_state* s, int nargs)
+{
+	kj_value* table = ks_top(s, -2);
+
+	if (table->type != KOJI_TYPE_TABLE)
+	{
+		ks_error(s, "set_metatable() argument 1 must be of type table.");
+	}
+
+	kj_value* metatable = ks_top(s, -1);
+	
+	if (metatable->type != KOJI_TYPE_TABLE)
+	{
+		ks_error(s, "set_metatable() argument 2 must be of type table.");
+	}
+
+	table->table->metatable = metatable->table;
+	++metatable->table->references;
+
+	koji_pop(s, nargs);
+	return 0;
+}
+
+static int kjstd_get_metatable(koji_state* s, int nargs)
+{
+	(void)nargs;
+	kj_value* table = ks_top(s, -1);
+
+	if (table->type != KOJI_TYPE_TABLE)
+	{
+		ks_error(s, "get_metatable() argument 1 must be of type table.");
+	}
+
+	if (table->table->metatable)
+		value_set_table(ks_top(s, -1), table->table->metatable);
+	else
+		value_set_nil(ks_top(s, -1));
+
+	return 1;
 }
 
 /* API functions */
@@ -3576,6 +3655,10 @@ koji_state* koji_create(void)
 	s->valid = true;
 	table_init(&s->globals.table, KJ_TABLE_DEFAULT_CAPACITY);
 	s->globals.references = 1;
+
+	koji_static_function(s, "set_metatable", kjstd_set_metatable, 2);
+	koji_static_function(s, "get_metatable", kjstd_get_metatable, 1);
+
 	return s;
 }
 
@@ -3639,7 +3722,7 @@ int koji_load(koji_state* s, const char* source_name, koji_stream_reader_fn stre
 
 	/* create a closure to main prototype and push it to the stack */
 	koji_push_nil(s);
-	value_set_closure(ks_top(s, -1), mainproto);
+	value_new_closure(ks_top(s, -1), mainproto);
 
 	return KOJI_RESULT_OK;
 }
@@ -3679,7 +3762,8 @@ int koji_run(koji_state* s)
 	}
 
 	// push stack frame for closure
-	ks_push_frame(s, top.closure.proto, s->sp);
+	kj_value nil_value = { .type = KOJI_TYPE_NIL };
+	ks_push_frame(s, top.closure.proto, s->sp, nil_value);
 
 	return koji_continue(s);
 }
@@ -3823,10 +3907,14 @@ newframe:
 			break;
 		}
 
+		case KJ_OP_THIS:
+			value_set(KSREGA, &curr_frame->this);
+			break;
+
 		case KJ_OP_CLOSURE:
 		{
 			assert((uint)decode_Bx(ins) < curr_frame->proto->prototypes.size);
-			value_set_closure(KSREGA, curr_frame->proto->prototypes.data[decode_Bx(ins)]);
+			value_new_closure(KSREGA, curr_frame->proto->prototypes.data[decode_Bx(ins)]);
 			break;
 		}
 
@@ -3847,7 +3935,7 @@ newframe:
 			}
 			++proto->references;
 			/* push a new frame onto the stack with stack base at register A offset from current frame stack base */
-			ks_push_frame(s, proto, curr_frame->stackbase + decode_A(ins));
+			ks_push_frame(s, proto, curr_frame->stackbase + decode_A(ins), *value);
 			goto newframe;
 		}
 
@@ -3865,14 +3953,20 @@ newframe:
 		case KJ_OP_MCALL:
 		{
 			const int regA = decode_A(ins);
-			kj_value* obj = ks_get_register(s, curr_frame, regA - 1);
-			if (obj->type != KOJI_TYPE_TABLE)
+			kj_value* object = ks_get_register(s, curr_frame, regA - 1);
+			if (object->type != KOJI_TYPE_TABLE)
 			{
-				ks_error(s, "cannot call method on object of type %s", KJ_VALUE_TYPE_STRING[obj->type]);
+				ks_error(s, "cannot call method on object of type %s", KJ_VALUE_TYPE_STRING[object->type]);
 				return KOJI_RESULT_FAIL; // temp
 			}
 			const kj_value* key = KSARG(B);
-			kj_value* closure = table_get(&obj->table->table, key);
+			kj_value* closure = table_get(&object->table->table, key);
+
+			/* entry not found in table, try in its metatable */
+			if (closure->type == KOJI_TYPE_NIL && object->table->metatable)
+			{
+				closure = table_get(&object->table->metatable->table, key);
+			}
 
 			/* todo: refactor this */
 			if (closure->type != KOJI_TYPE_CLOSURE)
@@ -3880,6 +3974,8 @@ newframe:
 				ks_error(s, "cannot call value of type %s.", KJ_VALUE_TYPE_STRING[closure->type]);
 				return KOJI_RESULT_FAIL; // temp
 			}
+
+			/* call the closure */
 			koji_prototype* proto = closure->closure.proto;
 			uint ncallargs = decode_C(ins);
 			if (proto->nargs != ncallargs)
@@ -3889,7 +3985,7 @@ newframe:
 			}
 			++proto->references;
 			/* push a new frame onto the stack with stack base at register A offset from current frame stack base */
-			ks_push_frame(s, proto, curr_frame->stackbase + regA);
+			ks_push_frame(s, proto, curr_frame->stackbase + regA, *object);
 			goto newframe;
 		}
 
@@ -3907,7 +4003,7 @@ newframe:
 		}
 
 		case KJ_OP_NEWTABLE:
-			value_set_table(KSREGA);
+			value_new_table(KSREGA);
 			break;
 
 		case KJ_OP_SETTABLE:
