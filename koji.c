@@ -1011,6 +1011,45 @@ static inline void value_set(kj_value* dest, const kj_value* src)
 	}
 }
 
+/* conversions */
+static inline koji_bool value_to_bool(const kj_value* v)
+{
+	switch (v->type)
+	{
+	case KOJI_TYPE_NIL: return false;
+	case KOJI_TYPE_BOOL: return v->boolean;
+	case KOJI_TYPE_INT: return v->integer != 0;
+	case KOJI_TYPE_REAL: return v->real != 0;
+	case KOJI_TYPE_CLOSURE: return true;
+	default: assert(!"implement me");
+	}
+	return 0;
+}
+
+static inline koji_integer value_to_int(const kj_value* v)
+{
+	switch (v->type)
+	{
+	case KOJI_TYPE_BOOL: return (koji_integer)v->boolean;
+	case KOJI_TYPE_INT: return v->integer;
+	case KOJI_TYPE_REAL: return (koji_integer)v->real;
+	default: assert(!"implement me");
+	}
+	return 0;
+}
+
+static inline koji_real value_to_real(const kj_value* v)
+{
+	switch (v->type)
+	{
+	case KOJI_TYPE_BOOL: return (koji_real)v->boolean;
+	case KOJI_TYPE_INT: return (koji_real)v->integer;
+	case KOJI_TYPE_REAL: return v->real;
+	default: assert(!"implement me");
+	}
+	return 0;
+}
+
 /* table functions */
 static inline hash_t rehash(hash_t k)
 {
@@ -2284,7 +2323,10 @@ static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* 
 				else
 				{
 					kj_source_location sl = c->lex->source_location;
+					bool square_bracket = kc_accept(c, '[');
 					key = kc_parse_expression_to_any_register(c, c->temporaries);
+					if (square_bracket) kc_expect(c, ']');
+
 					if (kc_accept(c, ':'))
 					{
 						has_key = true;
@@ -3284,19 +3326,6 @@ cleanup:
 //---------------------------------------------------------------------------------------------------------------------
 #pragma region State
 
-static char ks_string_stream_reader(void* data)
-{
-	const char** stream = data;
-	if (**stream)
-		return *((*stream)++);
-	return -1; // eof
-}
-
-static char ks_file_stream_reader(void* data)
-{
-	return (char)fgetc(data);
-}
-
 /* Contains all the necessary information to run a script function (closure) */
 typedef struct ks_frame
 {
@@ -3325,6 +3354,21 @@ struct koji_state
 	uint sp;
 };
 
+/* koji state functions (ks) */
+
+static char ks_string_stream_reader(void* data)
+{
+	const char** stream = data;
+	if (**stream)
+		return *((*stream)++);
+	return -1; // eof
+}
+
+static char ks_file_stream_reader(void* data)
+{
+	return (char)fgetc(data);
+}
+
 static void ks_error(koji_state* s, const char* format, ...)
 {
 	(void)s; // fixme
@@ -3339,47 +3383,6 @@ static void ks_error(koji_state* s, const char* format, ...)
 	va_end(args);
 
 	longjmp(s->error_jump_buf, 1);
-}
-
-/* koji state functions (ks) */
-
-/* conversions */
-static inline koji_bool value_to_bool(const kj_value* v)
-{
-	switch (v->type)
-	{
-	case KOJI_TYPE_NIL: return false;
-	case KOJI_TYPE_BOOL: return v->boolean;
-	case KOJI_TYPE_INT: return v->integer != 0;
-	case KOJI_TYPE_REAL: return v->real != 0;
-	case KOJI_TYPE_CLOSURE: return true;
-	default: assert(!"implement me");
-	}
-	return 0;
-}
-
-static inline koji_integer value_to_int(const kj_value* v)
-{
-	switch (v->type)
-	{
-	case KOJI_TYPE_BOOL: return (koji_integer)v->boolean;
-	case KOJI_TYPE_INT: return v->integer;
-	case KOJI_TYPE_REAL: return (koji_integer)v->real;
-	default: assert(!"implement me");
-	}
-	return 0;
-}
-
-static inline koji_real value_to_real(const kj_value* v)
-{
-	switch (v->type)
-	{
-	case KOJI_TYPE_BOOL: return (koji_real)v->boolean;
-	case KOJI_TYPE_INT: return (koji_real)v->integer;
-	case KOJI_TYPE_REAL: return v->real;
-	default: assert(!"implement me");
-	}
-	return 0;
 }
 
 /* operations */
@@ -3523,11 +3526,11 @@ static inline koji_bool ks_comp_eq(const kj_value* lhs, const kj_value* rhs)
 {
 	switch (lhs->type)
 	{
-	case KOJI_TYPE_NIL: return rhs->type == KOJI_TYPE_NIL;
-	case KOJI_TYPE_BOOL: return rhs->type == KOJI_TYPE_BOOL && lhs->boolean == rhs->boolean;
-	case KOJI_TYPE_INT: return rhs->type == KOJI_TYPE_REAL ? lhs->integer == rhs->real : lhs->integer == value_to_int(rhs);
-	case KOJI_TYPE_REAL: return lhs->real == value_to_real(rhs);
-	default: assert(!"implement me");
+		case KOJI_TYPE_NIL: return rhs->type == KOJI_TYPE_NIL;
+		case KOJI_TYPE_BOOL: return rhs->type == KOJI_TYPE_BOOL && lhs->boolean == rhs->boolean;
+		case KOJI_TYPE_INT: return rhs->type == KOJI_TYPE_REAL ? lhs->integer == rhs->real : lhs->integer == value_to_int(rhs);
+		case KOJI_TYPE_REAL: return lhs->real == value_to_real(rhs);
+		default: assert(!"implement me");
 	}
 	return 0;
 }
@@ -3536,11 +3539,11 @@ static inline koji_bool ks_comp_lt(const kj_value* lhs, const kj_value* rhs)
 {
 	switch (lhs->type)
 	{
-	case KOJI_TYPE_NIL: return rhs->type != KOJI_TYPE_NIL;
-	case KOJI_TYPE_BOOL: return lhs->boolean < value_to_int(rhs);
-	case KOJI_TYPE_INT: return lhs->integer < value_to_int(rhs);
-	case KOJI_TYPE_REAL: return lhs->real < value_to_real(rhs);
-	default: assert(!"implement me");
+		case KOJI_TYPE_NIL: return rhs->type != KOJI_TYPE_NIL;
+		case KOJI_TYPE_BOOL: return lhs->boolean < value_to_int(rhs);
+		case KOJI_TYPE_INT: return lhs->integer < value_to_int(rhs);
+		case KOJI_TYPE_REAL: return lhs->real < value_to_real(rhs);
+		default: assert(!"implement me");
 	}
 	return 0;
 }
@@ -3549,15 +3552,14 @@ static inline koji_bool ks_comp_lte(const kj_value* lhs, const kj_value* rhs)
 {
 	switch (lhs->type)
 	{
-	case KOJI_TYPE_NIL: return true;
-	case KOJI_TYPE_BOOL: return lhs->boolean <= value_to_int(rhs);
-	case KOJI_TYPE_INT: return lhs->integer <= value_to_int(rhs);
-	case KOJI_TYPE_REAL: return lhs->real <= value_to_real(rhs);
-	default: assert(!"implement me");
+		case KOJI_TYPE_NIL: return true;
+		case KOJI_TYPE_BOOL: return lhs->boolean <= value_to_int(rhs);
+		case KOJI_TYPE_INT: return lhs->integer <= value_to_int(rhs);
+		case KOJI_TYPE_REAL: return lhs->real <= value_to_real(rhs);
+		default: assert(!"implement me");
 	}
 	return 0;
 }
-
 
 static inline kj_value* ks_push(koji_state* s)
 {
@@ -3602,6 +3604,22 @@ static inline void ks_push_frame(koji_state* s, koji_prototype* proto, uint stac
 	array_push(&s->valuestack, kj_value, proto->ntemporaries);
 	for (int i = proto->nargs, tot = proto->nargs + proto->ntemporaries; i < tot; ++i)
 		s->valuestack.data[frame->stackbase + i].type = KOJI_TYPE_NIL;
+}
+
+static inline void ks_call_clojure(koji_state* s, ks_frame* curr_frame, kj_value const* closure, int ncallargs, int stackbaseoffset, kj_value const* this)
+{
+	if (closure->type != KOJI_TYPE_CLOSURE)
+		ks_error(s, "cannot call value of type %s.", KJ_VALUE_TYPE_STRING[closure->type]);
+
+	koji_prototype* proto = closure->closure.proto;
+
+	if (proto->nargs != ncallargs)
+		ks_error(s, "closure at (TODO) takes %d number of arguments (%d provided).", proto->nargs, ncallargs);
+
+	++proto->references;
+
+	/* push a new frame onto the stack with stack base at register A offset from current frame stack base */
+	ks_push_frame(s, proto, curr_frame->stackbase + stackbaseoffset, *this);
 }
 
 /* standard functions */
@@ -3921,21 +3939,7 @@ newframe:
 		case KJ_OP_CALL:
 		{
 			const kj_value* value = KSARG(B);
-			if (value->type != KOJI_TYPE_CLOSURE)
-			{
-				ks_error(s, "cannot call value of type %s.", KJ_VALUE_TYPE_STRING[value->type]);
-				return KOJI_RESULT_FAIL; // temp
-			}
-			koji_prototype* proto = value->closure.proto;
-			uint ncallargs = decode_C(ins);
-			if (proto->nargs != ncallargs)
-			{
-				ks_error(s, "closure at (TODO) takes %d number of arguments (%d provided).", proto->nargs, ncallargs);
-				return KOJI_RESULT_FAIL; // temp
-			}
-			++proto->references;
-			/* push a new frame onto the stack with stack base at register A offset from current frame stack base */
-			ks_push_frame(s, proto, curr_frame->stackbase + decode_A(ins), *value);
+			ks_call_clojure(s, curr_frame, value, decode_C(ins), decode_A(ins), value);
 			goto newframe;
 		}
 
@@ -3953,39 +3957,20 @@ newframe:
 		case KJ_OP_MCALL:
 		{
 			const int regA = decode_A(ins);
+			
 			kj_value* object = ks_get_register(s, curr_frame, regA - 1);
 			if (object->type != KOJI_TYPE_TABLE)
-			{
 				ks_error(s, "cannot call method on object of type %s", KJ_VALUE_TYPE_STRING[object->type]);
-				return KOJI_RESULT_FAIL; // temp
-			}
+
 			const kj_value* key = KSARG(B);
 			kj_value* closure = table_get(&object->table->table, key);
 
 			/* entry not found in table, try in its metatable */
 			if (closure->type == KOJI_TYPE_NIL && object->table->metatable)
-			{
 				closure = table_get(&object->table->metatable->table, key);
-			}
 
-			/* todo: refactor this */
-			if (closure->type != KOJI_TYPE_CLOSURE)
-			{
-				ks_error(s, "cannot call value of type %s.", KJ_VALUE_TYPE_STRING[closure->type]);
-				return KOJI_RESULT_FAIL; // temp
-			}
+			ks_call_clojure(s, curr_frame, closure, decode_C(ins), decode_A(ins), object);
 
-			/* call the closure */
-			koji_prototype* proto = closure->closure.proto;
-			uint ncallargs = decode_C(ins);
-			if (proto->nargs != ncallargs)
-			{
-				ks_error(s, "closure at (TODO) takes %d number of arguments (%d provided).", proto->nargs, ncallargs);
-				return KOJI_RESULT_FAIL; // temp
-			}
-			++proto->references;
-			/* push a new frame onto the stack with stack base at register A offset from current frame stack base */
-			ks_push_frame(s, proto, curr_frame->stackbase + regA, *object);
 			goto newframe;
 		}
 
