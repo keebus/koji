@@ -7,8 +7,11 @@ This is still very much work in progress.
 
 - Full implementation in single standard C source file.
 - Heavily inspired by Lua and Javascript. Bytecode very similar to Lua's.
+- Fast compilation and runtime (todo: verify it ;) )
 - Prototype based, minimal language.
-- C-like syntax!
+- C-like syntax! *Yay*!
+- Short-circuit boolean and conditional expressions.
+- No syntax-tree built for compilation: bytecode emitted while source is parsed.
 
 ## Example
 
