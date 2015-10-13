@@ -11,7 +11,7 @@ This is still very much work in progress.
 - Prototype based, minimal language.
 - C-like syntax! *Yay*!
 - Short-circuit boolean and conditional expressions.
-- No syntax-tree built for compilation: bytecode emitted while source is parsed.
+- No syntax-tree built for compilation: bytecode emitted as source is parsed.
 
 ## Example
 
