@@ -1,8 +1,7 @@
 /*
-* koji language. 2015 Canio Massimo Tristano
-* Read LICENSE.txt for information about this software copyright and license.
-*/
-
+ * koji language - 2015 Canio Massimo Tristano <massimo.tristano@gmail.com>
+ * This is public domain software, read UNLICENSE.txt for more information.
+ */
 
 #include "koji.h"
 #include <stdio.h>
@@ -65,17 +64,6 @@ typedef unsigned char ubyte;
 
 /* Generic definition of a dynamic array that points to void* */
 typedef array_type(void) void_array;
-
-/**
-* Initializes an array instance to a valid empty array.
-*/
-static inline void array_init(void* array_)
-{
-	void_array* array = array_;
-	array->capacity = 0;
-	array->size = 0;
-	array->data = KJ_NULL;
-}
 
 /*
 * Makes sure that specified karray at @array_ of elements of size @element_size has enough capacity
@@ -183,7 +171,7 @@ static void default_error_report_fn(void* user_data, kj_source_location sl, cons
 {
 	(void)user_data;
 	(void)sl;
-	printf(message);
+	printf("%s", message);
 }
 
 /**
@@ -210,18 +198,6 @@ static void reportv(kj_error_handler *e, kj_source_location sl, const char *form
 	snprintf(message, header_length + 1, header_format, sl.filename, sl.line, sl.column);
 	vsnprintf(message + header_length, header_length + body_length + 1, format, args);
 	e->reporter(e->user_data, sl, message);
-}
-
-/**
-* Reports an issue at source location @sl with printf-like @format and variadic arguments using
-* specified handler @e.
-*/
-static void report(kj_error_handler *e, kj_source_location sl, const char *format, ...)
-{
-	va_list args;
-	va_start(args, format);
-	reportv(e, sl, format, args);
-	va_end(args);
 }
 
 /**
@@ -749,6 +725,7 @@ static inline koji_bool opcode_has_target(kj_opcode op) { return op <= KJ_OP_THI
 static inline kj_instruction encode_ABx(kj_opcode op, int A, int Bx)
 {
 	assert(A >= 0);
+	assert(abs(Bx) <= MAX_BX_INTEGER);
 	return (Bx << 14) | (A & 0xff) << 6 | op;
 }
 
@@ -1396,13 +1373,13 @@ typedef struct kj_allocation_page
 
 #define KJ_ALLOCATION_PAGE_MIN_SIZE 1024
 
-inline char* _align(char* ptr, uint alignment)
+static inline char* _align(char* ptr, uint alignment)
 {
 	const uint alignment_minus_one = alignment - 1;
 	return (char*)(((uintptr_t)ptr + alignment_minus_one) & ~alignment_minus_one);
 }
 
-inline char* _allocator_page_buffer(kj_allocation_page* page)
+static inline char* _allocator_page_buffer(kj_allocation_page* page)
 {
 	return (char*)page + sizeof(kj_allocation_page);
 }
@@ -3390,12 +3367,13 @@ static inline void ks_op_neg(kj_value* dest, const kj_value* src)
 {
 	switch (src->type)
 	{
-	case KOJI_TYPE_NIL: value_set_boolean(dest, true);
-	case KOJI_TYPE_BOOL: value_set_boolean(dest, !src->boolean);
-	case KOJI_TYPE_INT: value_set_boolean(dest, !src->integer);
-	case KOJI_TYPE_STRING: value_set_boolean(dest, src->string->length == 0);
-	case KOJI_TYPE_REAL: value_set_boolean(dest, !src->real);
-	case KOJI_TYPE_CLOSURE: value_set_boolean(dest, true);
+		case KOJI_TYPE_NIL: value_set_boolean(dest, true);
+		case KOJI_TYPE_BOOL: value_set_boolean(dest, !src->boolean);
+		case KOJI_TYPE_INT: value_set_boolean(dest, !src->integer);
+		case KOJI_TYPE_REAL: value_set_boolean(dest, !src->real);
+		case KOJI_TYPE_STRING: value_set_boolean(dest, src->string->length == 0);
+		case KOJI_TYPE_TABLE:
+		case KOJI_TYPE_CLOSURE: value_set_boolean(dest, true);
 	}
 }
 
@@ -3403,11 +3381,11 @@ static inline void ks_op_unm(koji_state* s, kj_value* dest, const kj_value* src)
 {
 	switch (src->type)
 	{
-	case KOJI_TYPE_INT: value_set_integer(dest, -src->integer); break;
-	case KOJI_TYPE_REAL: value_set_real(dest, -src->real); break;
+		case KOJI_TYPE_INT: value_set_integer(dest, -src->integer); break;
+		case KOJI_TYPE_REAL: value_set_real(dest, -src->real); break;
 
-	default:
-		ks_error(s, "cannot apply unary minus operation to a %s value.", KJ_VALUE_TYPE_STRING[src->type]);
+		default:
+			ks_error(s, "cannot apply unary minus operation to a %s value.", KJ_VALUE_TYPE_STRING[src->type]);
 	}
 }
 
@@ -3422,6 +3400,7 @@ static inline void ks_op_unm(koji_state* s, kj_value* dest, const kj_value* src)
 					case KOJI_TYPE_NIL: case KOJI_TYPE_BOOL: case KOJI_TYPE_CLOSURE: goto error;\
 					case KOJI_TYPE_INT: value_set_integer(dest, lhs->integer op rhs->integer); return;\
 					case KOJI_TYPE_REAL: value_set_real(dest, lhs->integer op rhs->real); return;\
+					default: goto error;\
 				}\
 			case KOJI_TYPE_REAL:\
 				switch (rhs->type)\
@@ -3429,6 +3408,7 @@ static inline void ks_op_unm(koji_state* s, kj_value* dest, const kj_value* src)
 					case KOJI_TYPE_NIL: case KOJI_TYPE_BOOL: case KOJI_TYPE_CLOSURE: goto error;\
 					case KOJI_TYPE_INT: value_set_real(dest, lhs->real op rhs->integer); return;\
 					case KOJI_TYPE_REAL: value_set_real(dest, lhs->real op rhs->real); return;\
+					default: goto error;\
 				}\
 			default: goto error;\
 	}\

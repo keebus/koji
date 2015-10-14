@@ -1,7 +1,9 @@
-// koji language - 2015 Canio Massimo Tristano
-// See LICENSE.txt for license and copyright information.
-
-#include <koji.h>
+/*
+ * koji language - 2015 Canio Massimo Tristano <massimo.tristano@gmail.com>
+ * This is public domain software, read UNLICENSE.txt for more information.
+ */
+ 
+#include "koji.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -16,8 +18,9 @@ int debug_fn(koji_state* s, int nargs)
 		case KOJI_TYPE_BOOL: printf(koji_to_int(s, i) ? "true" : "false"); break;
 		case KOJI_TYPE_INT: printf("%lli", koji_to_int(s, i)); break;
 		case KOJI_TYPE_REAL: printf("%f", koji_to_real(s, i)); break;
-		case KOJI_TYPE_STRING: printf(koji_get_string(s, i)); break;
+		case KOJI_TYPE_STRING: printf("%s", koji_get_string(s, i)); break;
 		case KOJI_TYPE_TABLE: printf("table"); break;
+		case KOJI_TYPE_CLOSURE: printf("closure"); break;
 		default: printf("unknown\n");
 		}
 	}

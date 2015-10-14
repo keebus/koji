@@ -1,6 +1,6 @@
 /*
- * koji language - 2015 Canio Massimo Tristano
- * See LICENSE.txt for license and copyright information.
+ * koji language - 2015 Canio Massimo Tristano <massimo.tristano@gmail.com>
+ * This is public domain software, read UNLICENSE.txt for more information.
  */
 
 #pragma once
@@ -196,4 +196,4 @@ extern const char* koji_get_string(koji_state*, int offset);
 } // extern "C"
 #endif
 
-#endif KOJI_H_
+#endif // KOJI_H_
