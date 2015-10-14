@@ -5,6 +5,7 @@
 
 #include "koji.h"
 #include <stdio.h>
+#include <alloca.h>
 #include <malloc.h>
 #include <string.h>
 #include <setjmp.h>
@@ -23,7 +24,7 @@
 #endif
 #endif
 
-#if _MSC_VER <= 1800
+#if defined(_MSC_VER) && _MSC_VER <= 1800
 #define snprintf _snprintf_c
 #endif
 
@@ -44,6 +45,12 @@
 #pragma GCC diagnostic ignored "-Wmultichar"
 #pragma GCC diagnostic ignored "-Wunknown-pragmas"
 #pragma GCC diagnostic ignored "-Wmissing-braces"
+#endif
+
+#if defined(_WIN64) || defined(__amd64__)
+#define KOJI_64
+#else
+#define KOJI_32
 #endif
 
 //-------------------------------------------------------------------------------------------------
@@ -795,7 +802,11 @@ typedef struct kj_table
 
 #define KJ_TABLE_DEFAULT_CAPACITY 10
 
-typedef uint64 hash_t;
+#ifdef KOJI_64
+typedef uint64_t hash_t;
+#else
+typedef uint32_t hash_t;
+#endif
 
 typedef struct kj_value_table
 {
@@ -975,16 +986,16 @@ static inline void value_set(kj_value* dest, const kj_value* src)
 	/* fixme */
 	switch (dest->type)
 	{
-	case KOJI_TYPE_STRING:
-	case KOJI_TYPE_TABLE:
-		++*(uint*)(dest->object); /* bump up the reference */
-		break;
+		case KOJI_TYPE_STRING:
+		case KOJI_TYPE_TABLE:
+			++*(uint*)(dest->object); /* bump up the reference */
+			break;
 
-	case KOJI_TYPE_CLOSURE: /* fixme */
-		++dest->closure.proto->references;
-		break;
+		case KOJI_TYPE_CLOSURE: /* fixme */
+			++dest->closure.proto->references;
+			break;
 
-	default: break;
+		default: break;
 	}
 }
 
@@ -993,12 +1004,12 @@ static inline koji_bool value_to_bool(const kj_value* v)
 {
 	switch (v->type)
 	{
-	case KOJI_TYPE_NIL: return false;
-	case KOJI_TYPE_BOOL: return v->boolean;
-	case KOJI_TYPE_INT: return v->integer != 0;
-	case KOJI_TYPE_REAL: return v->real != 0;
-	case KOJI_TYPE_CLOSURE: return true;
-	default: assert(!"implement me");
+		case KOJI_TYPE_NIL: return false;
+		case KOJI_TYPE_BOOL: return v->boolean;
+		case KOJI_TYPE_INT: return v->integer != 0;
+		case KOJI_TYPE_REAL: return v->real != 0;
+		case KOJI_TYPE_CLOSURE: return true;
+		default: assert(!"implement me");
 	}
 	return 0;
 }
@@ -1030,11 +1041,20 @@ static inline koji_real value_to_real(const kj_value* v)
 /* table functions */
 static inline hash_t rehash(hash_t k)
 {
+#ifdef KOJI_64
 	k ^= k >> 33;
 	k *= 0xff51afd7ed558ccdLLU;
 	k ^= k >> 33;
 	k *= 0xc4ceb9fe1a85ec53LLU;
 	k ^= k >> 33;
+#else
+	/* Thomas Wang's */
+	k = (k ^ 61) ^ (k >> 16);
+	k = k + (k << 3);
+	k = k ^ (k >> 4);
+	k = k * 0x27d4eb2d;
+	k = k ^ (k >> 15);
+#endif
 	return k;
 }
 
@@ -1043,13 +1063,13 @@ static hash_t value_hash(kj_value value)
 	hash_t h;
 	switch (value.type)
 	{
-	case KOJI_TYPE_NIL: h = 0; break;
-	case KOJI_TYPE_STRING:
-		h = 5381;
-		for (char* ch = value.string->data; *ch; ++ch)
-			h = ((h << 5) + h) + *ch; /* hash * 33 + c */
-		return h;
-	default: h = (hash_t)value.object; break;
+		case KOJI_TYPE_NIL: h = 0; break;
+		case KOJI_TYPE_STRING:
+			h = 5381;
+			for (char* ch = value.string->data; *ch; ++ch)
+				h = ((h << 5) + h) + *ch; /* hash * 33 + c */
+			return h;
+		default: h = (hash_t)value.object; break;
 	}
 	hash_t k = value.type == KOJI_TYPE_NIL ? 0 : (hash_t)value.object;
 	k ^= 1ULL << value.type;
@@ -2630,6 +2650,7 @@ static kc_expr _compile_binary_expression(kj_compiler* c, const kc_expr_state* e
 			if ((lhs.type == KC_EXPR_TYPE_BOOL) != (rhs.type == KC_EXPR_TYPE_BOOL))
 				goto error;
 			if (lhs.type == KC_EXPR_TYPE_BOOL)
+
 				lhs = kc_expr_boolean((lhs.integer == rhs.integer) ^ invert);
 			if (lhs.type == KC_EXPR_TYPE_REAL || rhs.type == KC_EXPR_TYPE_REAL)
 				lhs = kc_expr_boolean((kc_expr_to_real(lhs) == kc_expr_to_real(rhs)) ^ invert);
