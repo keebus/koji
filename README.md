@@ -13,7 +13,29 @@ This is still very much work in progress.
 - Short-circuit boolean and conditional expressions.
 - No syntax-tree built for compilation: bytecode emitted as source is parsed.
 
-## Example
+## Examples
+
+Simple example:
+
+	var age = 21
+	if (age > 18)
+	{
+		debug("yep, grog's on the way!")
+	} else
+	{
+		debug("sorry, no booze for you")
+	}
+
+Functions:
+	
+	var add = def (a, b)
+	{
+		return a + b
+	}
+	
+	debug(add(10, 11))
+
+Metatable example:
 
 	globals.point_metatype = {
 	    add: def (other) {
