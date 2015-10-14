@@ -1,6 +1,6 @@
 /*
  * koji language - 2015 Canio Massimo Tristano <massimo.tristano@gmail.com>
- * This is public domain software, read UNLICENSE.txt for more information.
+ * This is public domain software, read UNLICENSE for more information.
  */
  
 #include "koji.h"
