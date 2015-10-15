@@ -5,7 +5,6 @@
 
 #include "koji.h"
 #include <stdio.h>
-#include <alloca.h>
 #include <malloc.h>
 #include <string.h>
 #include <setjmp.h>
@@ -15,6 +14,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <inttypes.h>
+
+#ifndef _MSC_VER
+#include <alloca.h>
+#endif
 
 #ifdef _MSC_VER 
 #ifndef _DEBUG
