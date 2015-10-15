@@ -112,7 +112,7 @@ extern void koji_destroy(koji_state*);
 /**
   * TODO add documentation.
   */
-extern void koji_static_function(koji_state*, const char* name, koji_user_function fn, int nargs);
+extern koji_result koji_static_function(koji_state*, const char* name, koji_user_function fn, unsigned short min_num_args, unsigned short max_num_args);
 
 /**
   * Compiles a source from a generic stream and returns compilation result.

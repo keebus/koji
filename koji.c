@@ -181,7 +181,7 @@ static void default_error_report_fn(void* user_data, kj_source_location sl, cons
 {
 	(void)user_data;
 	(void)sl;
-	printf("%s", message);
+	printf("%s\n", message);
 }
 
 /**
@@ -705,7 +705,7 @@ typedef enum kj_opcode
 	KJ_OP_EQ,      /* eq A, B, C        ; if (R(A) == R(B)) == (bool)C then nothing else jump 1 */
 	KJ_OP_LT,      /* lt A, B, C        ; if (R(A) < R(B)) == (bool)C then nothing else jump 1 */
 	KJ_OP_LTE,     /* lte A, B, C       ; if (R(A) <= R(B)) == (bool)C then nothing else jump 1 */
-	KJ_OP_SCALL,   /* scall A, Bx       ; call static function at Bx with arguments starting from R(A) */
+	KJ_OP_SCALL,   /* scall A, B, C     ; call static function at K[B) with C arguments starting from R(A) */
 	KJ_OP_RET,     /* ret A, B          ; return values R(A), ..., R(B)*/
 	KJ_OP_SETTABLE,/* settable A, B, C  ; table(R(A))[R(B)] = R(C) */
 	KJ_OP_CALL,    /* call A, B, C      ; call closure R(B) with C arguments starting at R(A) */
@@ -1265,6 +1265,7 @@ static void prototype_dump(koji_prototype* p, int level, int index)
 			goto print_constant;
 
 		case KJ_OP_ADD: case KJ_OP_SUB: case KJ_OP_MUL: case KJ_OP_DIV: case KJ_OP_MOD: case KJ_OP_POW: case KJ_OP_CALL:
+		case KJ_OP_SCALL:
 			printf("%s\t\t%d, %d, %d", opstr, A, B, C);
 			Bx = C;
 			goto print_constant;
@@ -1309,7 +1310,6 @@ static void prototype_dump(koji_prototype* p, int level, int index)
 			break;
 
 		case KJ_OP_CLOSURE:
-		case KJ_OP_SCALL:
 			printf("%s\t%d, %d", opstr, A, Bx);
 			break;
 
@@ -1333,7 +1333,8 @@ typedef struct kj_static_function
 {
 	uint name_string_offset;
 	koji_user_function function;
-	int nargs;
+	unsigned short min_num_args;
+	unsigned short max_num_args;
 } kj_static_function;
 
 /**
@@ -1346,22 +1347,18 @@ typedef struct kj_static_functions
 } kj_static_functions;
 
 /**
-* Searches for a static function with name @name and @nargs number of arguments in @fns and returns its index in
+* Searches for a static function with name @name in @fns and returns its index in
 * fns->functions if found, -1 otherwise.
 */
-static int static_functions_fetch(kj_static_functions const* fns, const char* name, int nargs)
+static int static_functions_fetch(kj_static_functions const* fns, const char* name)
 {
-	int best_candidate = -1;
 	for (uint i = 0; i < fns->functions.size; ++i)
 	{
 		kj_static_function* fn = fns->functions.data + i;
 		if (strcmp(name, fns->name_buffer.data + fn->name_string_offset) == 0)
-		{
-			best_candidate = i;
-			if (nargs < 0 || nargs == fn->nargs) return i;
-		}
+			return i;
 	}
-	return best_candidate;
+	return -1;
 }
 
 #pragma endregion
@@ -2262,19 +2259,24 @@ static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* 
 			int first_arg_reg = c->temporaries;
 			nargs = kc_parse_function_call_args(c);
 
-			uint fn_index = static_functions_fetch(c->static_functions, id, nargs);
+			uint fn_index = static_functions_fetch(c->static_functions, id);
 			if (fn_index != -1)
 			{
-				const kj_static_function* fn = c->static_functions->functions.data + fn_index;
-				if (fn->nargs != nargs)
+				kj_static_function const* fn = c->static_functions->functions.data + fn_index;
+
+				if (nargs < fn->min_num_args || nargs > fn->max_num_args)
 				{
-					compiler_error(c->lex->error_handler, sourceloc, "static function '%s' does not take %d argument/s but %d.",
-						id, nargs, fn->nargs);
-					break;
+					compiler_error(c->lex->error_handler, sourceloc,
+						"static function '%s' does not accept %d %s.",
+						c->static_functions->name_buffer.data + fn->name_string_offset, nargs, nargs == 1 ? "argument" : "arguments");
 				}
 
+				/* convert the function index to a constant */
+				kc_expr fn_index_expr = kc_expr_to_any_register(c, kc_expr_integer(fn_index), c->temporaries);
+
 				// call is to a static host function, emit the appropriate instruction and reset the number of used registers
-				kc_emit(c, encode_ABx(KJ_OP_SCALL, first_arg_reg, fn_index));
+				kc_emit(c, encode_ABC(KJ_OP_SCALL, first_arg_reg, fn_index_expr.location, nargs));
+
 				c->temporaries = first_arg_reg;
 
 				// all args will be popped and return values put into the first arg register.
@@ -2282,10 +2284,8 @@ static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* 
 				break;
 			}
 		}
-
-		(void)nargs;
+		
 		compiler_error(c->lex->error_handler, sourceloc, "undeclared local variable '%s'.", id);
-		break;
 	}
 
 	case kw_def: /* closure */
@@ -3668,6 +3668,28 @@ static int kjstd_get_metatable(koji_state* s, int nargs)
 	return 1;
 }
 
+static int kjstd_print(koji_state* s, int nargs)
+{
+	for (int i = -nargs; i < 0; ++i)
+	{
+		if (i != -nargs) printf(" ");
+		switch (koji_get_value_type(s, i))
+		{
+			case KOJI_TYPE_NIL: printf("nil"); break;
+			case KOJI_TYPE_BOOL: printf(koji_to_int(s, i) ? "true" : "false"); break;
+			case KOJI_TYPE_INT: printf("%lli", koji_to_int(s, i)); break;
+			case KOJI_TYPE_REAL: printf("%f", koji_to_real(s, i)); break;
+			case KOJI_TYPE_STRING: printf("%s", koji_get_string(s, i)); break;
+			case KOJI_TYPE_TABLE: printf("table"); break;
+			case KOJI_TYPE_CLOSURE: printf("closure"); break;
+			default: printf("unknown\n");
+		}
+	}
+	printf("\n");
+	koji_pop(s, nargs);
+	return 0;
+}
+
 /* API functions */
 
 koji_state* koji_create(void)
@@ -3678,8 +3700,9 @@ koji_state* koji_create(void)
 	table_init(&s->globals.table, KJ_TABLE_DEFAULT_CAPACITY);
 	s->globals.references = 1;
 
-	koji_static_function(s, "set_metatable", kjstd_set_metatable, 2);
-	koji_static_function(s, "get_metatable", kjstd_get_metatable, 1);
+	koji_static_function(s, "set_metatable", kjstd_set_metatable, 2, 2);
+	koji_static_function(s, "get_metatable", kjstd_get_metatable, 2, 2);
+	koji_static_function(s, "print", kjstd_print, 0, USHRT_MAX);
 
 	return s;
 }
@@ -3704,35 +3727,30 @@ void koji_destroy(koji_state* s)
 	free(s);
 }
 
-void koji_static_function(koji_state* s, const char* name, koji_user_function fn, int nargs)
+koji_result koji_static_function(
+	koji_state* s, const char* name, koji_user_function fn, unsigned short min_num_args, unsigned short max_num_args)
 {
-	int sfunindex = static_functions_fetch(&s->static_host_functions, name, nargs);
+	int sfunindex = static_functions_fetch(&s->static_host_functions, name);
 
 	if (sfunindex > 0)
 	{
-		s->static_host_functions.functions.data[sfunindex].function = fn;
+		/* function already in defined */
+		return KOJI_RESULT_INVALID_VALUE;
 	}
 	else
 	{
-		sfunindex = static_functions_fetch(&s->static_host_functions, name, -1);
-
-		uint name_string_offset;
-		if (sfunindex > 0)
-		{
-			name_string_offset = s->static_host_functions.functions.data[sfunindex].name_string_offset;
-		}
-		else
-		{
-			uint length = strlen(name);
-			char* destname = array_push(&s->static_host_functions.name_buffer, char, length + 1);
-			memcpy(destname, name, length + 1);
-			name_string_offset = destname - s->static_host_functions.name_buffer.data;
-		}
+		/* push the name */
+		uint length = strlen(name);
+		char* destname = array_push(&s->static_host_functions.name_buffer, char, length + 1);
+		memcpy(destname, name, length + 1);
 
 		kj_static_function* sf = array_push(&s->static_host_functions.functions, kj_static_function, 1);
-		sf->name_string_offset = name_string_offset;
+		sf->name_string_offset = destname - s->static_host_functions.name_buffer.data;
 		sf->function = fn;
-		sf->nargs = nargs;
+		sf->min_num_args = min_num_args;
+		sf->max_num_args = max_num_args;
+
+		return KOJI_RESULT_OK;
 	}
 }
 
@@ -3949,10 +3967,12 @@ newframe:
 
 		case KJ_OP_SCALL:
 		{
-			const kj_static_function* sfun = s->static_host_functions.functions.data + decode_Bx(ins);
+			kj_value const* fn_index = KSARG(B);
+			assert(fn_index->type == KOJI_TYPE_INT && fn_index->integer < s->static_host_functions.functions.size);
+			const kj_static_function* sfun = s->static_host_functions.functions.data + fn_index->integer;
 			uint sp = s->sp;
-			s->sp = curr_frame->stackbase + decode_A(ins) + sfun->nargs;
-			int nretvalues = sfun->function(s, sfun->nargs);
+			s->sp = curr_frame->stackbase + decode_A(ins) + decode_C(ins);
+			int nretvalues = sfun->function(s, decode_C(ins));
 			if (nretvalues == 0) value_set_nil(ks_get_register(s, curr_frame, s->sp));
 			s->sp = sp;
 			break;
