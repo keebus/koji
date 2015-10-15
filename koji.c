@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#include <limits.h>
 
 #ifndef _MSC_VER
 #include <alloca.h>
