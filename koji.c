@@ -697,7 +697,7 @@ typedef enum kj_opcode
 	KJ_OP_CLOSURE, /* closure A, Bx     ; R(A) = closure for prototype Bx */
 	KJ_OP_GLOBALS, /* globals A         ; get the global table into register A */
 	KJ_OP_NEWTABLE, /* newtable A       ; creates a new table in R(A) */
-	KJ_OP_GETTABLE, /* gettable A, B, C ; R(A) = table(R(B))[R(C)] */
+	KJ_OP_GET,      /* get A, B, C ; R(A) = R(B)[R(C)] */
 	KJ_OP_THIS,     /* this A           ; R(A) = this */
 
 	/* operations that do not write into R(A) */
@@ -708,14 +708,14 @@ typedef enum kj_opcode
 	KJ_OP_LTE,     /* lte A, B, C       ; if (R(A) <= R(B)) == (bool)C then nothing else jump 1 */
 	KJ_OP_SCALL,   /* scall A, B, C     ; call static function at K[B) with C arguments starting from R(A) */
 	KJ_OP_RET,     /* ret A, B          ; return values R(A), ..., R(B)*/
-	KJ_OP_SETTABLE,/* settable A, B, C  ; table(R(A))[R(B)] = R(C) */
+	KJ_OP_SET,     /* set A, B, C       ; R(A)[R(B)] = R(C) */
 	KJ_OP_CALL,    /* call A, B, C      ; call closure R(B) with C arguments starting at R(A) */
 	KJ_OP_MCALL,   /* mcall A, B, C     ; call object R(A - 1) method with name R(B) with C arguments from R(A) on */
 } kj_opcode;
 
 static const char *KJ_OP_STRINGS[] = {
 	"loadnil", "loadb", "mov", "neg", "unm", "add", "sub", "mul", "div", "mod", "pow", "testset", "closure",
-	"globals", "newtable", "gettable", "this", "test", "jump", "eq", "lt", "lte", "scall", "ret", "settable", "call", "mcall"
+	"globals", "newtable", "get", "this", "test", "jump", "eq", "lt", "lte", "scall", "ret", "set", "call", "mcall"
 };
 
 /* Instructions */
@@ -1271,7 +1271,7 @@ static void prototype_dump(koji_prototype* p, int level, int index)
 			Bx = C;
 			goto print_constant;
 
-		case KJ_OP_SETTABLE: case KJ_OP_GETTABLE: case KJ_OP_MCALL:
+		case KJ_OP_SET: case KJ_OP_GET: case KJ_OP_MCALL:
 			printf("%s\t%d, %d, %d", opstr, A, B, C);
 			Bx = C;
 
@@ -1931,7 +1931,7 @@ static inline kc_expr kc_expr_to_any_register(kj_compiler* c, kc_expr e, int tar
 		return kc_expr_register(target_hint);
 
 	case KC_EXPR_TYPE_ACCESSOR:
-		kc_emit(c, encode_ABC(KJ_OP_GETTABLE, target_hint, e.lhs, e.rhs));
+		kc_emit(c, encode_ABC(KJ_OP_GET, target_hint, e.lhs, e.rhs));
 		if (!e.positive) kc_emit(c, encode_ABx(KJ_OP_NEG, target_hint, target_hint));
 		return kc_expr_register(target_hint);
 
@@ -2353,7 +2353,7 @@ static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* 
 				}
 
 				c->temporaries = temps2;
-				kc_emit(c, encode_ABC(KJ_OP_SETTABLE, expr.location, key.location, value.location));
+				kc_emit(c, encode_ABC(KJ_OP_SET, expr.location, key.location, value.location));
 
 			} while (kc_accept(c, ','));
 		}
@@ -2398,7 +2398,7 @@ static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* 
 				}
 				else
 				{
-					kc_emit(c, encode_ABC(KJ_OP_GETTABLE, args_location, expr.lhs, expr.rhs));
+					kc_emit(c, encode_ABC(KJ_OP_GET, args_location, expr.lhs, expr.rhs));
 
 					op = KJ_OP_CALL;
 					closure_or_key_location = c->temporaries++;
@@ -2855,7 +2855,7 @@ static kc_expr kc_parse_expression(kj_compiler* c, const kc_expr_state* es)
 			{
 				int temps = kc_use_temporary(c, &lhs);
 				kc_expr rhs = kc_parse_expression_to_any_register(c, c->temporaries);
-				kc_emit(c, encode_ABC(KJ_OP_SETTABLE, lhs.lhs, lhs.rhs, rhs.location));
+				kc_emit(c, encode_ABC(KJ_OP_SET, lhs.lhs, lhs.rhs, rhs.location));
 				c->temporaries = temps;
 				return rhs;
 			}
@@ -3566,6 +3566,48 @@ static inline koji_bool ks_comp_lte(const kj_value* lhs, const kj_value* rhs)
 	return 0;
 }
 
+/**
+* This function implements the "target = object[key]" syntax in the language.
+* The semantics depend on the type of target, but the idea is that the sub-element with specified
+* @key in @object will be put in in @target
+*/
+static inline void ks_object_get_element(koji_state* s, kj_value* target, kj_value const* object, kj_value const* key)
+{
+	switch (object->type)
+	{
+		case KOJI_TYPE_TABLE:
+			value_set(target, table_get(&object->table->table, key));
+			break;
+
+		case KOJI_TYPE_STRING:
+			value_new_string(target, 1);
+			target->string->data[0] = object->string->data[value_to_int(key)];
+			target->string->data[1] = '\0';
+			break;
+
+		default:
+			ks_error(s, "invalid get operation performed on value of type %s.", KJ_VALUE_TYPE_STRING[object->type]);
+	}
+}
+
+/**
+* This function implements the "object[key] = value" syntax in the language.
+* The semantics depend on the type of object, but the idea is that @value is set to the
+* sub-value with specified @key in @object.
+*/
+static inline void ks_object_set_element(koji_state* s, kj_value* object, kj_value const* key, kj_value const* value)
+{
+	switch (object->type)
+	{
+		case KOJI_TYPE_TABLE:
+			table_put(&object->table->table, key, value);
+			break;
+
+		default:
+			ks_error(s, "invalid set operation performed on value of type %s.", KJ_VALUE_TYPE_STRING[object->type]);
+	}
+}
+
 static inline kj_value* ks_push(koji_state* s)
 {
 	array_reserve(&s->valuestack, sizeof(kj_value), s->sp + 1);
@@ -4016,23 +4058,13 @@ newframe:
 			value_new_table(KSREGA);
 			break;
 
-		case KJ_OP_SETTABLE:
-		{
-			kj_value* regA = KSREGA;
-			if (regA->type != KOJI_TYPE_TABLE)
-				ks_error(s, "table set operation performed on value of type %s.", KJ_VALUE_TYPE_STRING[regA->type]);
-			table_put(&regA->table->table, KSARG(B), KSARG(C));
+		case KJ_OP_GET:
+			ks_object_get_element(s, KSREGA, KSARG(B), KSARG(C));
 			break;
-		}
 
-		case KJ_OP_GETTABLE:
-		{
-			kj_value const* regB = KSARG(B);
-			if (regB->type != KOJI_TYPE_TABLE)
-				ks_error(s, "table get operation performed on value of type %s.", KJ_VALUE_TYPE_STRING[regB->type]);
-			value_set(KSREGA, table_get(&regB->table->table, KSARG(C)));
+		case KJ_OP_SET:
+			ks_object_set_element(s, KSREGA, KSARG(B), KSARG(C));
 			break;
-		}
 
 		default:
 			assert(0 && "unsupported op code");
