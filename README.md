@@ -20,10 +20,10 @@ Simple example:
 	var age = 21
 	if (age > 18)
 	{
-		debug("yep, grog's on the way!")
+		print("yep, grog's on the way!")
 	} else
 	{
-		debug("sorry, no booze for you")
+		print("sorry, no booze for you")
 	}
 
 Functions:
@@ -33,7 +33,7 @@ Functions:
 		return a + b
 	}
 	
-	debug(add(10, 11))
+	print(add(10, 11))
 
 Metatable example:
 
@@ -55,4 +55,4 @@ Metatable example:
 	
 	p1.add(p2)
 	
-	debug(p1.x)
+	print(p1.x, p2.y)
