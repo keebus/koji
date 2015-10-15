@@ -660,6 +660,7 @@ static void lex_init(kj_lexer *l, kj_error_handler *e, const char *filename, koj
 	l->source_location.line = 1;
 	l->source_location.column = 0;
 	l->newline = 0;
+	l->curr_char = 0;
 
 	_lex_skip(l);
 	lex(l);
@@ -1553,7 +1554,10 @@ static inline int _kc_fetch_primitive_constant(kj_compiler* c, kj_value k)
 */
 static inline int kc_fetch_constant_int(kj_compiler* c, koji_integer k)
 {
-	return _kc_fetch_primitive_constant(c, (kj_value) { KOJI_TYPE_INT, .integer = k });
+	kj_value value = (kj_value) {0};
+	value.type = KOJI_TYPE_INT;
+	value.integer = k;
+	return _kc_fetch_primitive_constant(c, value);
 }
 
 /**
@@ -1561,7 +1565,10 @@ static inline int kc_fetch_constant_int(kj_compiler* c, koji_integer k)
 */
 static inline int kc_fetch_constant_real(kj_compiler* c, koji_real k)
 {
-	return _kc_fetch_primitive_constant(c, (kj_value) { KOJI_TYPE_REAL, .real = k });
+	kj_value value = (kj_value) {0};
+	value.type = KOJI_TYPE_REAL;
+	value.real = k;
+	return _kc_fetch_primitive_constant(c, value);
 
 }
 
@@ -1580,6 +1587,8 @@ static inline int kc_fetch_constant_string(kj_compiler* c, const char* k)
 	/* constant not found, add it */
 	int index = c->proto->constants.size;
 	kj_value* constant = array_push(&c->proto->constants, kj_value, 1);
+	*constant = (kj_value) {0};
+
 	constant->type = KOJI_TYPE_STRING;
 
 	/* create the string object */
