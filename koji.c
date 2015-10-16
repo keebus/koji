@@ -712,6 +712,7 @@ typedef enum kj_opcode
 	KJ_OP_NEWTABLE, /* newtable A       ; creates a new table in R(A) */
 	KJ_OP_GET,      /* get A, B, C ; R(A) = R(B)[R(C)] */
 	KJ_OP_THIS,     /* this A           ; R(A) = this */
+	KJ_OP_GETUPVALUE, /* getupvalue A, B ; R(A) = upvalues[B] */
 
 	/* operations that do not write into R(A) */
 	KJ_OP_TEST,    /* test A, Bx        ; if (bool)R(A) != (bool)B then jump 1 */
@@ -724,11 +725,14 @@ typedef enum kj_opcode
 	KJ_OP_SET,     /* set A, B, C       ; R(A)[R(B)] = R(C) */
 	KJ_OP_CALL,    /* call A, B, C      ; call closure R(B) with C arguments starting at R(A) */
 	KJ_OP_MCALL,   /* mcall A, B, C     ; call object R(A - 1) method with name R(B) with C arguments from R(A) on */
+	KJ_OP_SETUPVALUE /* setupvalue A, B ; upvalues[B] = A */
+
 } kj_opcode;
 
 static const char *KJ_OP_STRINGS[] = {
 	"loadnil", "loadb", "mov", "neg", "unm", "add", "sub", "mul", "div", "mod", "pow", "testset", "closure",
-	"globals", "newtable", "get", "this", "test", "jump", "eq", "lt", "lte", "scall", "ret", "set", "call", "mcall"
+	"globals", "newtable", "get", "this", "getupvalue", "test", "jump", "eq", "lt", "lte", "scall", "ret", "set", "call", "mcall",
+	"setupvalue"
 };
 
 /* Instructions */
@@ -743,7 +747,7 @@ static const uint MAX_REGISTER_VALUE = 255;
 static const int MAX_BX_INTEGER = 131071;
 
 /** Returns whether opcode @op involves writing into register A. */
-static inline koji_bool opcode_has_target(kj_opcode op) { return op <= KJ_OP_THIS; }
+static inline koji_bool opcode_has_target(kj_opcode op) { return op <= KJ_OP_GETUPVALUE; }
 
 /** Encodes an instruction with arguments A and Bx. */
 static inline kj_instruction encode_ABx(kj_opcode op, int A, int Bx)
@@ -795,9 +799,9 @@ typedef struct kj_value kj_value;
 */
 typedef struct kj_closure
 {
-	koji_prototype* proto;
-}
-kj_closure;
+	uint reference;
+	koji_prototype* prototype;
+} kj_closure;
 
 static const char *KJ_VALUE_TYPE_STRING[] = { "nil", "bool", "int", "real", "string", "table", "closure" };
 
@@ -821,8 +825,8 @@ struct kj_value
 		koji_real       real;
 		kj_string*      string;
 		kj_value_table* table;
+		kj_closure*     closure;
 		void*           object;
-		kj_closure      closure; // fixme
 	};
 };
 
@@ -860,12 +864,19 @@ struct kj_table_entry
 /** Dynamic array of instructions. */
 typedef array_type(kj_instruction) instructions;
 
+typedef struct kj_upvalue_info
+{
+	unsigned short frame_offset;
+	unsigned short local_location;
+} kj_upvalue_info;
+
 /* Definition */
 struct koji_prototype
 {
 	uint references;
 	ubyte nargs;
 	ubyte ntemporaries;
+	array_type(kj_upvalue_info) upvalues;
 	array_type(kj_value) constants;
 	instructions instructions;
 	array_type(koji_prototype*) prototypes;
@@ -925,8 +936,12 @@ static inline void value_destroy(kj_value* v)
 		break;
 
 	case KOJI_TYPE_CLOSURE:
-		/* check whether this closure was the last reference to the prototype module, if so destroy the module */
-		prototype_release(v->closure.proto);
+		if (v->closure->reference-- == 1)
+		{
+			/* check whether this closure was the last reference to the prototype module, if so destroy the module */
+			prototype_release(v->closure->prototype);
+			free(v->closure);
+		}
 		break;
 
 	default: break;
@@ -987,14 +1002,6 @@ static inline void value_new_table(kj_value* v)
 	table_init(&v->table->table, KJ_TABLE_DEFAULT_CAPACITY);
 }
 
-static inline void value_new_closure(kj_value* v, koji_prototype* proto)
-{
-	value_destroy(v);
-	++proto->references;
-	v->type = KOJI_TYPE_CLOSURE;
-	v->closure = (kj_closure) { proto };
-}
-
 static inline void value_set(kj_value* dest, const kj_value* src)
 {
 	if (dest == src) return;
@@ -1007,11 +1014,8 @@ static inline void value_set(kj_value* dest, const kj_value* src)
 	{
 		case KOJI_TYPE_STRING:
 		case KOJI_TYPE_TABLE:
+		case KOJI_TYPE_CLOSURE:
 			++*(uint*)(dest->object); /* bump up the reference */
-			break;
-
-		case KOJI_TYPE_CLOSURE: /* fixme */
-			++dest->closure.proto->references;
 			break;
 
 		default: break;
@@ -1276,7 +1280,7 @@ static void prototype_dump(koji_prototype* p, int level, int index)
 			printf("%s\t%d\t", opstr, A);
 			break;
 
-		case KJ_OP_MOV: case KJ_OP_NEG: case KJ_OP_LOADNIL: case KJ_OP_RET:
+		case KJ_OP_MOV: case KJ_OP_NEG: case KJ_OP_LOADNIL: case KJ_OP_RET: 
 			printf("%s\t\t%d, %d\t", opstr, A, Bx);
 			goto print_constant;
 
@@ -1325,7 +1329,7 @@ static void prototype_dump(koji_prototype* p, int level, int index)
 			printf("%s\t%d\t\t; to [%d]", opstr, Bx, i + Bx + 1);
 			break;
 
-		case KJ_OP_CLOSURE:
+		case KJ_OP_CLOSURE: case KJ_OP_GETUPVALUE: case KJ_OP_SETUPVALUE:
 			printf("%s\t%d, %d", opstr, A, Bx);
 			break;
 
@@ -1389,6 +1393,7 @@ typedef struct
 {
 	uint identifier_offset;
 	int location;
+	uint prototype_level;
 } kc_local;
 
 
@@ -1471,6 +1476,7 @@ typedef struct kj_compiler
 	kj_static_functions const* static_functions;
 	kj_lexer* lex;
 	koji_prototype* proto;
+	uint prototype_level;
 	array_type(char) identifiers;
 	array_type(kc_local) locals;
 	int  temporaries;
@@ -1689,7 +1695,7 @@ static uint kc_push_identifier(kj_compiler* c, const char* identifier, uint iden
 * Searches for a local named @identifier from current prototype up to the main one and returns
 * a pointer to it if found, null otherwise.
 */
-static kc_local* kc_fetch_local(kj_compiler* c, const char* identifier)
+static kc_local const* kc_fetch_local(kj_compiler* c, const char* identifier)
 {
 	for (int i = c->locals.size - 1; i >= 0; --i)
 	{
@@ -1698,7 +1704,7 @@ static kc_local* kc_fetch_local(kj_compiler* c, const char* identifier)
 			return c->locals.data + i;
 	}
 
-	return NULL;
+	return KJ_NULL;
 }
 
 /**
@@ -1711,6 +1717,7 @@ static void kc_define_local(kj_compiler* c, uint identifier_offset)
 	var->identifier_offset = identifier_offset;
 	// set the variable location to the current unused free register
 	var->location = c->temporaries++;
+	var->prototype_level = c->prototype_level;
 }
 
 /* Expressions */
@@ -1739,14 +1746,15 @@ typedef enum
 	KC_EXPR_TYPE_REAL,
 	KC_EXPR_TYPE_STRING,
 	KC_EXPR_TYPE_REGISTER,
+	KC_EXPR_TYPE_UPVALUE,
 	KC_EXPR_TYPE_ACCESSOR,
 	KC_EXPR_TYPE_EQ,
 	KC_EXPR_TYPE_LT,
 	KC_EXPR_TYPE_LTE,
 } kc_expr_type;
 
-static const char* KC_EXPR_TYPE_TYPE_TO_STRING[] = { "nil", "bool", "int", "real", "string", "register",
-"bool", "bool", "bool" };
+static const char* KC_EXPR_TYPE_TYPE_TO_STRING[] = { "nil", "bool", "int", "real", "string", "register", "upvalue",
+	"bool", "bool", "bool" };
 
 /**
 * An expr is the result of a subexpression during compilation. For optimal bytecode generation
@@ -1802,6 +1810,22 @@ static inline kc_expr kc_expr_real(koji_real value)
 }
 
 /**
+* Makes and returns a register expr of specified @location.
+*/
+static inline kc_expr kc_expr_register(int location)
+{
+	return (kc_expr) { KC_EXPR_TYPE_REGISTER, .location = location, .positive = true };
+}
+
+/**
+* Makes and returns a register expr of specified @location.
+*/
+static inline kc_expr kc_expr_upvalue(int index)
+{
+	return (kc_expr) { KC_EXPR_TYPE_UPVALUE, .location = index, .positive = true };
+}
+
+/**
 * Makes and returns a string expr of specified @string.
 */
 static inline kc_expr kc_expr_string(kj_compiler* c, uint length)
@@ -1812,14 +1836,6 @@ static inline kc_expr kc_expr_string(kj_compiler* c, uint length)
 			.string.data = allocator_alloc(&c->allocator, length + 1, 1),
 			.positive = true
 	};
-}
-
-/**
-* Makes and returns a register expr of specified @location.
-*/
-static inline kc_expr kc_expr_register(int location)
-{
-	return (kc_expr) { KC_EXPR_TYPE_REGISTER, .location = location, .positive = true };
 }
 
 /**
@@ -1898,8 +1914,7 @@ static inline koji_real kc_expr_to_real(kc_expr expr)
 	case KC_EXPR_TYPE_REAL:
 		return expr.real;
 
-	default:
-		return 0;
+	default: assert(0); return 0;
 	}
 }
 
@@ -1950,6 +1965,11 @@ static inline kc_expr kc_expr_to_any_register(kj_compiler* c, kc_expr e, int tar
 	case KC_EXPR_TYPE_REGISTER:
 		if (e.positive) return e;
 		kc_emit(c, encode_ABx(KJ_OP_NEG, target_hint, e.location));
+		return kc_expr_register(target_hint);
+
+	case KC_EXPR_TYPE_UPVALUE:
+		kc_emit(c, encode_ABx(KJ_OP_GETUPVALUE, target_hint, e.location));
+		kc_emit(c, encode_ABx(KJ_OP_NEG, target_hint, target_hint));
 		return kc_expr_register(target_hint);
 
 	case KC_EXPR_TYPE_ACCESSOR:
@@ -2127,6 +2147,8 @@ static kc_expr kc_parse_closure(kj_compiler* c, const kc_expr_state* es)
 	c->proto = malloc(sizeof(koji_prototype));
 	*c->proto = (koji_prototype) { 0 };
 	c->proto->references = 1;
+	++c->prototype_level;
+
 	array_push_value(&oldproto->prototypes, koji_prototype*, c->proto);
 
 	if (kc_accept(c, '('))
@@ -2161,6 +2183,7 @@ static kc_expr kc_parse_closure(kj_compiler* c, const kc_expr_state* es)
 	c->proto->nargs = num_args;
 	c->proto->ntemporaries -= c->proto->nargs;
 	c->proto = oldproto;
+	--c->prototype_level;
 
 	kc_emit(c, encode_ABx(KJ_OP_CLOSURE, c->temporaries, proto_index));
 	return kc_expr_register(es->target_register);
@@ -2268,10 +2291,42 @@ static kc_expr kc_parse_primary_expression(kj_compiler* c, const kc_expr_state* 
 		lex(c->lex);
 
 		/* identifier refers to a local variable? */
-		kc_local* var = kc_fetch_local(c, id);
+		kc_local const* var = kc_fetch_local(c, id);
 		if (var)
 		{
-			expr = kc_expr_register(var->location);
+			/* if var prototype level is different from current prototype level, then var is an upvalue */
+			if (var->prototype_level != c->prototype_level)
+			{
+				uint upvalue_index = (uint)-1;
+				unsigned short frame_offset = (unsigned short)(c->prototype_level - var->prototype_level);
+
+				/* upvalue: search the upvalue in the already defined prototype upvalues */
+				for (uint i = 0; i < c->proto->upvalues.size; ++i)
+				{
+					kj_upvalue_info const* upvalue_info = c->proto->upvalues.data + i;
+					if (upvalue_info->frame_offset == frame_offset && upvalue_info->local_location == var->location)
+					{
+						upvalue_index = i;
+						break;
+					}
+				}
+
+				/* upvalue undeclared, */
+				if (upvalue_index == -1)
+				{
+					upvalue_index = c->proto->upvalues.size;
+					*array_push(&c->proto->upvalues, kj_upvalue_info, 1) = (kj_upvalue_info) {
+						(unsigned short)frame_offset, (unsigned short)var->location
+					};
+				}
+
+				expr = kc_expr_upvalue(upvalue_index);
+			}
+			else
+			{
+				/* local */
+				expr = kc_expr_register(var->location);
+			}
 			break;
 		}
 
@@ -2873,6 +2928,13 @@ static kc_expr kc_parse_expression(kj_compiler* c, const kc_expr_state* es)
 				kc_move_expr_to_register(c, kc_parse_expression_to_any_register(c, c->temporaries), lhs.location);
 				return lhs;
 
+			case KC_EXPR_TYPE_UPVALUE:
+			{
+				kc_expr rhs = kc_parse_expression_to_any_register(c, c->temporaries);
+				kc_emit(c, encode_ABx(KJ_OP_SETUPVALUE, lhs.location, rhs.location));
+				return rhs;
+			}
+
 			case KC_EXPR_TYPE_ACCESSOR:
 			{
 				int temps = kc_use_temporary(c, &lhs);
@@ -3403,6 +3465,22 @@ static void ks_error(koji_state* s, const char* format, ...)
 	longjmp(s->error_jump_buf, 1);
 }
 
+static inline void ks_value_new_closure(koji_state* s, kj_value* v, koji_prototype* prototype)
+{
+	value_destroy(v);
+	v->type = KOJI_TYPE_CLOSURE;
+	v->closure = malloc(sizeof(kj_closure) + prototype->upvalues.size * sizeof(kj_value));
+	v->closure->reference = 1;
+	v->closure->prototype = prototype;
+	++prototype->references;
+
+	/* turn upvalue-referenced locals into references */
+	for (uint i = 0; i < prototype->upvalues.size; ++i)
+	{
+		(void)s;
+	}
+}
+
 /* operations */
 static inline void ks_op_neg(kj_value* dest, const kj_value* src)
 {
@@ -3674,7 +3752,7 @@ static inline void ks_call_clojure(koji_state* s, ks_frame* curr_frame, kj_value
 	if (closure->type != KOJI_TYPE_CLOSURE)
 		ks_error(s, "cannot call value of type %s.", KJ_VALUE_TYPE_STRING[closure->type]);
 
-	koji_prototype* proto = closure->closure.proto;
+	koji_prototype* proto = closure->closure->prototype;
 
 	if (proto->nargs != ncallargs)
 		ks_error(s, "closure at (TODO) takes %d number of arguments (%d provided).", proto->nargs, ncallargs);
@@ -3821,7 +3899,7 @@ int koji_load(koji_state* s, const char* source_name, koji_stream_reader_fn stre
 
 	/* create a closure to main prototype and push it to the stack */
 	koji_push_nil(s);
-	value_new_closure(ks_top(s, -1), mainproto);
+	ks_value_new_closure(s, ks_top(s, -1), mainproto);
 
 	return KOJI_RESULT_OK;
 }
@@ -3863,7 +3941,7 @@ int koji_run(koji_state* s)
 
 	// push stack frame for closure
 	kj_value nil_value = { .type = KOJI_TYPE_NIL };
-	ks_push_frame(s, top.closure.proto, s->sp, nil_value);
+	ks_push_frame(s, top.closure->prototype, s->sp, nil_value);
 
 	return koji_continue(s);
 }
@@ -4014,7 +4092,7 @@ newframe:
 		case KJ_OP_CLOSURE:
 		{
 			assert((uint)decode_Bx(ins) < curr_frame->proto->prototypes.size);
-			value_new_closure(KSREGA, curr_frame->proto->prototypes.data[decode_Bx(ins)]);
+			ks_value_new_closure(s, KSREGA, curr_frame->proto->prototypes.data[decode_Bx(ins)]);
 			break;
 		}
 
