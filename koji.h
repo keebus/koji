@@ -161,6 +161,16 @@ extern void koji_push_real(koji_state*, koji_real value);
 /**
 * TODO add documentation.
 */
+extern void koji_push_string(koji_state*, const char* string);
+
+/**
+* TODO add documentation.
+*/
+extern void koji_push_table(koji_state*);
+
+/**
+* TODO add documentation.
+*/
 extern void koji_pop(koji_state*, int count);
 
 /**
@@ -171,18 +181,27 @@ extern koji_type koji_value_type(koji_state*, int offset);
 /**
   * TODO add documentation.
   */
-extern koji_integer koji_to_int(koji_state*, int offset);
+extern koji_integer koji_value_to_int(koji_state*, int offset);
 
 /**
   * TODO add documentation.
   */
-extern koji_real koji_to_real(koji_state*, int offset);
+extern koji_real koji_value_to_real(koji_state*, int offset);
 
 /**
   * TODO add documentation.
   */
-extern const char* koji_get_string(koji_state*, int offset);
+extern const char* koji_value_string(koji_state*, int offset);
 
+/**
+* TODO add documentation.
+*/
+extern koji_result koji_table_get(koji_state*, int table_offset);
+
+/**
+* TODO add documentation.
+*/
+extern koji_result koji_table_set(koji_state*, int table_offset);
 
 #ifdef __cplusplus
 } // extern "C"

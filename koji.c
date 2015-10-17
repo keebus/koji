@@ -1122,7 +1122,7 @@ static void table_destruct(kj_table* table)
 	free(table->entries);
 }
 
-static kj_table_entry* _table_find_entry(kj_table* table, kj_value const* key)
+static kj_table_entry* _table_find_entry(kj_table const* table, kj_value const* key)
 {
 	kj_table_entry* entries = table->entries;
 	hash_t hash = value_hash(*key);
@@ -1208,7 +1208,7 @@ static koji_bool table_set(kj_table* table, kj_value const* key, kj_value const*
 	return true;
 }
 
-static kj_value* table_get(kj_table* table, kj_value const* key)
+static kj_value* table_get(kj_table const* table, kj_value const* key)
 {
 	assert(key->type != KOJI_TYPE_NIL && "Nil values cannot be used as table keys.");
 
@@ -3739,10 +3739,10 @@ static int kjstd_print(koji_state* s, int nargs)
 		switch (koji_value_type(s, i))
 		{
 			case KOJI_TYPE_NIL: printf("nil"); break;
-			case KOJI_TYPE_BOOL: printf(koji_to_int(s, i) ? "true" : "false"); break;
-			case KOJI_TYPE_INT: printf("%lli", koji_to_int(s, i)); break;
-			case KOJI_TYPE_REAL: printf("%f", koji_to_real(s, i)); break;
-			case KOJI_TYPE_STRING: printf("%s", koji_get_string(s, i)); break;
+			case KOJI_TYPE_BOOL: printf(koji_value_to_int(s, i) ? "true" : "false"); break;
+			case KOJI_TYPE_INT: printf("%lli", koji_value_to_int(s, i)); break;
+			case KOJI_TYPE_REAL: printf("%f", koji_value_to_real(s, i)); break;
+			case KOJI_TYPE_STRING: printf("%s", koji_value_string(s, i)); break;
 			case KOJI_TYPE_TABLE: printf("table"); break;
 			case KOJI_TYPE_CLOSURE: printf("closure"); break;
 			default: printf("unknown\n");
@@ -4143,6 +4143,19 @@ void koji_push_real(koji_state* s, koji_real f)
 	value->real = f;
 }
 
+void koji_push_string(koji_state* s, const char* string)
+{
+	kj_value* value = ks_push(s);
+	uint length = strlen(string);
+	value_new_string(value, length);
+	memcpy(value->string->data, string, length + 1);
+}
+
+void koji_push_table(koji_state* s)
+{
+	value_new_table(ks_push(s));
+}
+
 void koji_pop(koji_state* s, int count)
 {
 	for (int i = 0; i < count; ++i)
@@ -4162,21 +4175,59 @@ koji_bool koji_is_real(koji_state* s, int offset)
 	return ks_top(s, offset)->type == KOJI_TYPE_REAL;
 }
 
-koji_integer koji_to_int(koji_state* s, int offset)
+koji_integer koji_value_to_int(koji_state* s, int offset)
 {
 	return value_to_int(ks_top(s, offset));
 }
 
-koji_real koji_to_real(koji_state* s, int offset)
+koji_real koji_value_to_real(koji_state* s, int offset)
 {
 	return value_to_real(ks_top(s, offset));
 }
 
-const char* koji_get_string(koji_state* s, int offset)
+const char* koji_value_string(koji_state* s, int offset)
 {
 	kj_value* value = ks_top(s, offset);
 	assert(value->type == KOJI_TYPE_STRING);
 	return value->string->data;
+}
+
+koji_result koji_table_get(koji_state* s, int offset)
+{
+	kj_value const* table_value = ks_top(s, offset);
+	if (table_value->type != KOJI_TYPE_TABLE)
+	{
+		koji_pop(s, 1);
+		return KOJI_RESULT_INVALID_VALUE;
+	}
+	kj_value key = *ks_top(s, -1);
+	--s->sp; /* pop 1 without calling value_destroy() */
+	kj_value const* value = table_get(&table_value->table->table, &key);
+	if (value)
+	{
+		value_set(ks_push(s), value);
+		value_destroy(&key);
+		return KOJI_RESULT_OK;
+	}
+	value_destroy(&key);
+	return KOJI_RESULT_FAIL;
+}
+
+koji_result koji_table_set(koji_state* s, int table_offset)
+{
+	const kj_value* table_value = ks_top(s, table_offset);
+	if (table_value->type != KOJI_TYPE_TABLE)
+	{
+		koji_pop(s, 2);
+		return KOJI_RESULT_INVALID_VALUE;
+	}
+	kj_value value = *ks_top(s, -1);
+	kj_value key = *ks_top(s, -2);
+	s->sp -= 2; /* pop 2 without calling value_destroy() */
+	table_set(&table_value->table->table, &key, &value);
+	value_destroy(&key);
+	value_destroy(&value);
+	return KOJI_RESULT_OK;
 }
 
 #pragma endregion
