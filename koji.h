@@ -39,14 +39,6 @@ typedef int koji_result;
 typedef struct koji_state koji_state;
 
 /**
-* A prototype is a script function descriptor. It contains function instructions, constants and properties.
-* Prototypes can contain other nested prototypes in a tree structure. Prototypes are reference counted and
-* closures hold a reference to their prototype, the VM holds a reference to prototypes in the frame stack and
-* parent prototypes hold a reference of their children.
-*/
-typedef struct koji_prototype koji_prototype;
-
-/**
   * Enumeration of all supported value types.
   */
 enum koji_type
@@ -174,7 +166,7 @@ extern void koji_pop(koji_state*, int count);
 /**
   * TODO add documentation.
   */
-extern koji_type koji_get_value_type(koji_state*, int offset);
+extern koji_type koji_value_type(koji_state*, int offset);
 
 /**
   * TODO add documentation.
