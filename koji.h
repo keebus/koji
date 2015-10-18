@@ -39,14 +39,6 @@ typedef int koji_result;
 typedef struct koji_state koji_state;
 
 /**
-* A prototype is a script function descriptor. It contains function instructions, constants and properties.
-* Prototypes can contain other nested prototypes in a tree structure. Prototypes are reference counted and
-* closures hold a reference to their prototype, the VM holds a reference to prototypes in the frame stack and
-* parent prototypes hold a reference of their children.
-*/
-typedef struct koji_prototype koji_prototype;
-
-/**
   * Enumeration of all supported value types.
   */
 enum koji_type
@@ -69,8 +61,8 @@ typedef enum koji_type koji_type;
 typedef char(*koji_stream_reader_fn)(void*);
 
 /**
-  * Type of host functions called from script.
-  */
+ * Type of host functions called from script.
+ */
 typedef int(*koji_user_function) (koji_state*, int nargs);
 
 /* Function results */
@@ -169,28 +161,47 @@ extern void koji_push_real(koji_state*, koji_real value);
 /**
 * TODO add documentation.
 */
+extern void koji_push_string(koji_state*, const char* string);
+
+/**
+* TODO add documentation.
+*/
+extern void koji_push_table(koji_state*);
+
+/**
+* TODO add documentation.
+*/
 extern void koji_pop(koji_state*, int count);
 
 /**
   * TODO add documentation.
   */
-extern koji_type koji_get_value_type(koji_state*, int offset);
+extern koji_type koji_value_type(koji_state*, int offset);
 
 /**
   * TODO add documentation.
   */
-extern koji_integer koji_to_int(koji_state*, int offset);
+extern koji_integer koji_value_to_int(koji_state*, int offset);
 
 /**
   * TODO add documentation.
   */
-extern koji_real koji_to_real(koji_state*, int offset);
+extern koji_real koji_value_to_real(koji_state*, int offset);
 
 /**
   * TODO add documentation.
   */
-extern const char* koji_get_string(koji_state*, int offset);
+extern const char* koji_value_string(koji_state*, int offset);
 
+/**
+* TODO add documentation.
+*/
+extern koji_result koji_table_get(koji_state*, int table_offset);
+
+/**
+* TODO add documentation.
+*/
+extern koji_result koji_table_set(koji_state*, int table_offset);
 
 #ifdef __cplusplus
 } // extern "C"

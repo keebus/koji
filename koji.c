@@ -198,7 +198,7 @@ kj_error_handler;
 
 /**
 * Reports an issue at source location @sl with printf-like @format and arguments @args using
-* specified handler @e.
+* specified handler @e.ko
 */
 static void reportv(kj_error_handler *e, kj_source_location sl, const char *format, va_list args)
 {
@@ -795,12 +795,20 @@ static inline void replace_C(kj_instruction *i, int C) { *i = (*i & 0x7FFFFF) | 
 typedef struct kj_value kj_value;
 
 /**
+* A prototype is a script function descriptor. It contains function instructions, constants and properties.
+* Prototypes can contain other nested prototypes in a tree structure. Prototypes are reference counted and
+* closures hold a reference to their prototype, the VM holds a reference to prototypes in the frame stack and
+* parent prototypes hold a reference of their children.
+*/
+typedef struct kj_prototype kj_prototype;
+
+/**
 * TODO
 */
 typedef struct kj_closure
 {
 	uint reference;
-	koji_prototype* prototype;
+	kj_prototype* prototype;
 } kj_closure;
 
 static const char *KJ_VALUE_TYPE_STRING[] = { "nil", "bool", "int", "real", "string", "table", "closure" };
@@ -871,7 +879,7 @@ typedef struct kj_upvalue_info
 } kj_upvalue_info;
 
 /* Definition */
-struct koji_prototype
+struct kj_prototype
 {
 	uint references;
 	ubyte nargs;
@@ -879,19 +887,19 @@ struct koji_prototype
 	array_type(kj_upvalue_info) upvalues;
 	array_type(kj_value) constants;
 	instructions instructions;
-	array_type(koji_prototype*) prototypes;
+	array_type(kj_prototype*) prototypes;
 };
 
 /**
 * (internal) Destroys prototype @p resources and frees its memory.
 */
-static void prototype_delete(koji_prototype* p);
+static void prototype_delete(kj_prototype* p);
 
 /**
 * Frees a reference to prototype @p and deletes it if zero.
 */
 
-static inline void prototype_release(koji_prototype* p)
+static inline void prototype_release(kj_prototype* p)
 {
 	if (--p->references == 0)
 		prototype_delete(p);
@@ -1002,6 +1010,7 @@ static inline void value_new_table(kj_value* v)
 	table_init(&v->table->table, KJ_TABLE_DEFAULT_CAPACITY);
 }
 
+
 static inline void value_set(kj_value* dest, const kj_value* src)
 {
 	if (dest == src) return;
@@ -1031,34 +1040,32 @@ static inline koji_bool value_to_bool(const kj_value* v)
 		case KOJI_TYPE_BOOL: return v->boolean;
 		case KOJI_TYPE_INT: return v->integer != 0;
 		case KOJI_TYPE_REAL: return v->real != 0;
-		case KOJI_TYPE_CLOSURE: return true;
-		default: assert(!"implement me");
+		default: return true;
 	}
-	return 0;
 }
 
 static inline koji_integer value_to_int(const kj_value* v)
 {
 	switch (v->type)
 	{
-	case KOJI_TYPE_BOOL: return (koji_integer)v->boolean;
-	case KOJI_TYPE_INT: return v->integer;
-	case KOJI_TYPE_REAL: return (koji_integer)v->real;
-	default: assert(!"implement me");
+		case KOJI_TYPE_BOOL: return (koji_integer)v->boolean;
+		case KOJI_TYPE_INT: return v->integer;
+		case KOJI_TYPE_REAL: return (koji_integer)v->real;
+		case KOJI_TYPE_STRING: return atoi(v->string->data);
+		default: return 0;
 	}
-	return 0;
 }
 
 static inline koji_real value_to_real(const kj_value* v)
 {
 	switch (v->type)
 	{
-	case KOJI_TYPE_BOOL: return (koji_real)v->boolean;
-	case KOJI_TYPE_INT: return (koji_real)v->integer;
-	case KOJI_TYPE_REAL: return v->real;
-	default: assert(!"implement me");
+		case KOJI_TYPE_BOOL: return (koji_real)v->boolean;
+		case KOJI_TYPE_INT: return (koji_real)v->integer;
+		case KOJI_TYPE_REAL: return v->real;
+		case KOJI_TYPE_STRING: return atof(v->string->data);
+		default: return 0;
 	}
-	return 0;
 }
 
 /* table functions */
@@ -1132,7 +1139,7 @@ static void table_destruct(kj_table* table)
 	free(table->entries);
 }
 
-static kj_table_entry* _table_find_entry(kj_table* table, kj_value const* key)
+static kj_table_entry* _table_find_entry(kj_table const* table, kj_value const* key)
 {
 	kj_table_entry* entries = table->entries;
 	hash_t hash = value_hash(*key);
@@ -1188,7 +1195,7 @@ static koji_bool _table_reserve(kj_table* table, uint size)
 	return true;
 }
 
-static koji_bool table_put(kj_table* table, kj_value const* key, kj_value const* value)
+static koji_bool table_set(kj_table* table, kj_value const* key, kj_value const* value)
 {
 	assert(key->type != KOJI_TYPE_NIL && "Nil values cannot be used as table keys.");
 
@@ -1218,7 +1225,7 @@ static koji_bool table_put(kj_table* table, kj_value const* key, kj_value const*
 	return true;
 }
 
-static kj_value* table_get(kj_table* table, kj_value const* key)
+static kj_value* table_get(kj_table const* table, kj_value const* key)
 {
 	assert(key->type != KOJI_TYPE_NIL && "Nil values cannot be used as table keys.");
 
@@ -1232,7 +1239,7 @@ static kj_value* table_get(kj_table* table, kj_value const* key)
 /**
 * (internal) Destroys prototype @p resources and frees its memory.
 */
-static void prototype_delete(koji_prototype* p)
+static void prototype_delete(kj_prototype* p)
 {
 	assert(p->references == 0);
 	array_destroy(&p->instructions);
@@ -1253,7 +1260,7 @@ static void prototype_delete(koji_prototype* p)
 /**
 * Prints prototype information and instructions for compilation debugging.
 */
-static void prototype_dump(koji_prototype* p, int level, int index)
+static void prototype_dump(kj_prototype* p, int level, int index)
 {
 	if (level == 0)
 		printf("Main prototype\n");
@@ -1475,7 +1482,7 @@ typedef struct kj_compiler
 	kj_allocation_page* allocator;
 	kj_static_functions const* static_functions;
 	kj_lexer* lex;
-	koji_prototype* proto;
+	kj_prototype* proto;
 	uint prototype_level;
 	array_type(char) identifiers;
 	array_type(kc_local) locals;
@@ -1769,6 +1776,7 @@ typedef struct kc_expr
 		koji_integer integer;
 		koji_real real;
 		int location;
+		uint upvalue;
 		struct
 		{
 			uint length;
@@ -2140,16 +2148,16 @@ static kc_expr kc_parse_closure(kj_compiler* c, const kc_expr_state* es)
 	int proto_index = c->proto->prototypes.size;
 
 	uint oldnlocals = c->locals.size;
-	koji_prototype* oldproto = c->proto;
+	kj_prototype* oldproto = c->proto;
 	uint oldtemporaries = c->temporaries;
 	c->temporaries = 0;
 
-	c->proto = malloc(sizeof(koji_prototype));
-	*c->proto = (koji_prototype) { 0 };
+	c->proto = malloc(sizeof(kj_prototype));
+	*c->proto = (kj_prototype) { 0 };
 	c->proto->references = 1;
 	++c->prototype_level;
 
-	array_push_value(&oldproto->prototypes, koji_prototype*, c->proto);
+	array_push_value(&oldproto->prototypes, kj_prototype*, c->proto);
 
 	if (kc_accept(c, '('))
 	{
@@ -3357,7 +3365,7 @@ static void kc_parse_module(kj_compiler* c)
 * It compiles a stream containing a source string to a koji module, reporting any error to specified
 * @error_handler (todo). This function is called by the koji_state in its load* functions.
 */
-static koji_prototype* compile(const char* source_name, koji_stream_reader_fn stream_func, void* stream_data,
+static kj_prototype* compile(const char* source_name, koji_stream_reader_fn stream_func, void* stream_data,
 	const kj_static_functions* local_variable)
 {
 	/* todo: make this part of the state */
@@ -3365,8 +3373,8 @@ static koji_prototype* compile(const char* source_name, koji_stream_reader_fn st
 	e.reporter = default_error_report_fn;
 
 	/* create a new module that will contain all instructions, constants, identifiers, and that all prototypes will refer to */
-	koji_prototype* mainproto = malloc(sizeof(koji_prototype));
-	*mainproto = (koji_prototype) { 0 };
+	kj_prototype* mainproto = malloc(sizeof(kj_prototype));
+	*mainproto = (kj_prototype) { 0 };
 
 	/* redirect the error handler jump buffer here so that we can cleanup the state. */
 	if (setjmp(e.jmpbuf)) goto error;
@@ -3410,7 +3418,7 @@ cleanup:
 typedef struct ks_frame
 {
 	/* the function prototype this frame is executing */
-	koji_prototype* proto;
+	kj_prototype* proto;
 
 	/* the program counter (current instruction index) */
 	uint pc;
@@ -3465,7 +3473,7 @@ static void ks_error(koji_state* s, const char* format, ...)
 	longjmp(s->error_jump_buf, 1);
 }
 
-static inline void ks_value_new_closure(koji_state* s, kj_value* v, koji_prototype* prototype)
+static inline void ks_value_new_closure(koji_state* s, kj_value* v, kj_prototype* prototype)
 {
 	value_destroy(v);
 	v->type = KOJI_TYPE_CLOSURE;
@@ -3694,7 +3702,7 @@ static inline void ks_object_set_element(koji_state* s, kj_value* object, kj_val
 	switch (object->type)
 	{
 		case KOJI_TYPE_TABLE:
-			table_put(&object->table->table, key, value);
+			table_set(&object->table->table, key, value);
 			break;
 
 		default:
@@ -3735,7 +3743,7 @@ static inline const kj_value* ks_get(koji_state* s, ks_frame* currframe, int loc
 		currframe->proto->constants.data - location - 1;
 }
 
-static inline void ks_push_frame(koji_state* s, koji_prototype* proto, uint stackbase, kj_value this)
+static inline void ks_push_frame(koji_state* s, kj_prototype* proto, uint stackbase, kj_value this)
 {
 	ks_frame* frame = array_push(&s->framestack, ks_frame, 1);
 	frame->proto = proto;
@@ -3752,7 +3760,7 @@ static inline void ks_call_clojure(koji_state* s, ks_frame* curr_frame, kj_value
 	if (closure->type != KOJI_TYPE_CLOSURE)
 		ks_error(s, "cannot call value of type %s.", KJ_VALUE_TYPE_STRING[closure->type]);
 
-	koji_prototype* proto = closure->closure->prototype;
+	kj_prototype* proto = closure->closure->prototype;
 
 	if (proto->nargs != ncallargs)
 		ks_error(s, "closure at (TODO) takes %d number of arguments (%d provided).", proto->nargs, ncallargs);
@@ -3763,7 +3771,8 @@ static inline void ks_call_clojure(koji_state* s, ks_frame* curr_frame, kj_value
 	ks_push_frame(s, proto, curr_frame->stackbase + stackbaseoffset, *this);
 }
 
-/* standard functions */
+#pragma region Standard functions
+
 static int kjstd_set_metatable(koji_state* s, int nargs)
 {
 	kj_value* table = ks_top(s, -2);
@@ -3810,13 +3819,13 @@ static int kjstd_print(koji_state* s, int nargs)
 	for (int i = -nargs; i < 0; ++i)
 	{
 		if (i != -nargs) printf(" ");
-		switch (koji_get_value_type(s, i))
+		switch (koji_value_type(s, i))
 		{
 			case KOJI_TYPE_NIL: printf("nil"); break;
-			case KOJI_TYPE_BOOL: printf(koji_to_int(s, i) ? "true" : "false"); break;
-			case KOJI_TYPE_INT: printf("%lli", koji_to_int(s, i)); break;
-			case KOJI_TYPE_REAL: printf("%f", koji_to_real(s, i)); break;
-			case KOJI_TYPE_STRING: printf("%s", koji_get_string(s, i)); break;
+			case KOJI_TYPE_BOOL: printf(koji_value_to_int(s, i) ? "true" : "false"); break;
+			case KOJI_TYPE_INT: printf("%lli", koji_value_to_int(s, i)); break;
+			case KOJI_TYPE_REAL: printf("%f", koji_value_to_real(s, i)); break;
+			case KOJI_TYPE_STRING: printf("%s", koji_value_string(s, i)); break;
 			case KOJI_TYPE_TABLE: printf("table"); break;
 			case KOJI_TYPE_CLOSURE: printf("closure"); break;
 			default: printf("unknown\n");
@@ -3827,6 +3836,31 @@ static int kjstd_print(koji_state* s, int nargs)
 	return 0;
 }
 
+static int kjstd_len(koji_state* s, int nargs)
+{
+	(void)nargs;
+	kj_value* top = ks_top(s, -1);
+	uint length;
+	switch (top->type)
+	{
+		case KOJI_TYPE_STRING: length = top->string->length; break;
+		case KOJI_TYPE_TABLE:  length = top->table->table.size;
+		default: ks_error(s, "len argument must be of type string or table."); length = 0;
+	}
+	value_set_integer(top, length);
+	return 1;
+}
+
+static void ks_register_standard_functions(koji_state* s)
+{
+	koji_static_function(s, "set_metatable", kjstd_set_metatable, 2, 2);
+	koji_static_function(s, "get_metatable", kjstd_get_metatable, 2, 2);
+	koji_static_function(s, "print", kjstd_print, 0, USHRT_MAX);
+	koji_static_function(s, "len", kjstd_len, 1, 1);
+}
+
+#pragma endregion
+
 /* API functions */
 
 koji_state* koji_create(void)
@@ -3836,11 +3870,7 @@ koji_state* koji_create(void)
 	s->valid = true;
 	table_init(&s->globals.table, KJ_TABLE_DEFAULT_CAPACITY);
 	s->globals.references = 1;
-
-	koji_static_function(s, "set_metatable", kjstd_set_metatable, 2, 2);
-	koji_static_function(s, "get_metatable", kjstd_get_metatable, 2, 2);
-	koji_static_function(s, "print", kjstd_print, 0, USHRT_MAX);
-
+	ks_register_standard_functions(s);
 	return s;
 }
 
@@ -3893,7 +3923,7 @@ koji_result koji_static_function(
 
 int koji_load(koji_state* s, const char* source_name, koji_stream_reader_fn stream_fn, void* stream_data)
 {
-	koji_prototype* mainproto = compile(source_name, stream_fn, stream_data, &s->static_host_functions);
+	kj_prototype* mainproto = compile(source_name, stream_fn, stream_data, &s->static_host_functions);
 
 	if (!mainproto) return KOJI_RESULT_FAIL;
 
@@ -4197,6 +4227,19 @@ void koji_push_real(koji_state* s, koji_real f)
 	value->real = f;
 }
 
+void koji_push_string(koji_state* s, const char* string)
+{
+	kj_value* value = ks_push(s);
+	uint length = strlen(string);
+	value_new_string(value, length);
+	memcpy(value->string->data, string, length + 1);
+}
+
+void koji_push_table(koji_state* s)
+{
+	value_new_table(ks_push(s));
+}
+
 void koji_pop(koji_state* s, int count)
 {
 	for (int i = 0; i < count; ++i)
@@ -4206,7 +4249,7 @@ void koji_pop(koji_state* s, int count)
 	}
 }
 
-koji_type koji_get_value_type(koji_state* s, int offset)
+koji_type koji_value_type(koji_state* s, int offset)
 {
 	return ks_top(s, offset)->type;
 }
@@ -4216,21 +4259,59 @@ koji_bool koji_is_real(koji_state* s, int offset)
 	return ks_top(s, offset)->type == KOJI_TYPE_REAL;
 }
 
-koji_integer koji_to_int(koji_state* s, int offset)
+koji_integer koji_value_to_int(koji_state* s, int offset)
 {
 	return value_to_int(ks_top(s, offset));
 }
 
-koji_real koji_to_real(koji_state* s, int offset)
+koji_real koji_value_to_real(koji_state* s, int offset)
 {
 	return value_to_real(ks_top(s, offset));
 }
 
-const char* koji_get_string(koji_state* s, int offset)
+const char* koji_value_string(koji_state* s, int offset)
 {
 	kj_value* value = ks_top(s, offset);
 	assert(value->type == KOJI_TYPE_STRING);
 	return value->string->data;
+}
+
+koji_result koji_table_get(koji_state* s, int offset)
+{
+	kj_value const* table_value = ks_top(s, offset);
+	if (table_value->type != KOJI_TYPE_TABLE)
+	{
+		koji_pop(s, 1);
+		return KOJI_RESULT_INVALID_VALUE;
+	}
+	kj_value key = *ks_top(s, -1);
+	--s->sp; /* pop 1 without calling value_destroy() */
+	kj_value const* value = table_get(&table_value->table->table, &key);
+	if (value)
+	{
+		value_set(ks_push(s), value);
+		value_destroy(&key);
+		return KOJI_RESULT_OK;
+	}
+	value_destroy(&key);
+	return KOJI_RESULT_FAIL;
+}
+
+koji_result koji_table_set(koji_state* s, int table_offset)
+{
+	const kj_value* table_value = ks_top(s, table_offset);
+	if (table_value->type != KOJI_TYPE_TABLE)
+	{
+		koji_pop(s, 2);
+		return KOJI_RESULT_INVALID_VALUE;
+	}
+	kj_value value = *ks_top(s, -1);
+	kj_value key = *ks_top(s, -2);
+	s->sp -= 2; /* pop 2 without calling value_destroy() */
+	table_set(&table_value->table->table, &key, &value);
+	value_destroy(&key);
+	value_destroy(&value);
+	return KOJI_RESULT_OK;
 }
 
 #pragma endregion
