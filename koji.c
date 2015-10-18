@@ -907,6 +907,11 @@ static inline void prototype_release(kj_prototype* p)
 
 /* kj_value functions */
 
+static inline kj_value* _closure_upvalues(kj_closure* c)
+{
+	return (kj_value*)(c + 1);
+}
+
 static void table_init(kj_table* table, uint capacity);
 
 static void table_destruct(kj_table* table);
@@ -946,6 +951,12 @@ static inline void value_destroy(kj_value* v)
 	case KOJI_TYPE_CLOSURE:
 		if (v->closure->reference-- == 1)
 		{
+			/* destroy all upvalues */
+			kj_value* upvalues = _closure_upvalues(v->closure);
+			for (uint i = 0; i < v->closure->prototype->upvalues.size; ++i)
+			{
+				value_destroy(upvalues + i);
+			}
 			/* check whether this closure was the last reference to the prototype module, if so destroy the module */
 			prototype_release(v->closure->prototype);
 			free(v->closure);
@@ -1977,7 +1988,7 @@ static inline kc_expr kc_expr_to_any_register(kj_compiler* c, kc_expr e, int tar
 
 	case KC_EXPR_TYPE_UPVALUE:
 		kc_emit(c, encode_ABx(KJ_OP_GETUPVALUE, target_hint, e.location));
-		kc_emit(c, encode_ABx(KJ_OP_NEG, target_hint, target_hint));
+		if (!e.positive) kc_emit(c, encode_ABx(KJ_OP_NEG, target_hint, target_hint));
 		return kc_expr_register(target_hint);
 
 	case KC_EXPR_TYPE_ACCESSOR:
@@ -3417,8 +3428,8 @@ cleanup:
 /* Contains all the necessary information to run a script function (closure) */
 typedef struct ks_frame
 {
-	/* the function prototype this frame is executing */
-	kj_prototype* proto;
+	/* the closure being executed */
+	kj_closure* closure;
 
 	/* the program counter (current instruction index) */
 	uint pc;
@@ -3485,7 +3496,10 @@ static inline void ks_value_new_closure(koji_state* s, kj_value* v, kj_prototype
 	/* turn upvalue-referenced locals into references */
 	for (uint i = 0; i < prototype->upvalues.size; ++i)
 	{
-		(void)s;
+		kj_upvalue_info const* info = prototype->upvalues.data + i;
+		uint index = s->framestack.data[s->framestack.size - info->frame_offset - 1].stackbase + info->local_location;
+		_closure_upvalues(v->closure)[i].type = KOJI_TYPE_NIL;
+		value_set(_closure_upvalues(v->closure) + i, s->valuestack.data + index);
 	}
 }
 
@@ -3494,13 +3508,13 @@ static inline void ks_op_neg(kj_value* dest, const kj_value* src)
 {
 	switch (src->type)
 	{
-		case KOJI_TYPE_NIL: value_set_boolean(dest, true);
-		case KOJI_TYPE_BOOL: value_set_boolean(dest, !src->boolean);
-		case KOJI_TYPE_INT: value_set_boolean(dest, !src->integer);
-		case KOJI_TYPE_REAL: value_set_boolean(dest, !src->real);
-		case KOJI_TYPE_STRING: value_set_boolean(dest, src->string->length == 0);
+		case KOJI_TYPE_NIL: value_set_boolean(dest, true); break;
+		case KOJI_TYPE_BOOL: value_set_boolean(dest, !src->boolean); break;
+		case KOJI_TYPE_INT: value_set_boolean(dest, !src->integer); break;
+		case KOJI_TYPE_REAL: value_set_boolean(dest, !src->real); break;
+		case KOJI_TYPE_STRING: value_set_boolean(dest, src->string->length == 0); break;
 		case KOJI_TYPE_TABLE:
-		case KOJI_TYPE_CLOSURE: value_set_boolean(dest, true);
+		case KOJI_TYPE_CLOSURE: value_set_boolean(dest, true); break;
 	}
 }
 
@@ -3740,16 +3754,17 @@ static inline kj_value* ks_get_register(koji_state* s, ks_frame* currframe, int 
 static inline const kj_value* ks_get(koji_state* s, ks_frame* currframe, int location)
 {
 	return location >= 0 ? ks_get_register(s, currframe, location) :
-		currframe->proto->constants.data - location - 1;
+		currframe->closure->prototype->constants.data - location - 1;
 }
 
-static inline void ks_push_frame(koji_state* s, kj_prototype* proto, uint stackbase, kj_value this)
+static inline void ks_push_frame(koji_state* s, kj_closure* closure, uint stackbase, kj_value this)
 {
 	ks_frame* frame = array_push(&s->framestack, ks_frame, 1);
-	frame->proto = proto;
+	frame->closure = closure;
 	frame->pc = 0;
 	frame->stackbase = stackbase;
 	frame->this = this;
+	kj_prototype const* proto = closure->prototype;
 	array_push(&s->valuestack, kj_value, proto->ntemporaries);
 	for (int i = proto->nargs, tot = proto->nargs + proto->ntemporaries; i < tot; ++i)
 		s->valuestack.data[frame->stackbase + i].type = KOJI_TYPE_NIL;
@@ -3768,7 +3783,7 @@ static inline void ks_call_clojure(koji_state* s, ks_frame* curr_frame, kj_value
 	++proto->references;
 
 	/* push a new frame onto the stack with stack base at register A offset from current frame stack base */
-	ks_push_frame(s, proto, curr_frame->stackbase + stackbaseoffset, *this);
+	ks_push_frame(s, closure->closure, curr_frame->stackbase + stackbaseoffset, *this);
 }
 
 #pragma region Standard functions
@@ -3882,7 +3897,7 @@ void koji_destroy(koji_state* s)
 
 	/* release prototype references */
 	for (uint i = 0; i < s->framestack.size; ++i)
-		prototype_release(s->framestack.data[i].proto);
+		prototype_release(s->framestack.data[i].closure->prototype);
 
 	array_destroy(&s->static_host_functions.functions);
 	array_destroy(&s->static_host_functions.name_buffer);
@@ -3971,7 +3986,7 @@ int koji_run(koji_state* s)
 
 	// push stack frame for closure
 	kj_value nil_value = { .type = KOJI_TYPE_NIL };
-	ks_push_frame(s, top.closure->prototype, s->sp, nil_value);
+	ks_push_frame(s, top.closure, s->sp, nil_value);
 
 	return koji_continue(s);
 }
@@ -3990,7 +4005,8 @@ int koji_continue(koji_state* s)
 newframe:
 	assert(s->framestack.size > 0);
 	ks_frame* curr_frame = s->framestack.data + s->framestack.size - 1;
-	const kj_instruction* instructions = curr_frame->proto->instructions.data;
+	kj_prototype* curr_proto = curr_frame->closure->prototype;
+	const kj_instruction* instructions = curr_frame->closure->prototype->instructions.data;
 
 	for (;;)
 	{
@@ -4121,8 +4137,8 @@ newframe:
 
 		case KJ_OP_CLOSURE:
 		{
-			assert((uint)decode_Bx(ins) < curr_frame->proto->prototypes.size);
-			ks_value_new_closure(s, KSREGA, curr_frame->proto->prototypes.data[decode_Bx(ins)]);
+			assert((uint)decode_Bx(ins) < curr_proto->prototypes.size);
+			ks_value_new_closure(s, KSREGA, curr_proto->prototypes.data[decode_Bx(ins)]);
 			break;
 		}
 
@@ -4171,9 +4187,9 @@ newframe:
 			int i = 0;
 			for (int reg = decode_A(ins), to_reg = decode_Bx(ins); reg < to_reg; ++reg, ++i)
 				value_set(ks_get_register(s, curr_frame, i), ks_get(s, curr_frame, reg));
-			for (int end = curr_frame->proto->nargs + curr_frame->proto->ntemporaries; i < end; ++i)
+			for (int end = curr_proto->nargs + curr_proto->ntemporaries; i < end; ++i)
 				value_set_nil(ks_get_register(s, curr_frame, i));
-			prototype_release(curr_frame->proto);
+			prototype_release(curr_proto);
 			--s->framestack.size;
 			if (s->framestack.size == 0) return KOJI_RESULT_OK;
 			goto newframe;
@@ -4189,6 +4205,14 @@ newframe:
 
 		case KJ_OP_SET:
 			ks_object_set_element(s, KSREGA, KSARG(B), KSARG(C));
+			break;
+
+		case KJ_OP_GETUPVALUE:
+			value_set(KSREGA, _closure_upvalues(curr_frame->closure) + decode_B(ins));
+			break;
+
+		case KJ_OP_SETUPVALUE:
+			value_set(_closure_upvalues(curr_frame->closure) + decode_A(ins), KSARG(B));
 			break;
 
 		default:

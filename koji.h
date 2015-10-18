@@ -133,7 +133,7 @@ extern koji_result koji_load_file(koji_state*, const char* filename);
   */
 extern koji_result koji_run(koji_state*);
 
-/**
+/**1
   * Resumes execution.
   */
 extern koji_result koji_continue(koji_state*);
