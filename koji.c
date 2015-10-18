@@ -212,6 +212,18 @@ static void reportv(kj_error_handler *e, kj_source_location sl, const char *form
 }
 
 /**
+* Reports an issue at source location @sl with printf-like @format and arguments ... using
+* specified handler @e.
+*/
+static void report(kj_error_handler *e, kj_source_location sl, const char *format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	reportv(e, sl, format, args);
+	va_end(args);
+}
+
+/**
 * Reports the specified error message and jumps to the error handler code.
 */
 static void compiler_error(kj_error_handler *e, kj_source_location sl, const char *format, ...)
@@ -804,29 +816,7 @@ typedef struct kj_string
 	char* data;
 } kj_string;
 
-typedef struct kj_table_entry kj_table_entry;
-
-typedef struct kj_table
-{
-	uint capacity;
-	uint size;
-	struct kj_table_entry* entries;
-} kj_table;
-
-#define KJ_TABLE_DEFAULT_CAPACITY 10
-
-#ifdef KOJI_64
-typedef uint64_t hash_t;
-#else
-typedef uint32_t hash_t;
-#endif
-
-typedef struct kj_value_table
-{
-	uint references;
-	kj_table table;
-	struct kj_value_table* metatable;
-} kj_value_table;
+typedef struct kj_value_table kj_value_table;
 
 /* Definition */
 struct kj_value
@@ -844,13 +834,36 @@ struct kj_value
 	};
 };
 
+
+#ifdef KOJI_64
+typedef uint64_t hash_t;
+#else
+typedef uint32_t hash_t;
+#endif
+
+typedef struct kj_table_entry kj_table_entry;
+
+#define KJ_TABLE_DEFAULT_CAPACITY 10
+
+typedef struct kj_table
+{
+	uint capacity;
+	uint size;
+	struct kj_table_entry* entries;
+} kj_table;
+
+struct kj_value_table
+{
+	uint references;
+	kj_table table;
+	struct kj_value_table* metatable;
+};
+
 struct kj_table_entry
 {
 	kj_value key;
 	kj_value value;
 };
-
-/* helper macro to access a string object in a string value */
 
 /** Dynamic array of instructions. */
 typedef array_type(kj_instruction) instructions;
@@ -883,7 +896,8 @@ static inline void prototype_release(kj_prototype* p)
 
 /* kj_value functions */
 
-static void table_init(kj_table* table, size_t capacity);
+static void table_init(kj_table* table, uint capacity);
+
 static void table_destruct(kj_table* table);
 
 static inline void _value_table_destroy(kj_value_table* vt)
@@ -1097,7 +1111,7 @@ static koji_bool value_equals(kj_value const* lhs, kj_value const* rhs)
 	return lhs->object == rhs->object;
 }
 
-static void table_init(kj_table* table, size_t capacity)
+static void table_init(kj_table* table, uint capacity)
 {
 	table->size = 0;
 	table->capacity = capacity;
@@ -1134,17 +1148,17 @@ static kj_table_entry* _table_find_entry(kj_table const* table, kj_value const* 
 	return &entries[index];
 }
 
-static koji_bool _table_reserve(kj_table* table, size_t size)
+static koji_bool _table_reserve(kj_table* table, uint size)
 {
 	if (size == 0 || size <= table->capacity * 8 / 10) return false;
 
-	size_t old_capacity = table->capacity;
-	size_t new_capacity;
+	uint old_capacity = table->capacity;
+	uint new_capacity;
 
 	/* compute new capacity */
 	if (old_capacity == 0)
 	{
-		size_t double_size = size * 2;
+		uint double_size = size * 2;
 		new_capacity = 10u > double_size ? 10u : double_size;
 	}
 	else
@@ -1159,7 +1173,7 @@ static koji_bool _table_reserve(kj_table* table, size_t size)
 	table->entries = malloc(sizeof(kj_table_entry) * new_capacity);
 
 	/* rehash */
-	for (size_t i = 0; i < old_capacity; ++i)
+	for (uint i = 0; i < old_capacity; ++i)
 	{
 		if (old_entries[i].key.type != KOJI_TYPE_NIL)
 		{
@@ -1389,7 +1403,6 @@ typedef struct
 */
 typedef array_type(uint) kc_label;
 
-
 #pragma region Allocator
 
 typedef struct kj_allocation_page
@@ -1403,13 +1416,13 @@ typedef struct kj_allocation_page
 
 static inline char* _align(char* ptr, uint alignment)
 {
-	const uint alignment_minus_one = alignment - 1;
+	const uintptr_t alignment_minus_one = alignment - 1;
 	return (char*)(((uintptr_t)ptr + alignment_minus_one) & ~alignment_minus_one);
 }
 
 static inline char* _allocator_page_buffer(kj_allocation_page* page)
 {
-	return (char*)page + sizeof(kj_allocation_page);
+	return (char*)(page + 1);
 }
 
 static kj_allocation_page* allocator_page_create(uint size)
@@ -1560,7 +1573,10 @@ static inline int _kc_fetch_primitive_constant(kj_compiler* c, kj_value k)
 */
 static inline int kc_fetch_constant_int(kj_compiler* c, koji_integer k)
 {
-	return _kc_fetch_primitive_constant(c, (kj_value) { KOJI_TYPE_INT, .integer = k });
+	kj_value value = (kj_value) {0};
+	value.type = KOJI_TYPE_INT;
+	value.integer = k;
+	return _kc_fetch_primitive_constant(c, value);
 }
 
 /**
@@ -1568,7 +1584,10 @@ static inline int kc_fetch_constant_int(kj_compiler* c, koji_integer k)
 */
 static inline int kc_fetch_constant_real(kj_compiler* c, koji_real k)
 {
-	return _kc_fetch_primitive_constant(c, (kj_value) { KOJI_TYPE_REAL, .real = k });
+	kj_value value = (kj_value) {0};
+	value.type = KOJI_TYPE_REAL;
+	value.real = k;
+	return _kc_fetch_primitive_constant(c, value);
 
 }
 
@@ -1587,10 +1606,12 @@ static inline int kc_fetch_constant_string(kj_compiler* c, const char* k)
 	/* constant not found, add it */
 	int index = c->proto->constants.size;
 	kj_value* constant = array_push(&c->proto->constants, kj_value, 1);
+	*constant = (kj_value) {0};
+
 	constant->type = KOJI_TYPE_STRING;
 
 	/* create the string object */
-	uint str_length = strlen(k);
+	uint str_length = (uint)strlen(k);
 	kj_string* string = malloc(sizeof(kj_string) + str_length + 1);
 	constant->object = string;
 
@@ -1667,7 +1688,7 @@ static uint kc_push_identifier(kj_compiler* c, const char* identifier, uint iden
 {
 	char* my_identifier = array_push(&c->identifiers, char, identifier_size + 1);
 	memcpy(my_identifier, identifier, identifier_size + 1);
-	return my_identifier - c->identifiers.data;
+	return (uint)(my_identifier - c->identifiers.data);
 }
 
 /**
@@ -2947,7 +2968,7 @@ static kc_expr kc_parse_expression_to_any_register(kj_compiler* c, int target_hi
 
 	// if we need to set the result to false, emit the loadbool instruction (to false) now and remember its index so that
 	// we can eventually patch it later
-	size_t load_false_instruction_index = 0;
+	uint load_false_instruction_index = 0;
 	if (set_value_to_false)
 	{
 		load_false_instruction_index = instructions->size;
@@ -3336,12 +3357,6 @@ cleanup:
 
 #pragma endregion
 
-#pragma region Table
-
-
-
-#pragma endregion
-
 //---------------------------------------------------------------------------------------------------------------------
 #pragma region State
 
@@ -3364,8 +3379,8 @@ typedef struct ks_frame
 
 struct koji_state
 {
-	koji_bool valid;
 	jmp_buf error_jump_buf;
+	koji_bool valid;
 	kj_static_functions static_host_functions;
 	array_type(ks_frame) framestack;
 	array_type(kj_value) valuestack;
@@ -3822,12 +3837,12 @@ koji_result koji_static_function(
 	else
 	{
 		/* push the name */
-		uint length = strlen(name);
+		uint length = (uint)strlen(name);
 		char* destname = array_push(&s->static_host_functions.name_buffer, char, length + 1);
 		memcpy(destname, name, length + 1);
 
 		kj_static_function* sf = array_push(&s->static_host_functions.functions, kj_static_function, 1);
-		sf->name_string_offset = destname - s->static_host_functions.name_buffer.data;
+		sf->name_string_offset = (uint)(destname - s->static_host_functions.name_buffer.data);
 		sf->function = fn;
 		sf->min_num_args = min_num_args;
 		sf->max_num_args = max_num_args;
@@ -3859,7 +3874,8 @@ int koji_load_file(koji_state* s, const char* filename)
 	FILE* file = fopen(filename, "r");
 	if (!file)
 	{
-		ks_error(s, "(fixme) cannot open file '%s'.", filename);
+		// fix this, should be using a unified error reporting mechanism
+		printf("(fixme) cannot open file '%s'.", filename);
 		return KOJI_RESULT_INVALID_FILE;
 	}
 	int r = koji_load(s, filename, ks_file_stream_reader, file);
