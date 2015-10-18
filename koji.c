@@ -840,7 +840,7 @@ struct kj_value
 		kj_string*      string;
 		kj_value_table* table;
 		void*           object;
-		kj_closure      closure; // fixme
+		kj_closure      closure;
 	};
 };
 
@@ -1021,34 +1021,32 @@ static inline koji_bool value_to_bool(const kj_value* v)
 		case KOJI_TYPE_BOOL: return v->boolean;
 		case KOJI_TYPE_INT: return v->integer != 0;
 		case KOJI_TYPE_REAL: return v->real != 0;
-		case KOJI_TYPE_CLOSURE: return true;
-		default: assert(!"implement me");
+		default: return true;
 	}
-	return 0;
 }
 
 static inline koji_integer value_to_int(const kj_value* v)
 {
 	switch (v->type)
 	{
-	case KOJI_TYPE_BOOL: return (koji_integer)v->boolean;
-	case KOJI_TYPE_INT: return v->integer;
-	case KOJI_TYPE_REAL: return (koji_integer)v->real;
-	default: assert(!"implement me");
+		case KOJI_TYPE_BOOL: return (koji_integer)v->boolean;
+		case KOJI_TYPE_INT: return v->integer;
+		case KOJI_TYPE_REAL: return (koji_integer)v->real;
+		case KOJI_TYPE_STRING: return atoi(v->string->data);
+		default: return 0;
 	}
-	return 0;
 }
 
 static inline koji_real value_to_real(const kj_value* v)
 {
 	switch (v->type)
 	{
-	case KOJI_TYPE_BOOL: return (koji_real)v->boolean;
-	case KOJI_TYPE_INT: return (koji_real)v->integer;
-	case KOJI_TYPE_REAL: return v->real;
-	default: assert(!"implement me");
+		case KOJI_TYPE_BOOL: return (koji_real)v->boolean;
+		case KOJI_TYPE_INT: return (koji_real)v->integer;
+		case KOJI_TYPE_REAL: return v->real;
+		case KOJI_TYPE_STRING: return atof(v->string->data);
+		default: return 0;
 	}
-	return 0;
 }
 
 /* table functions */

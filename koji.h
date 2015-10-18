@@ -61,8 +61,8 @@ typedef enum koji_type koji_type;
 typedef char(*koji_stream_reader_fn)(void*);
 
 /**
-  * Type of host functions called from script.
-  */
+ * Type of host functions called from script.
+ */
 typedef int(*koji_user_function) (koji_state*, int nargs);
 
 /* Function results */
