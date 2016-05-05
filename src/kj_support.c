@@ -30,6 +30,63 @@ void default_free(void* userdata, void *ptr)
 }
 
 /*------------------------------------------------------------------------------------------------*/
+/* linear allocator                                                                               */
+/*------------------------------------------------------------------------------------------------*/
+struct linear_allocator_page {
+   char*                         cursor;
+   uint                          size;
+   struct linear_allocator_page *next;
+   char                          data[];
+};
+
+static char* align(char* ptr, uint alignment)
+{
+   const uintptr_t alignment_minus_one = alignment - 1;
+   return (char*)(((uintptr_t)ptr + alignment_minus_one) & ~alignment_minus_one);
+}
+
+kj_intern linear_allocator_t* linear_allocator_create(allocator_t *allocator, uint size)
+{
+   size = size < LINEAR_ALLOCATOR_PAGE_MIN_SIZE ? LINEAR_ALLOCATOR_PAGE_MIN_SIZE : size;
+   linear_allocator_t* alloc = kj_malloc(sizeof(linear_allocator_t) + size,
+                                         kj_alignof(linear_allocator_t), allocator);
+   alloc->size = size;
+   alloc->next = NULL;
+   alloc->cursor = alloc->data;
+
+   return alloc;
+}
+
+kj_intern void linear_allocator_destroy(linear_allocator_t *alloc, allocator_t *allocator)
+{
+   while (alloc) {
+      linear_allocator_t* temp = alloc->next;
+      kj_free(alloc, allocator);
+      alloc = temp;
+   }
+}
+
+kj_intern void linear_allocator_reset(linear_allocator_t **alloc, allocator_t *allocator)
+{
+   linear_allocator_destroy((*alloc)->next, allocator);
+   (*alloc)->next = NULL;
+   (*alloc)->cursor = (*alloc)->data;
+}
+
+kj_intern void* linear_allocator_alloc(linear_allocator_t **alloc, allocator_t *allocator, uint size, uint alignment)
+{
+   char* ptr = NULL;
+   if (*alloc && (ptr = align((*alloc)->cursor, alignment)) >= (*alloc)->data + (*alloc)->size) {
+      linear_allocator_t* temp = linear_allocator_create(allocator, size);
+      temp->next = *alloc;
+      *alloc = temp;
+      ptr = align(temp->cursor, alignment);
+   }
+   (*alloc)->cursor = ptr + size;
+   return ptr;
+}
+
+/*------------------------------------------------------------------------------------------------*/
 /* sequentially growable arrays                                                                   */
 /*------------------------------------------------------------------------------------------------*/
    static uint next_power2(uint v)

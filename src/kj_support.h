@@ -31,6 +31,7 @@
    
 #elif defined(_MSC_VER)
    #pragma warning(push)
+   #pragma warning(disable : 4200) /* disable warning for C99 flexible array members */
    #pragma warning(disable : 4204)
    #pragma warning(disable : 4221) /* cannot be initialized using address of automatic variable */
 #endif
@@ -53,21 +54,20 @@
 #define snprintf c99_snprintf
 #define vsnprintf c99_vsnprintf
 
-inline int c99_vsnprintf(char *outBuf, size_t size, const char *format,
-                         va_list ap)
+inline int c99_vsnprintf(char *out_buf, size_t size, const char *format, va_list ap)
 {
   int count = -1;
-  if (size != 0) count = _vsnprintf_s(outBuf, size, _TRUNCATE, format, ap);
+  if (size != 0) count = _vsnprintf_s(out_buf, size, _TRUNCATE, format, ap);
   if (count == -1) count = _vscprintf(format, ap);
   return count;
 }
 
-inline int c99_snprintf(char *outBuf, size_t size, const char *format, ...)
+inline int c99_snprintf(char *out_buf, size_t size, const char *format, ...)
 {
   int count;
   va_list ap;
   va_start(ap, format);
-  count = c99_vsnprintf(outBuf, size, format, ap);
+  count = c99_vsnprintf(out_buf, size, format, ap);
   va_end(ap);
   return count;
 }
@@ -139,6 +139,47 @@ kj_intern void * default_realloc(void*, void *ptr, koji_size_t size, koji_size_t
 kj_intern void   default_free(void*, void *ptr);
 
 /*
+ * # Linear allocator #
+ * A linear allocator provides a way to allocate memory linearly (thus quickly) and then clearing it
+ * up later on when all allocations are not needed. Use it to freely allocate scratch memory that is
+ * soon going to be freed altogether.
+ */
+
+/*
+ * The minimum size of a linear allocator page in bytes.
+ */
+#define LINEAR_ALLOCATOR_PAGE_MIN_SIZE 1024
+
+/*
+ * A linear allocator structure. Clients are not required to use any
+ */
+typedef struct linear_allocator_page linear_allocator_t;
+
+/*
+ * Creates a new linear allocator of specified size (which will be max'ed with
+ * LINEAR_ALLOCATOR_PAGE_MIN_SIZE). Use [allocator] for page allcations.
+ */
+kj_intern linear_allocator_t *linear_allocator_create(allocator_t *allocator, uint size);
+
+/*
+ * Destroys the linear allocator [talloc] which was created with specified [allocator]
+ */
+kj_intern void linear_allocator_destroy(linear_allocator_t *talloc, allocator_t *allocator);
+
+/*
+ * Resets all current pages of specified linear allocator [talloc]. All pages after the first one
+ * are deallocated.
+ */
+kj_intern void linear_allocator_reset(linear_allocator_t **talloc, allocator_t *allocator);
+
+/*
+ * Allocates a chunk of memory of given [size] and [alignment] from specified linear allocator
+ * [talloc] using [allocator] if a new page needs to be allocate.
+ */
+kj_intern void* linear_allocator_alloc(linear_allocator_t **talloc, allocator_t *allocator,
+                                       uint size, uint alignment);
+
+/*
  * # Sequentially growing arrays #
  * A sequentially growing array is a simple array that is allowed to grow dynamically one or more
  * elements at a time. Initialize your array with something like 'int* my_ints = NULL' and
@@ -181,10 +222,10 @@ kj_intern void * seqary_push_ex(void *parray, uint *psize, allocator_t *alloc, u
 
 /* Generates the declaration for a dynamic array of type @type */
 #define array_type(type)                                                                           \
-	struct {                                                                                         \
-		type *data;                                                                                    \
-		uint size;                                                                                     \
-		uint capacity;                                                                                 \
+	struct {                                                                                        \
+		type *data;                                                                                  \
+		uint size;                                                                                   \
+		uint capacity;                                                                               \
 	}
 
 /* Generic definition of a dynamic array that points to void* */
