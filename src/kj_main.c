@@ -5,7 +5,7 @@
  * See LICENSE for further licensing information.
  */
  
-#include "api.h"
+#include "kj_api.h"
 
 #ifndef NULL
 #define NULL (void*)(0)
@@ -13,9 +13,12 @@
 
 int main(int argc, char **argv)
 {
-	koji_state *koji = koji_open(NULL, NULL, NULL, NULL);
-	
-	koji_close(koji);
-	
-	return 0;
+   (void)argc;
+   (void)argv;
+   
+   koji_state *koji = koji_open(NULL, NULL, NULL, NULL);
+
+   koji_close(koji);
+
+   return 0;
 }

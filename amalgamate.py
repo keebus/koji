@@ -8,7 +8,9 @@ source_path = "src"
 files = [f for f in os.listdir(source_path) if isfile(join(source_path, f))]
 headers = [f for f in files if f.endswith(".h")]
 sources = [f for f in files if f.endswith(".c")]
-sources.remove("main.c")
+
+sources.remove("kj_main.c")
+sources.append("kj_footer.h")
 
 processed_headers = set()
 processed_sources = set()
@@ -59,4 +61,4 @@ generate_source = """/*
 
 open("koji.c", "w").write(generate_source)
 
-open("koji.h", "w").write(open("src/api.h").read())
+open("koji.h", "w").write(open("src/kj_api.h").read())

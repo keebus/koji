@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "support.h"
+#include "kj_support.h"
 #include <setjmp.h>
 #include <stdarg.h>
 
@@ -15,9 +15,9 @@
  * Describes a specific location as in line and column in a specific source file.
  */
 typedef struct {
-  const char *filename;
-  uint line;
-  uint column;
+   const char *filename;
+   uint line;
+   uint column;
 } source_location_t;
 
 /*
@@ -29,9 +29,9 @@ typedef void (*issue_reporter_t)(void *userdata, source_location_t, const char *
  * Groups info about the error handler used during compilation and execution.
  */
 typedef struct {
-  issue_reporter_t reporter_fn;
-  void *reporter_data;
-  jmp_buf error_jmpbuf;
+   issue_reporter_t reporter_fn;
+   void *reporter_data;
+   jmp_buf error_jmpbuf;
 } issue_handler_t;
 
 /*
