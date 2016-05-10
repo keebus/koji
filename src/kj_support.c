@@ -101,7 +101,7 @@ kj_intern void* linear_allocator_alloc(linear_allocator_t **alloc, allocator_t *
       return v;
    }
 
-void * seqary_push_ex(void *pparray, uint *psize, allocator_t *alloc, uint elem_size,
+void * array_push_seq_ex(void *pparray, uint *psize, allocator_t *alloc, uint elem_size,
                       uint elem_align, uint count)
 {
    assert(count > 0);

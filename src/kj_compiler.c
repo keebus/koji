@@ -47,29 +47,38 @@ typedef struct compiler {
  * #todo
  */
 typedef enum {
-   EXPR_NIL,
-   EXPR_BOOL,
-   EXPR_NUMBER,
-   EXPR_STRING,
-   EXPR_LOCATION,
+   EXPR_NIL,      /* a nil expression */
+   EXPR_BOOL,     /* a boolean expression */
+   EXPR_NUMBER,   /* a numerical expression */
+   EXPR_STRING,   /* a string expression */
+   EXPR_LOCATION, /* a location expression */
+   EXPR_EQ,       /* a equals logical expression */
+   EXPR_LT,       /* a less-than logical expression */
+   EXPR_LTE,      /* a less-than-equal logical expression */
 } expr_type_t;
 
 /*
  * The value of a string expression, the string [data] and its length [len].
  */
 struct expr_string {
-   char *data;
+   char *chars;
    uint  length;
+};
+
+struct expr_comparison {
+   location_t lhs;
+   location_t rhs;
 };
 
 /*
  * Union of valid expression values data.
  */
 union expr_value {
-   bool               boolean;
-   koji_number        number;
-   struct expr_string string;
-   location_t         location;
+   bool                   boolean;
+   koji_number            number;
+   struct expr_string     string;
+   location_t             location;
+   struct expr_comparison comparison;
 };
 
 /*
@@ -77,8 +86,8 @@ union expr_value {
  */
 typedef struct {
    expr_type_t      type;
-   union expr_value value;
-   bool             negative;
+   union expr_value val;
+   bool             positive;
 } expr_t;
 
 typedef enum {
@@ -121,16 +130,54 @@ typedef struct {
 /*------------------------------------------------------------------------------------------------*/
 /* expression                                                                                     */
 /*------------------------------------------------------------------------------------------------*/
+/* Returns a nil expr. */
+static expr_t expr_nil(void)
+{
+   return (expr_t) { EXPR_NIL, .positive = true };
+}
+
+/* Makes and returns a number expr of specified [value]. */
+static expr_t expr_boolean(bool value) {
+  return (expr_t) { EXPR_BOOL, .val.boolean = value, .positive = true };
+}
+
+/* Makes and returns a boolean expr of specified [value]. */
+static expr_t expr_number(koji_number value) {
+  return (expr_t) { EXPR_NUMBER, .val.number = value, .positive = true };
+}
+
+/* Makes and returns a location expr of specified [value]. */
+static expr_t expr_location(location_t value) {
+  return (expr_t) { EXPR_LOCATION, .val.location = value, .positive = true };
+}
+
 /*
  * Makes and returns a string expr of specified [length] allocating in the compiler temp allocator. 
  */
-static expr_t new_expr_string(compiler_t *c, uint length)
+static expr_t expr_new_string(compiler_t *c, uint length)
 {
-   return (expr_t) {
-      EXPR_STRING,
-      .value.string.length = length,
-      .value.string.data = linear_allocator_alloc(&c->temp_allocator, c->allocator, length + 1, 1),
-   };
+   return (expr_t) { EXPR_STRING, .val.string.length = length, .val.string.chars =
+                     linear_allocator_alloc(&c->temp_allocator, c->allocator, length + 1, 1),
+                     .positive = true };
+}
+
+/*
+ * Makes and returns a comparison expr of specified [type between] [lhs_location] and [rhs_location]
+ * against test value [test_value].
+ */
+static expr_t expr_comparison(expr_type_t type, bool test_value, int lhs_location,
+                              int rhs_location)
+{
+   return (expr_t) { type, .val.comparison.lhs = lhs_location, .val.comparison.rhs = rhs_location,
+                     .positive = test_value };
+}
+
+
+/*
+ * Returns whether an expression of specified [expr] can be *statically* converted to a bool.
+ */
+static bool expr_is_statically_bool_convertible(expr_type_t type) {
+  return type <= EXPR_STRING;
 }
 
 /*------------------------------------------------------------------------------------------------*/
@@ -204,8 +251,7 @@ static void expect(compiler_t *c, token_t tok)
 }
 
 /*
- * Returns an "end of statement" token is found (newline, ';', '}' or
- * end-of-stream) and "eats" it.
+ * Returns an "end of statement" token is found (newline, ';', '}' or end-of-stream) and "eats" it.
  */
 static bool accept_end_of_stmt(compiler_t *c)
 {
@@ -257,49 +303,118 @@ static binop_t token_to_binop(token_t tok) {
   }
 }
 
+/*
+ * Pushes an identifier string pointed by [id] of specified length [id_len] into the current scope
+ * identifier list withing compiler [c], then returns the offset within [c->scope_identifiers] of
+ * pushed identifier string.
+ */
 static uint push_scope_identifier(compiler_t * c, const char *id, uint id_len)
 {
    ++id_len; /* include null byte */ 
-   char *dest_id = seqary_push_n(&c->scope_identifiers, &c->scope_identifiers_size, c->allocator,
+   char *dest_id = array_push_seq_n(&c->scope_identifiers, &c->scope_identifiers_size, c->allocator,
                                  char, id_len);
    memcpy(dest_id, id, id_len);
    return (uint) (dest_id - c->scope_identifiers); /* compute and return the offset of the newly
                                                       pushed identifier */
 }
 
-/*------------------------------------------------------------------------------------------------*/
-/* parsing functions                                                                              */
-/*------------------------------------------------------------------------------------------------*/
-
-static expr_t parse_primary_expression(compiler_t *c)
+/* Pushes instruction @i to current prototype instructions. */
+static void emit(compiler_t *c, instruction_t i)
 {
-   source_location_t source_loc = c->lexer.source_location;
-   expr_t expr;
-   
-   switch (c->lexer.lookahead)
-   {
-      /* literals */
-      case kw_nil: lex(c); expr = (expr_t) { EXPR_NIL }; break;
-      case kw_true: lex(c); expr = (expr_t) { EXPR_BOOL, { .boolean = true } }; break;
-      case kw_false: lex(c); expr = (expr_t) { EXPR_BOOL, { .boolean = false } }; break;
-      case tok_number:
-         lex(c);
-         expr = (expr_t) { EXPR_NUMBER, { .number = c->lexer.token_number } };
-         break;
+   opcode_t const op = decode_op(i);
+   if (opcode_has_target(op)) {
+      c->proto->num_registers =
+         max_ub(c->proto->num_registers, (ubyte)decode_A(i) + 1);
    }
-   
-   return expr;
+   *array_push_seq(&c->proto->instructions, &c->proto->num_instructions,
+      c->allocator, instruction_t) = i;
 }
 
+/*
+ * If expression [e] is not of type [EXPR_LOCATION] this function emits a sequence of instructions
+ * so that the value or result of [e] is written to location [target_hint]. If [e] is already of
+ * type [EXPR_LOCATION] this function does nothing. In either case, a location expression is
+ * returned with its location value set to the local that will contain the compiled expression
+ * value.
+ */
+static expr_t compile_expr_to_location(compiler_t *c, expr_t e, int target_hint)
+{
+   uint constant_index;
+   int location;
+
+   switch (e.type) {
+      case EXPR_NIL:
+         emit(c, encode_ABx(OP_LOADNIL, target_hint, target_hint));
+         return expr_location(target_hint);
+
+      case EXPR_BOOL:
+         emit(c, encode_ABC(OP_LOADBOOL, target_hint, e.val.boolean, 0));
+         return expr_location(target_hint);
+
+      case EXPR_NUMBER:
+         constant_index = fetch_constant_real(c, e.val.number);
+         goto make_constant;
+
+      case EXPR_STRING:
+         constant_index = fetch_constant_string(c, e.val.string.chars);
+         goto make_constant;
+
+      make_constant:
+         location = -(int)constant_index - 1;
+         if (constant_index <= MAX_REG_VALUE) {
+            /* constant is small enough to be used as direct index */
+            return expr_location(location);
+         } else {
+            /* constant too large, load it into a temporary register */
+            emit(c, encode_ABx(OP_MOV, target_hint, location));
+            return expr_location(target_hint);
+         }
+
+      case EXPR_LOCATION:
+         if (e.positive) return e;
+         emit(c, encode_ABx(OP_NEG, target_hint, e.val.location));
+         return expr_location(target_hint);
+
+    /*  case KC_EXPR_TYPE_ACCESSOR:
+         emit(c, encode_ABC(OP_GET, target_hint, e.lhs, e.rhs));
+         if (!e.positive) emit(c, encode_ABx(OP_NEG, target_hint, target_hint));
+         return expr_location(target_hint);*/
+
+      case EXPR_EQ:
+      case EXPR_LT:
+      case EXPR_LTE:
+         /* compile the comparison expression to a sequence of instructions that write into
+          * [target_hint] the value of the comparison */
+         emit(c, encode_ABC(OP_EQ + e.type - EXPR_EQ, e.val.comparison.lhs, e.positive,
+                            e.val.comparison.rhs));
+         emit(c, encode_ABx(OP_JUMP, 0, 1));
+         emit(c, encode_ABC(OP_LOADBOOL, target_hint, false, 1));
+         emit(c, encode_ABC(OP_LOADBOOL, target_hint, true, 0));
+         return expr_location(target_hint);
+
+      default:
+         assert(!"Unreachable");
+         return expr_nil();
+   }
+}
+
+/*
+ * Helper function for parse_binary_expression_rhs() that actually compiles the binary operation
+ * between @lhs and @rhs. This function also checks whether the operation can be optimized to a
+ * constant if possible before falling back to emitting the actual instructions.
+ */
 static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
                                         source_location_t op_source_loc, binop_t op, expr_t lhs,
                                         expr_t rhs)
 {
-   #define DEFAULT_ARITH_BINOP(opchar)                                                             \
+   #define DEFAULT_ARITH_INVALID_OPS_CHECKS()\
          if (lhs.type <= EXPR_BOOL   || rhs.type <= EXPR_BOOL) goto error;                         \
          if (lhs.type == EXPR_STRING || lhs.type == EXPR_STRING) goto error;                       \
+
+   #define DEFAULT_ARITH_BINOP(opchar)                                                             \
+         DEFAULT_ARITH_INVALID_OPS_CHECKS();                                                       \
          if (lhs.type == EXPR_NUMBER && rhs.type == EXPR_NUMBER) {                                 \
-            return (expr_t) { EXPR_NUMBER, { .number = lhs.value.number + rhs.value.number } };    \
+            return expr_number(lhs.val.number + rhs.val.number);                                   \
          }                                                                                         
 
    /* make a binary operator between our lhs and the rhs; */
@@ -307,10 +422,10 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
       case BINOP_ADD:
          /* string concatenation */
          if (lhs.type == EXPR_STRING && rhs.type == EXPR_STRING) {
-            expr_t e = new_expr_string(c, lhs.value.string.length + rhs.value.string.length);
-            memcpy(e.value.string.data, lhs.value.string.data, lhs.value.string.length);
-            memcpy(e.value.string.data + lhs.value.string.length, rhs.value.string.data,
-                   rhs.value.string.length + 1);
+            expr_t e = expr_new_string(c, lhs.val.string.length + rhs.val.string.length);
+            memcpy(e.val.string.chars, lhs.val.string.chars, lhs.val.string.length);
+            memcpy(e.val.string.chars + lhs.val.string.length, rhs.val.string.chars,
+                   rhs.val.string.length + 1);
             return e;
          }
          /* skip the DEFAULT_ARITH_BINOP as it throws an error if any operand is a string, but no
@@ -327,13 +442,12 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
       case BINOP_MUL:
          /* string multiplication by a number, concatenate the string n times with itself */
          if (lhs.type == EXPR_STRING && rhs.type == EXPR_NUMBER) {
-            const uint rhs_int = (uint)rhs.value.number;
-            const uint string_length = lhs.value.string.length * rhs_int;
-            expr_t e = new_expr_string(c, string_length + 1);
-            for (uint offset = 0; offset < string_length; offset += lhs.value.string.length) {
-               memcpy(e.value.string.data, lhs.value.string.data + offset, lhs.value.string.length);
+            const uint tot_length = lhs.val.string.length * (uint)rhs.val.number;
+            expr_t e = expr_new_string(c, tot_length + 1);
+            for (uint offset = 0; offset < tot_length; offset += lhs.val.string.length) {
+               memcpy(e.val.string.chars, lhs.val.string.chars + offset, lhs.val.string.length);
             }
-            e.value.string.data[string_length] = '\0';
+            e.val.string.chars[tot_length] = '\0';
             return e;
          }
          /* same reasons as for the BINOP_ADD case */
@@ -348,43 +462,37 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
       case BINOP_DIV: DEFAULT_ARITH_BINOP(/); break;
 
       case BINOP_MOD:
-         if (lhs.type == EXPR_NIL || rhs.type == EXPR_NIL) goto error;
-         if (expr_is_constant(lhs.type) && expr_is_constant(rhs.type)) {
-            if (lhs.type == EXPR_BOOL || rhs.type == EXPR_BOOL) goto error;
-            if (lhs.type == EXPR_REAL || rhs.type == EXPR_REAL) goto error;
-            lhs.integer %= rhs.integer;
-            return lhs;
+         DEFAULT_ARITH_INVALID_OPS_CHECKS();
+         if (lhs.type == EXPR_NUMBER && rhs.type == EXPR_NUMBER) {
+            return expr_number((int64_t)lhs.val.number % (int64_t)rhs.val.number);
          }
          break;
 
+#if 0
       /*
-       * lhs is a register and we assume that Compiler has called "prepare_logical_operator_lhs" before
-       * calling this hence the testset instruction has already been emitted.
+       * lhs is a register and we assume that the compiler has called "prepare_logical_operator_lhs"
+       * before calling this hence the TESTSET instruction has already been emitted.
        */
-      case KC_BINOP_LOGICAL_AND:
-         lhs = (expr_is_bool_convertible(lhs.type) && !expr_to_bool(lhs)) ? expr_boolean(false) : rhs;
-         return lhs;
+      case BINOP_LOGICAL_AND:
+         return (expr_is_statically_bool_convertible(lhs.type) && !expr_to_bool(lhs)) ?
+                 expr_boolean(false) : rhs;
 
-      case KC_BINOP_LOGICAL_OR:
-         lhs = (expr_is_bool_convertible(lhs.type) && expr_to_bool(lhs)) ? expr_boolean(true) : rhs;
-         return lhs;
+      case BINOP_LOGICAL_OR:
+         return (expr_is_statically_bool_convertible(lhs.type) && expr_to_bool(lhs)) ? 
+                 expr_boolean(true) : rhs;
 
-      case KC_BINOP_EQ:
-      case KC_BINOP_NEQ:
+      case BINOP_EQ:
+      case BINOP_NEQ:
       {
-         kj_bool invert = binop == KC_BINOP_NEQ;
-         if (lhs.type == EXPR_NIL || rhs.type == EXPR_NIL) {
-            lhs = expr_boolean(((lhs.type == EXPR_NIL) == (rhs.type == EXPR_NIL)) ^ invert);
-            return lhs;
-         }
-
-         if (expr_is_constant(lhs.type) && expr_is_constant(rhs.type)) {
+         const bool invert = (op == BINOP_NEQ);
+         if (lhs.type == EXPR_NIL || rhs.type == EXPR_NIL)
+            return expr_boolean(((lhs.type == EXPR_NIL) == (rhs.type == EXPR_NIL)) ^ invert);
+         else if (expr_is_constant(lhs.type) && expr_is_constant(rhs.type)) {
             if ((lhs.type == EXPR_BOOL) != (rhs.type == EXPR_BOOL))
                goto error;
-            if (lhs.type == EXPR_BOOL)
-
-               lhs = expr_boolean((lhs.integer == rhs.integer) ^ invert);
-            if (lhs.type == EXPR_REAL || rhs.type == EXPR_REAL)
+            else if (lhs.type == EXPR_BOOL)
+               lhs = expr_boolean(lhs.val.boolean == rhs.val.boolean) ^ invert);
+            else if (lhs.type == EXPR_NUMBER || rhs.type == EXPR_NUMBER)
                lhs = expr_boolean((expr_to_real(lhs) == expr_to_real(rhs)) ^ invert);
             lhs = expr_boolean((lhs.integer == rhs.integer) ^ invert);
             return lhs;
@@ -445,46 +553,79 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
          }
          break;
       }
+#endif
 
       default: break;
    }
 
    /* if we get here, lhs or rhs is a register, the binary operation instruction must be omitted. */
-   expr_t lhs_reg = expr_to_any_register(c, lhs, c->temporaries);
+   lhs = compile_expr_to_location(c, lhs, c->temporary);
 
-   /* if lhs is using the current free register (example, it's constant that has been moved to the free register because its */
-   /* index is too large), create a new state copy using the next register */
-   int old_temps = use_temporary(c, &lhs_reg);
+   /* if lhs is using the current temporary (e.g., it's constant that has been moved to the free
+    * temporary because its index is too large), mark the temporary as used and remember the old
+    * temporary location to be restored later */
+   int old_temporary = use_temporary(c, &lhs);
 
-   expr_t rhs_reg = expr_to_any_register(c, rhs, c->temporaries);
+   /* compile the expression rhs to a register as well using a potentially new temporary */
+   rhs = compile_expr_to_location(c, rhs, c->temporary);
 
-   c->temporaries = old_temps;
+   /* both lhs and rhs are now compiled to registers, restore the old temporary location */
+   c->temporary = old_temporary;
 
-   static const expr_type_t COMPARISON_BINOP_TOEXPR_TYPE[] = {
-      EXPR_EQ, EXPR_EQ, EXPR_LT, EXPR_LTE, EXPR_LTE, EXPR_LT
-   };
+   /* if the binary operation is a comparison generate and return a comparison expression */
+   if (op >= BINOP_EQ && op <= BINOP_GTE) {
+      /* maps binary operators to comparison expression types */
+      static const expr_type_t COMPARISON_BINOP_TO_EXPR_TYPE[] = {
+         /* eq       neq      lt       lte       gt        gte */
+            EXPR_EQ, EXPR_EQ, EXPR_LT, EXPR_LTE, EXPR_LTE, EXPR_LT
+      };
 
-   static const kj_bool BINOP_COMPARISON_TEST_VALUE[] = { true, false, true, true, false, false };
+      /* maps binary operators to comparison expression testing values */
+      static const bool COMPARISON_BINOP_TO_TEST_VALUE[] = {
+         /* eq       neq      lt       lte       gt        gte */
+            true,    false,   true,    true,    false,     false
+      };
 
-   if (binop >= KC_BINOP_EQ && binop <= KC_BINOP_GTE) {
-      expr_type_t etype = COMPARISON_BINOP_TOEXPR_TYPE[binop - KC_BINOP_EQ];
-      kj_bool positive = BINOP_COMPARISON_TEST_VALUE[binop - KC_BINOP_EQ];
-      lhs = expr_comparison(etype, positive, lhs_reg.location, rhs_reg.location);
+      expr_type_t etype    = COMPARISON_BINOP_TO_EXPR_TYPE[op - BINOP_EQ];
+      bool        positive = COMPARISON_BINOP_TO_TEST_VALUE[op - BINOP_EQ];
+      return expr_comparison(etype, positive, lhs.val.location, rhs.val.location);
    }
    else {
       emit(c, encode_ABC(binop - KC_BINOP_ADD + OP_ADD, es->target_register, lhs_reg.location, rhs_reg.location));
-      lhs = expr_register(es->target_register);
+      lhs = expr_location(es->target_register);
    }
 
    return lhs;
 
    /* the binary operation between lhs and rhs is invalid */
 error:
-   error(c->lex->issue_handler, sourceloc, "cannot make binary operation '%s' between values"
-      " of type '%s' and '%s'.", KC_BINOP_TO_STR[binop], EXPR_TYPE_TO_STRING[lhs.type], EXPR_TYPE_TO_STRING[rhs.type]);
-   return (expr_t) { EXPR_NIL };
+   error(c->lex->issue_handler, source_loc, "cannot make binary operation '%s' between values"
+         " of type '%s' and '%s'.", BINOP_TO_STR[binop], EXPR_TYPE_TO_STRING[lhs.type],
+         EXPR_TYPE_TO_STRING[rhs.type]);
+   return expr_nil();
 
 #undef MAKEBINOP
+}
+
+/*------------------------------------------------------------------------------------------------*/
+/* parsing functions                                                                              */
+/*------------------------------------------------------------------------------------------------*/
+
+static expr_t parse_primary_expression(compiler_t *c)
+{
+   source_location_t source_loc = c->lexer.source_location;
+   expr_t expr;
+   
+   switch (c->lexer.lookahead)
+   {
+      /* literals */
+      case kw_nil: lex(c); expr = expr_nil(); break;
+      case kw_true: lex(c); expr = expr_boolean(true); break;
+      case kw_false: lex(c); expr = expr_boolean(false); break;
+      case tok_number: lex(c); expr = expr_number(c->lexer.token_number); break;
+   }
+   
+   return expr;
 }
 
 static expr_t parse_binary_expression_rhs(compiler_t *c, expr_state_t const *es, expr_t lhs,
@@ -575,7 +716,7 @@ static expr_t parse_expression(compiler_t *c)
 
 error_lhs_not_assignable:
    error(c->lexer.issue_handler, source_loc, "lhs of assignment is not an assignable expression."); 
-   return (expr_t) { EXPR_NIL };
+   return expr_nil();
 }
 
 /*

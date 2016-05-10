@@ -94,6 +94,12 @@ inline int c99_snprintf(char *out_buf, size_t size, const char *format, ...)
  */
 typedef unsigned int uint;
 
+#if defined(_MSC_VER) && _MSC_VER < 1900
+   typedef unsigned __int32 uint32_t;
+#else
+   #include <stdint.h>
+#endif
+
 /*
  */
 static inline uint max_u(uint a, uint b) { return a > b ? a : b; }
@@ -194,22 +200,22 @@ kj_intern void* linear_allocator_alloc(linear_allocator_t **talloc, allocator_t 
  * Grows the sequential (pointed) array [parray] of current (pointed) [psize] by one element of
  * specified [type] using specified [palloc] pointer to allocator.
  */
-#define seqary_push(parray, psize, palloc, type)\
-   ((type *)seqary_push_ex(parray, psize, palloc, sizeof(type), kj_alignof(type), 1))
+#define array_push_seq(parray, psize, palloc, type)\
+   ((type *)array_push_seq_ex(parray, psize, palloc, sizeof(type), kj_alignof(type), 1))
 
 /*
  * Grows the sequential (pointed) array [parray] of current (pointed) [psize] by [n] elements of
  * specified [type] using specified [palloc] pointer to allocator.
  */
-#define seqary_push_n(parray, psize, palloc, type, n)\
-   ((type *)seqary_push_ex(parray, psize, palloc, sizeof(type), kj_alignof(type), n))
+#define array_push_seq_n(parray, psize, palloc, type, n)\
+   ((type *)array_push_seq_ex(parray, psize, palloc, sizeof(type), kj_alignof(type), n))
 
 /*
  * Low-level function to grow a sequentially growable array. Used by higher level functions
  * [seqary_push] and [seqary_push_n], use those.
  */
-kj_intern void * seqary_push_ex(void *parray, uint *psize, allocator_t *alloc, uint elem_size,
-                                uint elem_align, uint count);
+kj_intern void * array_push_seq_ex(void *parray, uint *psize, allocator_t *alloc, uint elem_size,
+                                   uint elem_align, uint count);
 
 /*
  * # Dynamic arrays #
