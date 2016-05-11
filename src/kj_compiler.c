@@ -355,7 +355,7 @@ static uint push_scope_identifier(compiler_t * c, const char *id, uint id_len)
 }
 
 /*
- * Fetches or defines if not found a real constant @k and returns its index.
+ * Fetches or defines if not found a real constant [k] and returns its index.
  */
 static int fetch_constant_number(compiler_t *c, koji_number_t k) {
   //value_t value = (value_t){0};
@@ -376,7 +376,7 @@ static int fetch_constant_number(compiler_t *c, koji_number_t k) {
 }
 
 /*
- * Fetches or defines if not found a string constant @k and returns its index.
+ * Fetches or defines if not found a string constant [k] and returns its index.
  */
 static int fetch_constant_string(compiler_t *c, const char *k) {
   //for (uint i = 0; i < c->proto->num_constants; ++i) {

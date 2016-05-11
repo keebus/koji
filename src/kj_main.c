@@ -25,6 +25,11 @@ int main(int argc, char **argv)
 
       koji_close(koji);
    */
+}
+
+void test_values(void)
+{
+   int arg = 0;
 
    value_t value = value_nil();
    assert(value_is_nil(value));
@@ -34,27 +39,45 @@ int main(int argc, char **argv)
    double nan = NAN;
    value.number = nan;
    assert(!value_is_nil(value));
+   assert(!value_is_boolean(value));
    assert(value_is_number(value));
    assert(!value_is_object(value));
    assert(isnan(value.number));
 
    value.number = 4.56693;
    assert(!value_is_nil(value));
+   assert(!value_is_boolean(value));
    assert(value_is_number(value));
    assert(!value_is_object(value));
    assert(value.number == 4.56693);
 
    value.number = INFINITY;
    assert(!value_is_nil(value));
+   assert(!value_is_boolean(value));
    assert(value_is_number(value));
    assert(!value_is_object(value));
    assert(value.number == INFINITY);
 
-   value = value_object(&argc);
+   value = value_object(&arg);
    assert(!value_is_nil(value));
+   assert(!value_is_boolean(value));
    assert(!value_is_number(value));
    assert(value_is_object(value));
-   assert(value_get_object(value) == &argc);
+   assert(value_get_object(value) == &arg);
+
+   value = value_boolean(true);
+   assert(!value_is_nil(value));
+   assert(value_is_boolean(value));
+   assert(!value_is_number(value));
+   assert(!value_is_object(value));
+   assert(value_get_boolean(value) == true);
+
+   value = value_boolean(false);
+   assert(!value_is_nil(value));
+   assert(value_is_boolean(value));
+   assert(!value_is_number(value));
+   assert(!value_is_object(value));
+   assert(value_get_boolean(value) == false);
   
    return 0;
 }
