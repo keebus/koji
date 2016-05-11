@@ -9,6 +9,7 @@
 #include "kj_bytecode.h"
 #include "kj_lexer.h"
 #include "kj_error.h"
+#include "kj_support.h"
 #include <string.h>
 
 /*
@@ -41,6 +42,7 @@ typedef struct compiler {
    location_t          temporary;
    label_t             label_true;
    label_t             label_false;
+   prototype_t        *proto;
 } compiler_t;
 
 /*
@@ -58,6 +60,11 @@ typedef enum {
 } expr_type_t;
 
 /*
+ * #todo
+ */
+static const char *EXPR_TYPE_TO_STRING[] = { "nil", "bool", "number", "string", "local",
+                                                     "bool", "bool", "bool" };
+/*
  * The value of a string expression, the string [data] and its length [len].
  */
 struct expr_string {
@@ -65,6 +72,9 @@ struct expr_string {
    uint  length;
 };
 
+/*
+ * #todo
+ */
 struct expr_comparison {
    location_t lhs;
    location_t rhs;
@@ -75,7 +85,7 @@ struct expr_comparison {
  */
 union expr_value {
    bool                   boolean;
-   koji_number            number;
+   koji_number_t            number;
    struct expr_string     string;
    location_t             location;
    struct expr_comparison comparison;
@@ -90,31 +100,42 @@ typedef struct {
    bool             positive;
 } expr_t;
 
+/*
+ * #todo
+ */
 typedef enum {
    BINOP_INVALID,
-   BINOP_LOGICAL_AND,
-   BINOP_LOGICAL_OR,
-   BINOP_EQ,
-   BINOP_NEQ,
+   BINOP_MUL,
+   BINOP_DIV,
+   BINOP_MOD,
+   BINOP_ADD,
+   BINOP_SUB,
+   BINOP_BIT_LSH, /* bitwise left shift */
+   BINOP_BIT_RSH, /* bitwise right shift */
+   BINOP_BIT_AND, /* bitwise and */
+   BINOP_BIT_OR,  /* bitwise or */
+   BINOP_BIT_XOR, /* bitwise xor */
    BINOP_LT,
    BINOP_LTE,
    BINOP_GT,
    BINOP_GTE,
-   BINOP_ADD,
-   BINOP_SUB,
-   BINOP_MUL,
-   BINOP_DIV,
-   BINOP_MOD,
-   BINOP_BIT_AND, /* bitwise and */
-   BINOP_BIT_OR,  /* bitwise or */
-   BINOP_BIT_XOR, /* bitwise xor */
-   BINOP_BIT_LSH, /* bitwise left shift */
-   BINOP_BIT_RSH, /* bitwise right shift */
+   BINOP_EQ,
+   BINOP_NEQ,
+   BINOP_LOGICAL_AND,
+   BINOP_LOGICAL_OR,
 } binop_t;
 
 /* binary operator precedences (the lower the number the higher the precedence) */
-static const int BINOP_PRECEDENCES[] = { -1, 1, 0, 2, 2, 3, 3, 3, 3, 4, 4, 5, 5, 5 };
+static const int BINOP_PRECEDENCES[] = {
+   /* invalid   *   /   %   +  -  << >> &  ^  5  <  <= >  >= == != && || */
+   -1,          10, 10, 10, 9, 9, 8, 8, 7, 6, 5, 4, 4, 4, 4, 3, 3, 2, 1
+};
 
+/*
+ * #todo
+ */
+static const char *BINOP_TO_STR[] = { "<invalid>", "&&", " || ", " == ", " != ", "<", "<=", ">",
+                                      ">=", "+", "-", "*",  "/",  "%", "&", "|", "^", "<<", ">>" };
 /*
  * A state structure used to contain information about expression parsing and compilation such as
  * the desired target register, whether the expression should be negated and the indices of new jump
@@ -142,7 +163,7 @@ static expr_t expr_boolean(bool value) {
 }
 
 /* Makes and returns a boolean expr of specified [value]. */
-static expr_t expr_number(koji_number value) {
+static expr_t expr_number(koji_number_t value) {
   return (expr_t) { EXPR_NUMBER, .val.number = value, .positive = true };
 }
 
@@ -304,6 +325,21 @@ static binop_t token_to_binop(token_t tok) {
 }
 
 /*
+ * If expression [e] is a register of location equal to current free register, it bumps up the free
+ * register counter. It returns the old temporary register regardless whether if the current
+ * temporary register was bumped up. After using the new temporary you must restore the temporary
+ * register [c->temporary] to the value returned by this function.
+ */
+static int use_temporary(compiler_t *c, expr_t const *e) {
+  int old_temporary = c->temporary;
+  if ((e->type == EXPR_LOCATION /* || e->type == KC_EXPR_TYPE_ACCESSOR */) &&
+      e->val.location == c->temporary) {
+    ++c->temporary;
+  }
+  return old_temporary;
+}
+
+/*
  * Pushes an identifier string pointed by [id] of specified length [id_len] into the current scope
  * identifier list withing compiler [c], then returns the offset within [c->scope_identifiers] of
  * pushed identifier string.
@@ -318,16 +354,73 @@ static uint push_scope_identifier(compiler_t * c, const char *id, uint id_len)
                                                       pushed identifier */
 }
 
+/*
+ * Fetches or defines if not found a real constant @k and returns its index.
+ */
+static int fetch_constant_number(compiler_t *c, koji_number_t k) {
+  //value_t value = (value_t){0};
+  //value.type = KJ_TYPE_REAL;
+  //value.real = k;
+
+  //for (uint i = 0; i < c->proto->num_constants; ++i) {
+  //   if (memcmp(c->proto->constants + i, &k, sizeof(value_t)) == 0) return i;
+  //}
+
+  ///* constant not found, add it */
+  //int index = c->proto->num_constants;
+  //*seqarray_push(&c->proto->constants, &c->proto->num_constants, c->allocator,
+  //   value_t) = k;
+
+  //return index;
+   return 0;
+}
+
+/*
+ * Fetches or defines if not found a string constant @k and returns its index.
+ */
+static int fetch_constant_string(compiler_t *c, const char *k) {
+  //for (uint i = 0; i < c->proto->num_constants; ++i) {
+  //  value_t *constant = c->proto->constants + i;
+  //  if (constant->type == KJ_TYPE_STRING &&
+  //      strcmp(k, ((string_t *)constant->object)->data) == 0)
+  //    return i;
+  //}
+
+  ///* constant not found, add it */
+  //int index = c->proto->num_constants;
+  //value_t *constant = seqarray_push(
+  //    &c->proto->constants, &c->proto->num_constants, c->allocator, value_t);
+  //*constant = (value_t){0};
+
+  //constant->type = KJ_TYPE_STRING;
+
+  ///* create the string object */
+  //uint str_length = (uint)strlen(k);
+  //string_t *string = kj_malloc(sizeof(string_t) + str_length + 1, c->allocator);
+  //constant->object = string;
+
+  ///* setup the string object so that it always holds a reference (it is never
+  //* destroyed)
+  //* and the actual string buffer is right after the string object in memory
+  //* (same allocation) */
+  //string->references = 1;
+  //string->length = str_length;
+  //string->data = (char *)string + sizeof(string_t);
+  //memcpy(string->data, k, str_length + 1);
+
+  //return index;
+   return 0;
+}
+
 /* Pushes instruction @i to current prototype instructions. */
 static void emit(compiler_t *c, instruction_t i)
 {
    opcode_t const op = decode_op(i);
    if (opcode_has_target(op)) {
-      c->proto->num_registers =
-         max_ub(c->proto->num_registers, (ubyte)decode_A(i) + 1);
+      c->proto->num_registers = max_u(c->proto->num_registers, decode_A(i) + 1);
    }
-   *array_push_seq(&c->proto->instructions, &c->proto->num_instructions,
-      c->allocator, instruction_t) = i;
+   *array_push_seq(&c->proto->instructions, &c->proto->num_instructions, c->allocator,
+                   instruction_t) = i;
 }
 
 /*
@@ -352,7 +445,7 @@ static expr_t compile_expr_to_location(compiler_t *c, expr_t e, int target_hint)
          return expr_location(target_hint);
 
       case EXPR_NUMBER:
-         constant_index = fetch_constant_real(c, e.val.number);
+         constant_index = fetch_constant_number(c, e.val.number);
          goto make_constant;
 
       case EXPR_STRING:
@@ -403,7 +496,7 @@ static expr_t compile_expr_to_location(compiler_t *c, expr_t e, int target_hint)
  * between @lhs and @rhs. This function also checks whether the operation can be optimized to a
  * constant if possible before falling back to emitting the actual instructions.
  */
-static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
+static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
                                         source_location_t op_source_loc, binop_t op, expr_t lhs,
                                         expr_t rhs)
 {
@@ -464,7 +557,7 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
       case BINOP_MOD:
          DEFAULT_ARITH_INVALID_OPS_CHECKS();
          if (lhs.type == EXPR_NUMBER && rhs.type == EXPR_NUMBER) {
-            return expr_number((int64_t)lhs.val.number % (int64_t)rhs.val.number);
+            return expr_number((koji_number_t)((int64_t)lhs.val.number % (int64_t)rhs.val.number));
          }
          break;
 
@@ -564,7 +657,7 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
    /* if lhs is using the current temporary (e.g., it's constant that has been moved to the free
     * temporary because its index is too large), mark the temporary as used and remember the old
     * temporary location to be restored later */
-   int old_temporary = use_temporary(c, &lhs);
+   location_t old_temporary = use_temporary(c, &lhs);
 
    /* compile the expression rhs to a register as well using a potentially new temporary */
    rhs = compile_expr_to_location(c, rhs, c->temporary);
@@ -588,19 +681,22 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
 
       expr_type_t etype    = COMPARISON_BINOP_TO_EXPR_TYPE[op - BINOP_EQ];
       bool        positive = COMPARISON_BINOP_TO_TEST_VALUE[op - BINOP_EQ];
-      return expr_comparison(etype, positive, lhs.val.location, rhs.val.location);
+
+      lhs = expr_comparison(etype, positive, lhs.val.location, rhs.val.location);
    }
    else {
-      emit(c, encode_ABC(binop - KC_BINOP_ADD + OP_ADD, es->target_register, lhs_reg.location, rhs_reg.location));
-      lhs = expr_location(es->target_register);
+      /* the binary operation is not a comparison but an arithmetic operation, emit the approriate
+       * instruction */
+      emit(c, encode_ABC(op - BINOP_ADD + OP_ADD, es->target, lhs.val.location, lhs.val.location));
+      lhs = expr_location(es->target);
    }
 
    return lhs;
 
    /* the binary operation between lhs and rhs is invalid */
 error:
-   error(c->lex->issue_handler, source_loc, "cannot make binary operation '%s' between values"
-         " of type '%s' and '%s'.", BINOP_TO_STR[binop], EXPR_TYPE_TO_STRING[lhs.type],
+   error(c->lexer.issue_handler, op_source_loc, "cannot make binary operation '%s' between values"
+         " of type '%s' and '%s'.", BINOP_TO_STR[op], EXPR_TYPE_TO_STRING[lhs.type],
          EXPR_TYPE_TO_STRING[rhs.type]);
    return expr_nil();
 
@@ -611,7 +707,7 @@ error:
 /* parsing functions                                                                              */
 /*------------------------------------------------------------------------------------------------*/
 
-static expr_t parse_primary_expression(compiler_t *c)
+static expr_t parse_primary_expression(compiler_t *c, expr_state_t *es)
 {
    source_location_t source_loc = c->lexer.source_location;
    expr_t expr;
@@ -623,6 +719,7 @@ static expr_t parse_primary_expression(compiler_t *c)
       case kw_true: lex(c); expr = expr_boolean(true); break;
       case kw_false: lex(c); expr = expr_boolean(false); break;
       case tok_number: lex(c); expr = expr_number(c->lexer.token_number); break;
+      default: syntax_error(c, source_loc); return expr_nil();
    }
    
    return expr;
@@ -685,13 +782,15 @@ static expr_t parse_binary_expression_rhs(compiler_t *c, expr_state_t const *es,
    }
 }
 
-static expr_t parse_expression(compiler_t *c)
+static expr_t parse_expression(compiler_t *c, expr_state_t const *es)
 {
+   expr_state_t my_es = *es;
+
    /* store the source location for error reporting */
    source_location_t source_loc = c->lexer.source_location;
    
    /* parse expression lhs */
-   expr_t lhs = parse_primary_expression(c);
+   expr_t lhs = parse_primary_expression(c, &my_es);
 
    /* if peek '=' parse the assignment `lhs = rhs` */
    #if 0
@@ -712,11 +811,15 @@ static expr_t parse_expression(compiler_t *c)
    }
    #endif
    
-   return parse_binary_expression_rhs(c, lhs, 0);
+   return parse_binary_expression_rhs(c, &my_es, lhs, BINOP_PRECEDENCES[BINOP_INVALID]);
 
 error_lhs_not_assignable:
    error(c->lexer.issue_handler, source_loc, "lhs of assignment is not an assignable expression."); 
    return expr_nil();
+}
+
+static expr_t parse_expression_to_location()
+{
 }
 
 /*
@@ -754,8 +857,12 @@ static void parse_statement(compiler_t *c)
          break;
 
       default: /* expression */
-         syntax_error(c);
+      {
+         expr_state_t es = { c->temporary };
+         parse_expression(c, &es);
+         expect_end_of_stmt(c);
          break;
+      }
    }
 }
 

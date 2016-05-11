@@ -61,7 +61,7 @@ typedef struct {
    char *token_string;
    uint token_string_length;
    uint token_string_capacity;
-   koji_number token_number;
+   koji_number_t token_number;
 } lexer_t;
 
 /*

@@ -92,7 +92,8 @@ inline int c99_snprintf(char *out_buf, size_t size, const char *format, ...)
 /*
  * Primitive types definitions for internal usage.
  */
-typedef unsigned int uint;
+typedef unsigned int  uint;
+typedef unsigned char ubyte;
 
 #if defined(_MSC_VER) && _MSC_VER < 1900
    typedef unsigned __int32 uint32_t;
@@ -100,8 +101,7 @@ typedef unsigned int uint;
    #include <stdint.h>
 #endif
 
-/*
- */
+/* Bunch of typed max functions */
 static inline uint max_u(uint a, uint b) { return a > b ? a : b; }
 
 /*
@@ -112,9 +112,9 @@ static inline uint max_u(uint a, uint b) { return a > b ? a : b; }
  * context for their operations.
  */
 typedef struct {
-   koji_malloc_fn malloc;
-   koji_realloc_fn realloc;
-   koji_free_fn free;
+   koji_malloc_fn_t malloc;
+   koji_realloc_fn_t realloc;
+   koji_free_fn_t free;
    void *userdata;
 } allocator_t;
 

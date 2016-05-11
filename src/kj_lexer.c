@@ -223,7 +223,7 @@ kj_intern token_t lexer_scan(lexer_t *l)
                while (l->curr_char >= '0' && l->curr_char <= '9') state_push(l);
             }
 
-            l->token_number = (koji_number)atof(l->token_string);
+            l->token_number = (koji_number_t)atof(l->token_string);
             return l->lookahead = tok_number;
          }
 

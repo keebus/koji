@@ -8,6 +8,7 @@
 #pragma once
 
 #include "kj_support.h"
+#include <assert.h>
 
 /* Enumeration that lists all Virtual Machine opcodes */
 typedef enum {
@@ -59,6 +60,66 @@ static const uint MAX_REG_VALUE = 255;
 /* Maximum value Bx can hold (positive or negative) */
 static const int  MAX_BX_VALUE = 131071;
 
+/*-----------------------------------------------------------------------------------------------*/
+/* instruction manipulation functions                                                            */
+/*-----------------------------------------------------------------------------------------------*/
+
+/* Returns whether opcode @op involves writing into register A. */
+static inline bool opcode_has_target(opcode_t op) { return op <= OP_THIS; }
+
+/* Encodes an instruction with arguments A and Bx. */
+static inline instruction_t encode_ABx(opcode_t op, int A, int Bx)
+{
+   assert(A >= 0);
+   assert((Bx < 0 ? -Bx : Bx) <= MAX_BX_VALUE);
+   return (Bx << 14) | (A & 0xff) << 6 | op;
+}
+
+/* Encodes and returns an instruction with arguments A, B and C. */
+static inline instruction_t encode_ABC(opcode_t op, int A, int B, int C)
+{
+   assert(A >= 0);
+   return (C << 23) | (B & 0x1ff) << 14 | (A & 0xff) << 6 | op;
+}
+
+/* Decodes an instruction opcode. */
+static inline opcode_t decode_op(instruction_t i) { return i & 0x3f; }
+
+/* Decodes an instruction argument A. */
+static inline int decode_A(instruction_t i) { return (i >> 6) & 0xff; }
+
+/* Decodes an instructions argument B. */
+static inline int decode_B(instruction_t i) { return ((int)i << 9) >> 23; }
+
+/* Decodes an instruction argument C. */
+static inline int decode_C(instruction_t i) { return (int)i >> 23; }
+
+/* Decodes an instruction argument Bx. */
+static inline int decode_Bx(instruction_t i) { return (int)i >> 14; }
+
+/* Sets instruction argument A. */
+static inline void replace_A(instruction_t *i, int A)
+{
+   assert(A >= 0);
+   *i = (*i & 0xFFFFC03F) | (A << 6);
+}
+
+/* Sets instruction argument Bx. */
+static inline void replace_Bx(instruction_t *i, int Bx)
+{
+   *i = (*i & 0x3FFF) | (Bx << 14);
+}
+
+/* Set instruction argument C */
+static inline void replace_C(instruction_t *i, int C)
+{
+   *i = (*i & 0x7FFFFF) | (C << 23);
+}
+
 typedef struct prototype {
    uint temporaries;
+   uint num_locals;
+   uint num_registers;
+   instruction_t *instructions;
+   uint           num_instructions;
 } prototype_t;

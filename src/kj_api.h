@@ -60,17 +60,27 @@ extern "C" {
 /*
  * The 64-bit floating point type used by koji to represent numeric values.
  */
-typedef double koji_number;
+typedef double koji_number_t;
+
+/*
+ * Enumerates the possible results of various koji state operations such as load or executing
+ * a script.
+ */
+typedef enum {
+   KOJI_SUCCESS,
+   KOJI_ERROR,
+   KOJI_ERROR_OUT_OF_MEMORY,
+} koji_result_t;
 
 /*
  * Allocation functions used internally by koji for all allocation needs. They are optionally
  * specified by the user upon koji state creation. The internal default implementations of these
  * should the user not provide its own rely on system malloc/realloc/free.
  */
-typedef void * (*koji_malloc_fn)  (void *userdata, koji_size_t size, koji_size_t alignment);
-typedef void * (*koji_realloc_fn) (void *userdata, void *ptr, koji_size_t size,
+typedef void * (*koji_malloc_fn_t)  (void *userdata, koji_size_t size, koji_size_t alignment);
+typedef void * (*koji_realloc_fn_t) (void *userdata, void *ptr, koji_size_t size,
                                    koji_size_t alignment);
-typedef void   (*koji_free_fn)    (void *userdata, void *ptr);
+typedef void   (*koji_free_fn_t)    (void *userdata, void *ptr);
 
 /*
  * The signature of the stream reading function used by koji to read a source or bytecode file.
@@ -90,7 +100,7 @@ typedef int (*koji_stream_read_t) (void* userdata);
  * A koji state encapsulates all state needed by koji for script compilation and execution and is,
  * in fact, the target of all API operations. 
  */
-typedef struct koji_state koji_state;
+typedef struct koji_state koji_state_t;
 
 /*
  * Creates a new koji state with specified allocation functions. If any provided allocation function
@@ -100,14 +110,31 @@ typedef struct koji_state koji_state;
  * based on malloc/realloc/free will be used.
  */
 KOJI_API
-koji_state * koji_open(koji_malloc_fn malloc_fn, koji_realloc_fn realloc_fn, koji_free_fn free_fn,
-                       void *alloc_userdata);
+koji_state_t * koji_open(koji_malloc_fn_t malloc_fn, koji_realloc_fn_t realloc_fn, koji_free_fn_t free_fn,
+                         void *alloc_userdata);
+
+/*
+ * #todo
+ */
+KOJI_API
+koji_result_t koji_load(koji_state_t *, const char *source_name, koji_stream_read_t stream_read_fn,
+                        void *stream_read_data);
+
+/*
+ * #todo
+ */
+KOJI_API koji_result_t koji_load_string(koji_state_t *state, const char *source);
+
+/*
+ * #todo
+ */
+KOJI_API koji_result_t koji_load_file(koji_state_t *state, const char *filename);
 
 /*
  * Destroys an existing koji state, releasing all held references to values used by it and the
  * acquired memory and resources.
  */
-KOJI_API void koji_close(koji_state*);
+KOJI_API void koji_close(koji_state_t *);
 
 #ifdef __cplusplus
 } /* extern C */
