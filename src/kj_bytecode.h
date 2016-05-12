@@ -117,9 +117,11 @@ static inline void replace_C(instruction_t *i, int C)
 }
 
 typedef struct prototype {
-   uint temporaries;
-   uint num_locals;
-   uint num_registers;
-   instruction_t *instructions;
-   uint           num_instructions;
+   uint            temporaries;
+   uint            num_locals;
+   uint            num_registers;
+   instruction_t * instructions;
+   uint            num_instructions;
+   union value   * constants;
+   uint            num_constants;
 } prototype_t;

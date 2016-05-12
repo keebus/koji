@@ -9,6 +9,7 @@
 
 #include "kj_support.h"
 #include "kj_error.h"
+#include "kj_value.h"
 
 /*
  * This structure wraps all the information to compile one source stream. It is populated by the
@@ -27,6 +28,8 @@ typedef struct {
    issue_reporter_t issue_reporter_fn;
    /* issue reporter user data passed to the issue reporter function */
    void *issue_reporter_data;
+   /* the string class */
+   class_t * class_string;
 } compile_info_t;
 
 /*

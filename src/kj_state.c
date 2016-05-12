@@ -10,11 +10,14 @@
 #include "kj_bytecode.h"
 #include "kj_io.h"
 #include "kj_support.h"
+#include "kj_value.h"
+
 #include <stdio.h>
 #include <string.h>
 
 struct koji_state {
-   allocator_t allocator;
+   allocator_t    allocator;
+   class_t        class_string;
 };
 
 /*
@@ -78,6 +81,7 @@ KOJI_API koji_result_t koji_load(koji_state_t *state, const char *source_name,
       //.issue_reporter_fn = kj_load_issue_reporter_fn,
       //.issue_reporter_data = &issues_data,
       //.builtin_functions = &s->builtins,
+      .class_string = &state->class_string,
   });
 
   /* some error occurred and the prototype could not be compiled, report the error. */

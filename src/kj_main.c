@@ -19,12 +19,9 @@ int main(int argc, char **argv)
    (void)argc;
    (void)argv;
    
-   /*koji_state_t *koji = koji_open(NULL, NULL, NULL, NULL);
-
-      koji_load_string(koji, "1 + 2");
-
-      koji_close(koji);
-   */
+   koji_state_t *koji = koji_open(NULL, NULL, NULL, NULL);
+   koji_load_string(koji, "var a = \"qeqwewe\"");
+   koji_close(koji);
 }
 
 void test_values(void)
@@ -78,6 +75,4 @@ void test_values(void)
    assert(!value_is_number(value));
    assert(!value_is_object(value));
    assert(value_get_boolean(value) == false);
-  
-   return 0;
 }

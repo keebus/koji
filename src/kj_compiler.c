@@ -10,6 +10,7 @@
 #include "kj_lexer.h"
 #include "kj_error.h"
 #include "kj_support.h"
+#include "kj_value.h"
 #include <string.h>
 
 /*
@@ -34,15 +35,16 @@ typedef array_type(uint) label_t;
  * #todo
  */
 typedef struct compiler {
-   lexer_t             lexer;
-   allocator_t        *allocator;
-   linear_allocator_t *temp_allocator;
-   char               *scope_identifiers;
-   uint                scope_identifiers_size;
-   location_t          temporary;
-   label_t             label_true;
-   label_t             label_false;
-   prototype_t        *proto;
+   lexer_t              lexer;
+   allocator_t        * allocator;
+   linear_allocator_t * temp_allocator;
+   char               * scope_identifiers;
+   uint                 scope_identifiers_size;
+   location_t           temporary;
+   label_t              label_true;
+   label_t              label_false;
+   prototype_t        * proto;
+   class_t            * class_string;
 } compiler_t;
 
 /*
@@ -62,8 +64,8 @@ typedef enum {
 /*
  * #todo
  */
-static const char *EXPR_TYPE_TO_STRING[] = { "nil", "bool", "number", "string", "local",
-                                                     "bool", "bool", "bool" };
+static const char *EXPR_TYPE_TO_STRING[] = { "nil", "bool", "number", "string", "local", "bool",
+                                             "bool", "bool" };
 /*
  * The value of a string expression, the string [data] and its length [len].
  */
@@ -348,7 +350,7 @@ static uint push_scope_identifier(compiler_t * c, const char *id, uint id_len)
 {
    ++id_len; /* include null byte */ 
    char *dest_id = array_push_seq_n(&c->scope_identifiers, &c->scope_identifiers_size, c->allocator,
-                                 char, id_len);
+                                    char, id_len);
    memcpy(dest_id, id, id_len);
    return (uint) (dest_id - c->scope_identifiers); /* compute and return the offset of the newly
                                                       pushed identifier */
@@ -357,68 +359,62 @@ static uint push_scope_identifier(compiler_t * c, const char *id, uint id_len)
 /*
  * Fetches or defines if not found a real constant [k] and returns its index.
  */
-static int fetch_constant_number(compiler_t *c, koji_number_t k) {
-  //value_t value = (value_t){0};
-  //value.type = KJ_TYPE_REAL;
-  //value.real = k;
+static int fetch_constant_number(compiler_t *c, koji_number_t k)
+{
+   value_t value = value_number(k);
 
-  //for (uint i = 0; i < c->proto->num_constants; ++i) {
-  //   if (memcmp(c->proto->constants + i, &k, sizeof(value_t)) == 0) return i;
-  //}
+   for (uint i = 0; i < c->proto->num_constants; ++i) {
+      /* constant already existent, return it */
+      if (c->proto->constants[i].bits == value.bits) return i;
+   }
 
-  ///* constant not found, add it */
-  //int index = c->proto->num_constants;
-  //*seqarray_push(&c->proto->constants, &c->proto->num_constants, c->allocator,
-  //   value_t) = k;
+   /* constant not found, add it */
+   int index = c->proto->num_constants;
+   *array_push_seq(&c->proto->constants, &c->proto->num_constants, c->allocator,
+      value_t) = value;
 
-  //return index;
-   return 0;
+   return index;
 }
 
 /*
- * Fetches or defines if not found a string constant [k] and returns its index.
+ * Fetches or defines if not found a string constant [str] and returns its index.
  */
-static int fetch_constant_string(compiler_t *c, const char *k) {
-  //for (uint i = 0; i < c->proto->num_constants; ++i) {
-  //  value_t *constant = c->proto->constants + i;
-  //  if (constant->type == KJ_TYPE_STRING &&
-  //      strcmp(k, ((string_t *)constant->object)->data) == 0)
-  //    return i;
-  //}
+static int fetch_constant_string(compiler_t *c, const char *str, uint str_len)
+{
+   for (uint i = 0; i < c->proto->num_constants; ++i) {
+      value_t *constant = c->proto->constants + i;
+      object_t *object;
 
-  ///* constant not found, add it */
-  //int index = c->proto->num_constants;
-  //value_t *constant = seqarray_push(
-  //    &c->proto->constants, &c->proto->num_constants, c->allocator, value_t);
-  //*constant = (value_t){0};
+      /* is i-th constant a string and do the strings match? if so, no need to add a new constant */
+      if (value_is_object(*constant)
+          && (object = value_get_object(*constant))->class == c->class_string
+          && ((string_t const*)object)->size == str_len
+          && memcmp(((string_t const*)object)->chars, str, str_len) == 0) {
+         return i;
+      }
+   }
 
-  //constant->type = KJ_TYPE_STRING;
+   /* constant not found, push the new constant to the array */
+   value_t *constant = array_push_seq(&c->proto->constants, &c->proto->num_constants, c->allocator,
+                                      value_t);
 
-  ///* create the string object */
-  //uint str_length = (uint)strlen(k);
-  //string_t *string = kj_malloc(sizeof(string_t) + str_length + 1, c->allocator);
-  //constant->object = string;
+   /* create a new string */
+   *constant = value_new_string(c->allocator, str_len, c->class_string);
+   memcpy(((string_t*)value_get_object(*constant))->chars, str, str_len + 1);
 
-  ///* setup the string object so that it always holds a reference (it is never
-  //* destroyed)
-  //* and the actual string buffer is right after the string object in memory
-  //* (same allocation) */
-  //string->references = 1;
-  //string->length = str_length;
-  //string->data = (char *)string + sizeof(string_t);
-  //memcpy(string->data, k, str_length + 1);
-
-  //return index;
-   return 0;
+   /* return the index of the pushed constant */
+   return constant - c->proto->constants;
 }
 
 /* Pushes instruction @i to current prototype instructions. */
 static void emit(compiler_t *c, instruction_t i)
 {
    opcode_t const op = decode_op(i);
+
    if (opcode_has_target(op)) {
       c->proto->num_registers = max_u(c->proto->num_registers, decode_A(i) + 1);
    }
+
    *array_push_seq(&c->proto->instructions, &c->proto->num_instructions, c->allocator,
                    instruction_t) = i;
 }
@@ -430,26 +426,26 @@ static void emit(compiler_t *c, instruction_t i)
  * returned with its location value set to the local that will contain the compiled expression
  * value.
  */
-static expr_t compile_expr_to_location(compiler_t *c, expr_t e, int target_hint)
+static expr_t compile_expr_to_location(compiler_t *c, expr_t e, int location_hint)
 {
    uint constant_index;
    int location;
 
    switch (e.type) {
       case EXPR_NIL:
-         emit(c, encode_ABx(OP_LOADNIL, target_hint, target_hint));
-         return expr_location(target_hint);
+         emit(c, encode_ABx(OP_LOADNIL, location_hint, location_hint));
+         return expr_location(location_hint);
 
       case EXPR_BOOL:
-         emit(c, encode_ABC(OP_LOADBOOL, target_hint, e.val.boolean, 0));
-         return expr_location(target_hint);
+         emit(c, encode_ABC(OP_LOADBOOL, location_hint, e.val.boolean, 0));
+         return expr_location(location_hint);
 
       case EXPR_NUMBER:
          constant_index = fetch_constant_number(c, e.val.number);
          goto make_constant;
 
       case EXPR_STRING:
-         constant_index = fetch_constant_string(c, e.val.string.chars);
+         constant_index = fetch_constant_string(c, e.val.string.chars, e.val.string.length);
          goto make_constant;
 
       make_constant:
@@ -459,14 +455,14 @@ static expr_t compile_expr_to_location(compiler_t *c, expr_t e, int target_hint)
             return expr_location(location);
          } else {
             /* constant too large, load it into a temporary register */
-            emit(c, encode_ABx(OP_MOV, target_hint, location));
-            return expr_location(target_hint);
+            emit(c, encode_ABx(OP_MOV, location_hint, location));
+            return expr_location(location_hint);
          }
 
       case EXPR_LOCATION:
          if (e.positive) return e;
-         emit(c, encode_ABx(OP_NEG, target_hint, e.val.location));
-         return expr_location(target_hint);
+         emit(c, encode_ABx(OP_NEG, location_hint, e.val.location));
+         return expr_location(location_hint);
 
     /*  case KC_EXPR_TYPE_ACCESSOR:
          emit(c, encode_ABC(OP_GET, target_hint, e.lhs, e.rhs));
@@ -481,9 +477,9 @@ static expr_t compile_expr_to_location(compiler_t *c, expr_t e, int target_hint)
          emit(c, encode_ABC(OP_EQ + e.type - EXPR_EQ, e.val.comparison.lhs, e.positive,
                             e.val.comparison.rhs));
          emit(c, encode_ABx(OP_JUMP, 0, 1));
-         emit(c, encode_ABC(OP_LOADBOOL, target_hint, false, 1));
-         emit(c, encode_ABC(OP_LOADBOOL, target_hint, true, 0));
-         return expr_location(target_hint);
+         emit(c, encode_ABC(OP_LOADBOOL, location_hint, false, 1));
+         emit(c, encode_ABC(OP_LOADBOOL, location_hint, true, 0));
+         return expr_location(location_hint);
 
       default:
          assert(!"Unreachable");
@@ -719,7 +715,13 @@ static expr_t parse_primary_expression(compiler_t *c, expr_state_t *es)
       case kw_true: lex(c); expr = expr_boolean(true); break;
       case kw_false: lex(c); expr = expr_boolean(false); break;
       case tok_number: lex(c); expr = expr_number(c->lexer.token_number); break;
-      default: syntax_error(c, source_loc); return expr_nil();
+      case tok_string:
+         expr = expr_new_string(c, c->lexer.token_string_length);
+         memcpy(expr.val.string.chars, c->lexer.token_string, c->lexer.token_string_length);
+         lex(c);
+         break;
+
+      default: syntax_error_at(c, source_loc); return expr_nil();
    }
    
    return expr;
@@ -774,7 +776,7 @@ static expr_t parse_binary_expression_rhs(compiler_t *c, expr_state_t const *es,
          rhs = parse_binary_expression_rhs(c, &es_rhs, rhs, tok_precedence + 1);
       }
 
-      /* subexpr has been evaluated, restore the free register to the one before compiling rhs */
+      /* sub-expr has been evaluated, restore the free register to the one before compiling rhs */
       c->temporary = old_temporary;
 
       /* compile the binary operation */
@@ -811,14 +813,14 @@ static expr_t parse_expression(compiler_t *c, expr_state_t const *es)
    }
    #endif
    
-   return parse_binary_expression_rhs(c, &my_es, lhs, BINOP_PRECEDENCES[BINOP_INVALID]);
+   return parse_binary_expression_rhs(c, &my_es, lhs, 0);
 
 error_lhs_not_assignable:
    error(c->lexer.issue_handler, source_loc, "lhs of assignment is not an assignable expression."); 
    return expr_nil();
 }
 
-static expr_t parse_expression_to_location()
+static expr_t parse_expression_to_location(compiler_t *c)
 {
 }
 
@@ -839,7 +841,7 @@ static void parse_variable_decl(compiler_t *c)
       
       /* optionally, parse the initialization expression */
       if (accept(c, '=')) {
-         //expr_t expr = parse_expression(c);
+         expr_t expr = parse_expression_to_location(c);
       }
    } while (accept(c, ','));
 }
@@ -909,9 +911,10 @@ kj_intern prototype_t *compile(compile_info_t const *info)
    }, &compiler.lexer);
 
    /* finish setting up compiler state */
-   compiler.allocator = info->allocator;
+   compiler.allocator      = info->allocator;
    compiler.temp_allocator = linear_allocator_create(info->allocator,
                                                      LINEAR_ALLOCATOR_PAGE_MIN_SIZE);
+   compiler.class_string   = info->class_string;
 
    /* kick off compilation! */
    parse_module(&compiler);
