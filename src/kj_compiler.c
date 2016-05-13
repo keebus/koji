@@ -29,7 +29,15 @@ typedef struct {
 /*
  * A label is a dynamic array of the indices of the instructions that branch to it.
  */
-typedef array_type(uint) label_t;
+typedef struct {
+   /* The array of branching instruction indexes in current prototype instruction array that branch
+    * to this label. */
+   uint * instructions;
+   /* The number of branching instructions branching to this label. */
+   uint   num_instructions;
+   /* The capacity of the [instructions] array (in number of elements). */
+   uint   capacity;
+} label_t;
 
 /*
  * #todo
@@ -102,6 +110,11 @@ typedef struct {
    bool             positive;
 } expr_t;
 
+typedef struct {
+   location_t  location;
+   uint        location_expr;
+} compiled_expr_t;
+
 /*
  * #todo
  */
@@ -145,8 +158,8 @@ static const char *BINOP_TO_STR[] = { "<invalid>", "&&", " || ", " == ", " != ",
  */
 typedef struct {
   location_t target;
-  uint       true_jumps_begin;
-  uint       false_jumps_begin;
+  uint       true_branches_begin;
+  uint       false_branches_begin;
   bool       negated;
 } expr_state_t;
 
@@ -420,25 +433,35 @@ static void emit(compiler_t *c, instruction_t i)
 }
 
 /*
+ * Emits the appropriate instruction/s to move location [from] to [to]. This function actually
+ * performs some optimization checks in order to avoid emitting more instructions than necessary.
+ */
+static void emit_move(compiler_t *c, location_t from, location_t to)
+{
+
+}
+
+
+/*
  * If expression [e] is not of type [EXPR_LOCATION] this function emits a sequence of instructions
  * so that the value or result of [e] is written to location [target_hint]. If [e] is already of
  * type [EXPR_LOCATION] this function does nothing. In either case, a location expression is
  * returned with its location value set to the local that will contain the compiled expression
  * value.
  */
-static expr_t compile_expr_to_location(compiler_t *c, expr_t e, int location_hint)
+static expr_t compile_expr_to_location(compiler_t *c, expr_t e, int target_hint)
 {
    uint constant_index;
    int location;
 
    switch (e.type) {
       case EXPR_NIL:
-         emit(c, encode_ABx(OP_LOADNIL, location_hint, location_hint));
-         return expr_location(location_hint);
+         emit(c, encode_ABx(OP_LOADNIL, target_hint, target_hint));
+         return expr_location(target_hint);
 
       case EXPR_BOOL:
-         emit(c, encode_ABC(OP_LOADBOOL, location_hint, e.val.boolean, 0));
-         return expr_location(location_hint);
+         emit(c, encode_ABC(OP_LOADBOOL, target_hint, e.val.boolean, 0));
+         return expr_location(target_hint);
 
       case EXPR_NUMBER:
          constant_index = fetch_constant_number(c, e.val.number);
@@ -455,14 +478,14 @@ static expr_t compile_expr_to_location(compiler_t *c, expr_t e, int location_hin
             return expr_location(location);
          } else {
             /* constant too large, load it into a temporary register */
-            emit(c, encode_ABx(OP_MOV, location_hint, location));
-            return expr_location(location_hint);
+            emit(c, encode_ABx(OP_MOV, target_hint, location));
+            return expr_location(target_hint);
          }
 
       case EXPR_LOCATION:
          if (e.positive) return e;
-         emit(c, encode_ABx(OP_NEG, location_hint, e.val.location));
-         return expr_location(location_hint);
+         emit(c, encode_ABx(OP_NEG, target_hint, e.val.location));
+         return expr_location(target_hint);
 
     /*  case KC_EXPR_TYPE_ACCESSOR:
          emit(c, encode_ABC(OP_GET, target_hint, e.lhs, e.rhs));
@@ -477,9 +500,9 @@ static expr_t compile_expr_to_location(compiler_t *c, expr_t e, int location_hin
          emit(c, encode_ABC(OP_EQ + e.type - EXPR_EQ, e.val.comparison.lhs, e.positive,
                             e.val.comparison.rhs));
          emit(c, encode_ABx(OP_JUMP, 0, 1));
-         emit(c, encode_ABC(OP_LOADBOOL, location_hint, false, 1));
-         emit(c, encode_ABC(OP_LOADBOOL, location_hint, true, 0));
-         return expr_location(location_hint);
+         emit(c, encode_ABC(OP_LOADBOOL, target_hint, false, 1));
+         emit(c, encode_ABC(OP_LOADBOOL, target_hint, true, 0));
+         return expr_location(target_hint);
 
       default:
          assert(!"Unreachable");
@@ -702,7 +725,12 @@ error:
 /*------------------------------------------------------------------------------------------------*/
 /* parsing functions                                                                              */
 /*------------------------------------------------------------------------------------------------*/
+static expr_t parse_subexpression(compiler_t *, expr_state_t const *);
 
+/*
+ * Parses and returns a primary expression, i.e. constants, unary expressions, subexpressions,
+ * function calls.
+ */
 static expr_t parse_primary_expression(compiler_t *c, expr_state_t *es)
 {
    source_location_t source_loc = c->lexer.source_location;
@@ -721,12 +749,27 @@ static expr_t parse_primary_expression(compiler_t *c, expr_state_t *es)
          lex(c);
          break;
 
+      case '(': /* subexpression */
+         lex(c);
+         parse_subexpression(c, es);
+         expect(c, ')');
+         break;
+
       default: syntax_error_at(c, source_loc); return expr_nil();
    }
    
    return expr;
 }
 
+/*
+ * Parses and compiles the potential right hand side of a binary expression if binary operators
+ * are found. Note that the right hand side of a binary expression may well be a chain of additional
+ * binary expressions. This function parses the chain of binary expressions taking care of operator
+ * precedence. While the precedence of the next binary operator is equal or less than the current
+ * one the function keeps parsing the expression (primary) terms in a loop. As soon as a higher
+ * precedence operator is found, the function recursively calls itself so that the next operator to
+ * give priority to that operator.
+ */
 static expr_t parse_binary_expression_rhs(compiler_t *c, expr_state_t const *es, expr_t lhs,
                                           int precedence)
 {
@@ -769,8 +812,8 @@ static expr_t parse_binary_expression_rhs(compiler_t *c, expr_state_t const *es,
           * use reset the jump instruction lists as rhs is a subexpression on its own */
          es_rhs.target = es->target;
          es_rhs.negated = es->negated;
-         es_rhs.true_jumps_begin = c->label_true.size;
-         es_rhs.false_jumps_begin = c->label_false.size;
+         es_rhs.true_branches_begin = c->label_true.num_instructions;
+         es_rhs.false_branches_begin = c->label_false.num_instructions;
 
          /* parse the expression rhs using higher precedence than operator precedence */
          rhs = parse_binary_expression_rhs(c, &es_rhs, rhs, tok_precedence + 1);
@@ -784,7 +827,12 @@ static expr_t parse_binary_expression_rhs(compiler_t *c, expr_state_t const *es,
    }
 }
 
-static expr_t parse_expression(compiler_t *c, expr_state_t const *es)
+/*
+ * Parses and returns a subexpression, a sequence of primary expressions separated by binary
+ * operators. This function takes an explicit, existing expression state so that it can be called
+ * to parse sub expressions of an existing expression.
+ */
+static expr_t parse_subexpression(compiler_t *c, expr_state_t const *es)
 {
    expr_state_t my_es = *es;
 
@@ -820,8 +868,46 @@ error_lhs_not_assignable:
    return expr_nil();
 }
 
-static expr_t parse_expression_to_location(compiler_t *c)
+/*
+ * Parses and compiles a full expression. A full expression is a subexpression with a "cleared"
+ * expression state (e.g. no existing branches, current temporary as target and positive flag set
+ * to true). After the subexpression is compiled, it resolves any existing branch to true or false
+ * by emitting the appropriate test/testset/loadbool/jump/etc instructions.
+ * The expression returned by this function is guaranteed to lie in some location, whether a local
+ * or a constant. After calling this function, you might want to move the result to a different
+ * location by calling [emit_move()].
+ */
+static compiled_expr_t parse_expression(compiler_t *c, location_t target_hint)
 {
+   /* cache some state in local variables for fast access */
+   prototype_t *proto = c->proto;
+
+   /* save the current number of branching instructions so that we can the state as we found it
+    * upon return. Also backup the first free temporary to be restored before returning.
+    */
+   uint true_label_instr_count = c->label_true.num_instructions;
+   uint false_label_instr_count = c->label_false.num_instructions;
+   uint old_temporary = c->temporary;
+
+   /* prepare a blank expression state */
+   expr_state_t es = {
+      .true_branches_begin  = true_label_instr_count,
+      .false_branches_begin = false_label_instr_count,
+      .target               = target_hint,
+      .negated              = false
+   };
+   
+   /* parse the subexpression with our blank state. The parsed expression might have generated some
+    * branching instructions to true/false. */
+   expr_t expr = parse_subexpression(c, &es);
+   
+   /* ... */
+
+   expr = compile_expr_to_location(c, expr, target_hint);
+
+   /* ... */
+
+   return expr.val.location;
 }
 
 /*
@@ -841,8 +927,17 @@ static void parse_variable_decl(compiler_t *c)
       
       /* optionally, parse the initialization expression */
       if (accept(c, '=')) {
-         expr_t expr = parse_expression_to_location(c);
+         /* parse the expression and make sure it lies in the current temporary */
+         emit_move(c, parse_expression(c, c->temporary).val.location, c->temporary);
       }
+      else {
+         /* no initialization expression provided for this variable, initialize it to nil */
+         emit(c, encode_ABx(OP_LOADNIL, c->temporary, c->temporary));
+      }
+
+      /* define the local variable */
+      define_local(c, identifier_offset);
+
    } while (accept(c, ','));
 }
 
@@ -861,7 +956,7 @@ static void parse_statement(compiler_t *c)
       default: /* expression */
       {
          expr_state_t es = { c->temporary };
-         parse_expression(c, &es);
+         parse_subexpression(c, &es);
          expect_end_of_stmt(c);
          break;
       }
