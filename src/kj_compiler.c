@@ -22,8 +22,8 @@ typedef int location_t;
  * A local variable is simply a named and reserved stack register offset.
  */
 typedef struct {
-  uint       identifier_offset;
-  location_t location;
+   uint       identifier_offset;
+   location_t location;
 } local_t;
 
 /*
@@ -48,6 +48,8 @@ typedef struct compiler {
    linear_allocator_t * temp_allocator;
    char               * scope_identifiers;
    uint                 scope_identifiers_size;
+   local_t            * locals;
+   uint                 num_locals;
    location_t           temporary;
    label_t              label_true;
    label_t              label_false;
@@ -110,10 +112,14 @@ typedef struct {
    bool             positive;
 } expr_t;
 
+/*
+ * #todo
+ */
 typedef struct {
    location_t  location;
-   uint        location_expr;
-} compiled_expr_t;
+   uint        set_instructions[2];
+   uint        num_set_instructions;
+} location_ref_t;
 
 /*
  * #todo
@@ -370,6 +376,15 @@ static uint push_scope_identifier(compiler_t * c, const char *id, uint id_len)
 }
 
 /*
+ * Defines a new local variable in current prototype with an identifier starting at 
+ * [identifier_offset] preiously pushed through [push_scope_identifier()].
+ */
+static void push_scope_local(compiler_t *c, uint identifier_offset)
+{
+   c->locals
+}
+
+/*
  * Fetches or defines if not found a real constant [k] and returns its index.
  */
 static int fetch_constant_number(compiler_t *c, koji_number_t k)
@@ -436,11 +451,24 @@ static void emit(compiler_t *c, instruction_t i)
  * Emits the appropriate instruction/s to move location [from] to [to]. This function actually
  * performs some optimization checks in order to avoid emitting more instructions than necessary.
  */
-static void emit_move(compiler_t *c, location_t from, location_t to)
+static void emit_move(compiler_t *c, location_ref_t from, location_t to)
 {
+   if (from.location == to) return;
 
+   /* if from location is a temporary location (i.e. not a local variable) and we know from [from]
+    * that one or more instructions are setting to this location, we can simply replace the A
+    * operand of all those instructions to [to] and optimize out the 'move' instruction.
+    */
+   if (from.location >= c->temporary && from.num_set_instructions > 0) {
+      for (uint i = 0; i < from.num_set_instructions; ++i) {
+         replace_A(&c->proto->instructions[from.set_instructions[i]], to);
+      }
+   }
+   else {
+      /* we could not optimize out the move instruction, emit it. */
+      emit(c, encode_ABx(OP_MOV, to, from.location));
+   }
 }
-
 
 /*
  * If expression [e] is not of type [EXPR_LOCATION] this function emits a sequence of instructions
@@ -698,10 +726,10 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
             true,    false,   true,    true,    false,     false
       };
 
-      expr_type_t etype    = COMPARISON_BINOP_TO_EXPR_TYPE[op - BINOP_EQ];
-      bool        positive = COMPARISON_BINOP_TO_TEST_VALUE[op - BINOP_EQ];
+      expr_type_t expr_type = COMPARISON_BINOP_TO_EXPR_TYPE[op - BINOP_EQ];
+      bool        positive  = COMPARISON_BINOP_TO_TEST_VALUE[op - BINOP_EQ];
 
-      lhs = expr_comparison(etype, positive, lhs.val.location, rhs.val.location);
+      lhs = expr_comparison(expr_type, positive, lhs.val.location, rhs.val.location);
    }
    else {
       /* the binary operation is not a comparison but an arithmetic operation, emit the approriate
@@ -734,7 +762,7 @@ static expr_t parse_subexpression(compiler_t *, expr_state_t const *);
 static expr_t parse_primary_expression(compiler_t *c, expr_state_t *es)
 {
    source_location_t source_loc = c->lexer.source_location;
-   expr_t expr;
+   expr_t expr = expr_nil();
    
    switch (c->lexer.lookahead)
    {
@@ -837,7 +865,7 @@ static expr_t parse_subexpression(compiler_t *c, expr_state_t const *es)
    expr_state_t my_es = *es;
 
    /* store the source location for error reporting */
-   source_location_t source_loc = c->lexer.source_location;
+   //source_location_t source_loc = c->lexer.source_location;
    
    /* parse expression lhs */
    expr_t lhs = parse_primary_expression(c, &my_es);
@@ -863,9 +891,9 @@ static expr_t parse_subexpression(compiler_t *c, expr_state_t const *es)
    
    return parse_binary_expression_rhs(c, &my_es, lhs, 0);
 
-error_lhs_not_assignable:
-   error(c->lexer.issue_handler, source_loc, "lhs of assignment is not an assignable expression."); 
-   return expr_nil();
+//error_lhs_not_assignable:
+   //error(c->lexer.issue_handler, source_loc, "lhs of assignment is not an assignable expression."); 
+   //return expr_nil();
 }
 
 /*
@@ -877,7 +905,7 @@ error_lhs_not_assignable:
  * or a constant. After calling this function, you might want to move the result to a different
  * location by calling [emit_move()].
  */
-static compiled_expr_t parse_expression(compiler_t *c, location_t target_hint)
+static location_ref_t parse_expression(compiler_t *c, location_t target_hint)
 {
    /* cache some state in local variables for fast access */
    prototype_t *proto = c->proto;
@@ -901,13 +929,25 @@ static compiled_expr_t parse_expression(compiler_t *c, location_t target_hint)
     * branching instructions to true/false. */
    expr_t expr = parse_subexpression(c, &es);
    
+   /* compiled expression instance that will hold final instruction location and the instructions
+    * that ultimately write to that location */
+   location_ref_t result;
+
    /* ... */
 
    expr = compile_expr_to_location(c, expr, target_hint);
 
    /* ... */
+   result.location = expr.val.location;
+   result.set_instructions[0] = proto->num_instructions - 1;
+   result.num_set_instructions = 1;
 
-   return expr.val.location;
+   /* reset compiler original state */
+   c->label_true.num_instructions = true_label_instr_count;
+   c->label_false.num_instructions = false_label_instr_count;
+   c->temporary = old_temporary;
+
+   return result;
 }
 
 /*
@@ -928,7 +968,7 @@ static void parse_variable_decl(compiler_t *c)
       /* optionally, parse the initialization expression */
       if (accept(c, '=')) {
          /* parse the expression and make sure it lies in the current temporary */
-         emit_move(c, parse_expression(c, c->temporary).val.location, c->temporary);
+         emit_move(c, parse_expression(c, c->temporary), c->temporary);
       }
       else {
          /* no initialization expression provided for this variable, initialize it to nil */
