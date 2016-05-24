@@ -14,6 +14,9 @@
 #define NULL (void*)(0)
 #endif
 
+void test_values(void);
+void test_string(void);
+
 int main(int argc, char **argv)
 {
    (void)argc;
@@ -22,6 +25,9 @@ int main(int argc, char **argv)
    koji_state_t *koji = koji_open(NULL, NULL, NULL, NULL);
    koji_load_string(koji, "var a = \"qeqwewe\"");
    koji_close(koji);
+
+   //test_values();
+   //test_string();
 }
 
 void test_values(void)
@@ -75,4 +81,12 @@ void test_values(void)
    assert(!value_is_number(value));
    assert(!value_is_object(value));
    assert(value_get_boolean(value) == false);
+}
+
+void test_string(void)
+{
+   allocator_t alloc = { NULL, default_malloc, default_realloc, default_free, };
+   value_t value = value_new_string(&alloc, 20, NULL );
+
+   value_destroy(&value, &alloc);
 }

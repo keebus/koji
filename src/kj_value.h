@@ -81,15 +81,14 @@ static void* value_get_object(value_t value)
    return (void*)(intptr_t)(value.bits & BITS_TAG_PAYLOAD);
 }
 
-typedef struct class {
-   uint          references;
-   struct class *class;
-} class_t;
-
 typedef struct object {
-   uint     references;
-   class_t *class;
+   uint           references;
+   struct class  *class;
 } object_t;
+
+typedef struct class {
+   object_t object;
+} class_t;
 
 typedef struct string {
    object_t    object;
@@ -98,3 +97,5 @@ typedef struct string {
 } string_t;
 
 kj_intern value_t value_new_string(allocator_t *alloc, uint length, class_t *string_class);
+
+kj_intern void value_destroy(value_t *value, allocator_t *alloc);

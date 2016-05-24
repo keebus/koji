@@ -51,7 +51,7 @@ KOJI_API koji_state_t * koji_open(koji_malloc_fn_t malloc_fn, koji_realloc_fn_t 
 {
    /* setup the allocator object */
    allocator_t allocator = {
-      .userdata = alloc_userdata,
+      .user_data = alloc_userdata,
       .malloc = malloc_fn ? malloc_fn : default_malloc,
       .realloc = realloc_fn ? realloc_fn : default_realloc,
       .free = free_fn ? free_fn : default_free,
@@ -88,7 +88,7 @@ KOJI_API koji_result_t koji_load(koji_state_t *state, const char *source_name,
   if (!main_proto) return KOJI_ERROR;
 
   /* temporary */
-  //prototype_dump(main_proto, 0, 0);
+  prototype_dump(main_proto, 0);
 
   /* reset the number of references as the ref count will be increased when the prototype is
    * referenced by a the new frame */
@@ -96,6 +96,7 @@ KOJI_API koji_result_t koji_load(koji_state_t *state, const char *source_name,
 
   /* create a closure to main prototype and push it to the stack */
   //vm_push_frame(&s->vm, main_proto, 0, (value_t){0});
+  kj_free(main_proto, &state->allocator);
 
   return KOJI_SUCCESS;
 }

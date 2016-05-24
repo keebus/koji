@@ -97,7 +97,7 @@ struct expr_comparison {
  */
 union expr_value {
    bool                   boolean;
-   koji_number_t            number;
+   koji_number_t          number;
    struct expr_string     string;
    location_t             location;
    struct expr_comparison comparison;
@@ -379,9 +379,11 @@ static uint push_scope_identifier(compiler_t * c, const char *id, uint id_len)
  * Defines a new local variable in current prototype with an identifier starting at 
  * [identifier_offset] preiously pushed through [push_scope_identifier()].
  */
-static void push_scope_local(compiler_t *c, uint identifier_offset)
+static void push_scope_local(compiler_t *c, uint identifier_offset, uint location)
 {
-   c->locals
+   local_t *local = array_push_seq_n(&c->locals, &c->num_locals, c->allocator, local_t, 1);
+   local->location = location;
+   local->identifier_offset = identifier_offset;
 }
 
 /*
@@ -976,7 +978,10 @@ static void parse_variable_decl(compiler_t *c)
       }
 
       /* define the local variable */
-      define_local(c, identifier_offset);
+      push_scope_local(c, identifier_offset, c->temporary);
+      
+      /* temporary used by the local, bump it up*/
+      ++c->temporary;
 
    } while (accept(c, ','));
 }
@@ -1029,6 +1034,14 @@ kj_intern prototype_t *compile(compile_info_t const *info)
 
    /* create the source-file main prototype we will compile into */
    prototype_t *main_proto = kj_alloc(prototype_t, 1, info->allocator);
+   
+   if (!main_proto) {
+      return NULL;
+   }
+
+   *main_proto = (prototype_t) {
+      .name = "@main"
+   };
 
    /* define an issue handler from provided issue reporter */
    issue_handler_t issue_handler = { info->issue_reporter_fn, info->issue_reporter_data };
@@ -1049,6 +1062,7 @@ kj_intern prototype_t *compile(compile_info_t const *info)
    compiler.allocator      = info->allocator;
    compiler.temp_allocator = linear_allocator_create(info->allocator,
                                                      LINEAR_ALLOCATOR_PAGE_MIN_SIZE);
+   compiler.proto          = main_proto;
    compiler.class_string   = info->class_string;
 
    /* kick off compilation! */
