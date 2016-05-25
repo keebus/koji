@@ -30,7 +30,7 @@ typedef struct {
 } load_issue_handler_data_t;
 
 
-static void kj_load_issue_reporter_fn(void *data, source_location_t sloc, const char *message)
+static void load_issue_reporter_fn(void *data, source_location_t sloc, const char *message)
 {
    (void)sloc;
    load_issue_handler_data_t *issue_handler_data = data;
@@ -71,16 +71,13 @@ KOJI_API void koji_close(koji_state_t *state)
 KOJI_API koji_result_t koji_load(koji_state_t *state, const char *source_name,
                                  koji_stream_read_t stream_read_fn, void *stream_read_data)
 {
-   //kj_load_issue_handler_data_t issues_data = { .state = state };
-
   prototype_t *main_proto = compile(&(compile_info_t) {
       .allocator = &state->allocator,
       .source_name = source_name,
       .stream_fn = stream_read_fn,
       .stream_data = stream_read_data,
-      //.issue_reporter_fn = kj_load_issue_reporter_fn,
-      //.issue_reporter_data = &issues_data,
-      //.builtin_functions = &s->builtins,
+      .issue_reporter_fn = load_issue_reporter_fn,
+      .issue_reporter_data = &(load_issue_handler_data_t) { .state = state },
       .class_string = &state->class_string,
   });
 
@@ -88,7 +85,7 @@ KOJI_API koji_result_t koji_load(koji_state_t *state, const char *source_name,
   if (!main_proto) return KOJI_ERROR;
 
   /* temporary */
-  prototype_dump(main_proto, 0);
+  prototype_dump(main_proto, 0, &state->class_string);
 
   /* reset the number of references as the ref count will be increased when the prototype is
    * referenced by a the new frame */
@@ -103,7 +100,7 @@ KOJI_API koji_result_t koji_load(koji_state_t *state, const char *source_name,
 
 KOJI_API koji_result_t koji_load_string(koji_state_t *state, const char *source)
 {
-   return koji_load(state, source, stream_read_string, (void*)&source);
+   return koji_load(state, "<string>", stream_read_string, (void*)&source);
 }
 
 KOJI_API koji_result_t koji_load_file(koji_state_t *state, const char *filename)
