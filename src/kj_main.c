@@ -23,7 +23,7 @@ int main(int argc, char **argv)
    (void)argv;
    
    koji_state_t *koji = koji_open(NULL, NULL, NULL, NULL);
-   koji_load_string(koji, "var a = 1 + 2; var b = 2;a = a + b");
+   koji_load_string(koji, "var a = 1 + 2; var b = 2; a = a + b");
    koji_close(koji);
 
    //test_values();

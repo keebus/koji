@@ -145,21 +145,19 @@ typedef enum {
    BINOP_NEQ,
    BINOP_LOGICAL_AND,
    BINOP_LOGICAL_OR,
-   BINOP_ASSIGN,
 } binop_t;
 
 /* binary operator precedences (the lower the number the higher the precedence) */
 static const int BINOP_PRECEDENCES[] = {
-   /* invalid   *   /   %   +  -  << >> &  ^  5  <  <= >  >= == != && || = */
-   -1,          10, 10, 10, 9, 9, 8, 8, 7, 6, 5, 4, 4, 4, 4, 3, 3, 2, 1, 0
+   /* invalid   *   /   %   +  -  << >> &  ^  5  <  <= >  >= == != && || */
+   -1,          10, 10, 10, 9, 9, 8, 8, 7, 6, 5, 4, 4, 4, 4, 3, 3, 2, 1
 };
 
 /*
  * #todo
  */
 static const char *BINOP_TO_STR[] = { "<invalid>", "&&", " || ", " == ", " != ", "<", "<=", ">",
-                                      ">=", "+", "-", "*",  "/",  "%", "&", "|", "^", "<<", ">>",
-                                      "=" };
+                                      ">=", "+", "-", "*",  "/",  "%", "&", "|", "^", "<<", ">>" };
 /*
  * A state structure used to contain information about expression parsing and compilation such as
  * the desired target register, whether the expression should be negated and the indices of new jump
@@ -363,7 +361,6 @@ static binop_t token_to_binop(token_t tok) {
     case '^':  return BINOP_BIT_XOR;
     case '<<': return BINOP_BIT_LSH;
     case '>>': return BINOP_BIT_RSH;
-    case '=': return BINOP_ASSIGN;
     default:   return BINOP_INVALID;
   }
 }
@@ -651,7 +648,6 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
          }
          break;
 
-#if 0
       /*
        * lhs is a register and we assume that the compiler has called "prepare_logical_operator_lhs"
        * before calling this hence the TESTSET instruction has already been emitted.
@@ -736,10 +732,6 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
          }
          break;
       }
-#endif
-
-      case BINOP_ASSIGN:
-         break;
 
       default: break;
    }
@@ -800,6 +792,7 @@ error:
 /* parsing functions                                                                              */
 /*------------------------------------------------------------------------------------------------*/
 static expr_t parse_subexpression(compiler_t *, expr_state_t const *);
+static location_ref_t parse_expression(compiler_t *c, location_t target_hint);
 
 static expr_t parse_local_ref_or_function_call(compiler_t *c, expr_state_t *es)
 {
@@ -935,33 +928,35 @@ static expr_t parse_subexpression(compiler_t *c, expr_state_t const *es)
    expr_state_t my_es = *es;
 
    /* store the source location for error reporting */
-   //source_location_t source_loc = c->lexer.source_location;
+   source_location_t source_loc = c->lexer.source_location;
    
    /* parse expression lhs */
    expr_t lhs = parse_primary_expression(c, &my_es);
 
-   ///* if peek '=' parse the assignment `lhs = rhs` */
-   //if (accept(c, '=')) {
-   //   
-   //   switch (lhs.type) {
-   //      case EXPR_LOCATION:
-   //         /* check the location is a valid assignable, i.e. neither a constant nor a temporary */
-   //         if (location_is_constant(lhs.val.location) ||
-   //             location_is_temporary(c, lhs.val.location)) {
-   //            goto error_lhs_not_assignable;
-   //         }
-   //         emit_move()
+   /* if peek '=' parse the assignment `lhs = rhs` */
+   if (accept(c, '=')) {
 
-   //      default:
-   //         break;
-   //   }
-   //}
-   //
+      if (!lhs.positive) goto error_lhs_not_assignable;
+      
+      switch (lhs.type) {
+         case EXPR_LOCATION:
+            /* check the location is a valid assignable, i.e. neither a constant nor a temporary */
+            if (location_is_constant(lhs.val.location) || location_is_temporary(c, lhs.val.location)) {
+               goto error_lhs_not_assignable;
+            }
+            emit_move(c, parse_expression(c, lhs.val.location), lhs.val.location);
+            return lhs;
+
+         default:
+            break;
+      }
+   }
+   
    return parse_binary_expression_rhs(c, &my_es, lhs, 0);
-   /*
-   error_lhs_not_assignable:
-      error(c->lexer.issue_handler, source_loc, "lhs of assignment is not an assignable expression.");
-      return expr_nil();*/
+   
+error_lhs_not_assignable:
+   error(c->lexer.issue_handler, source_loc, "lhs of assignment is not an assignable expression.");
+   return expr_nil();
 }
 
 /*
@@ -1065,11 +1060,9 @@ static void parse_statement(compiler_t *c)
          break;
 
       default: /* expression */
-      {
-         emit_move(c, parse_expression(c, c->temporary), c->temporary);
+         parse_expression(c, c->temporary);
          expect_end_of_stmt(c);
          break;
-      }
    }
 }
 
