@@ -112,10 +112,10 @@ static inline uint max_u(uint a, uint b) { return a > b ? a : b; }
  * context for their operations.
  */
 typedef struct {
+   void *user_data;
    koji_malloc_fn_t malloc;
    koji_realloc_fn_t realloc;
    koji_free_fn_t free;
-   void *userdata;
 } allocator_t;
 
 /*
@@ -123,16 +123,16 @@ typedef struct {
  */
 
 #define kj_malloc(size, alignment, pallocator)                                                     \
-   ((pallocator)->malloc((pallocator)->userdata, size, alignment))
+   ((pallocator)->malloc((pallocator)->user_data, size, alignment))
 
 /* Allocates an array of [count] elements of specified [type] */
 #define kj_alloc(type, count, pallocator)                                                          \
-   ((pallocator)->malloc((pallocator)->userdata, sizeof(type) * count, kj_alignof(type)))
+   ((pallocator)->malloc((pallocator)->user_data, sizeof(type) * count, kj_alignof(type)))
 
 #define kj_realloc(ptr, size, alignment, pallocator)                                               \
-   ((pallocator)->realloc((pallocator)->userdata, ptr, size, alignment))
+   ((pallocator)->realloc((pallocator)->user_data, ptr, size, alignment))
 
-#define kj_free(ptr, pallocator) ((pallocator)->free((pallocator)->userdata, ptr))
+#define kj_free(ptr, pallocator) ((pallocator)->free((pallocator)->user_data, ptr))
 
 /*
  * # Default allocation functions #

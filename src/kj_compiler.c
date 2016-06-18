@@ -12,6 +12,7 @@
 #include "kj_support.h"
 #include "kj_value.h"
 #include <string.h>
+#include <malloc.h>
 
 /*
  * #todo
@@ -97,7 +98,7 @@ struct expr_comparison {
  */
 union expr_value {
    bool                   boolean;
-   koji_number_t            number;
+   koji_number_t          number;
    struct expr_string     string;
    location_t             location;
    struct expr_comparison comparison;
@@ -169,6 +170,25 @@ typedef struct {
 } expr_state_t;
 
 /*------------------------------------------------------------------------------------------------*/
+/* location                                                                                       */
+/*------------------------------------------------------------------------------------------------*/
+/*
+ * Returns whether [l] is a constant location.
+ */
+static bool location_is_constant(location_t l)
+{
+   return l < 0;
+}
+
+/*
+ * Returns whether [l] is a temporary location, i.e. neither a constant nor a local.
+ */
+static bool location_is_temporary(compiler_t *c, location_t l)
+{
+   return l >= (location_t)c->num_locals;
+}
+
+/*------------------------------------------------------------------------------------------------*/
 /* expression                                                                                     */
 /*------------------------------------------------------------------------------------------------*/
 /* Returns a nil expr. */
@@ -229,7 +249,7 @@ static bool expr_is_statically_bool_convertible(expr_type_t type) {
  */
 static void syntax_error_at(compiler_t *c, source_location_t sourceloc)
 {
-   error(c->lexer.issue_handler, sourceloc, "unexpected %s.", lexer_lookahead_to_string(&c->lexer));
+   error(c->lexer.issue_handler, sourceloc, "unexpected '%s'.", lexer_lookahead_to_string(&c->lexer));
 }
 
 /*
@@ -378,12 +398,28 @@ static uint push_scope_identifier(compiler_t * c, const char *id, uint id_len)
  * Defines a new local variable in current prototype with an identifier starting at 
  * [identifier_offset] preiously pushed through [push_scope_identifier()].
  */
-static void push_scope_local(compiler_t *c, uint identifier_offset)
+static void push_scope_local(compiler_t *c, uint identifier_offset, uint location)
 {
    local_t *local = array_push_seq(&c->locals, &c->num_locals, c->allocator, local_t);
    local->identifier_offset = identifier_offset;
    local->location = c->temporary;
    ++c->temporary;   
+}
+
+/*
+ * Finds a local with matching [identifier] starting from the current scope and iterating over its
+ * parents until. If none could be found it returns NULL. #TODO add upvalues.
+ */
+static local_t * fetch_scope_local(compiler_t *c, const char *identifier)
+{
+   for (int i = c->num_locals - 1; i >= 0; --i) {
+      const char *local_identifier = c->scope_identifiers + c->locals[i].identifier_offset;
+      if (strcmp(local_identifier, identifier) == 0) {
+         return c->locals + i;
+      }
+   }
+   return NULL;
+>>>>>>> 330029f63906089fa29930a5e57d09e31674a372
 }
 
 /*
@@ -430,7 +466,10 @@ static int fetch_constant_string(compiler_t *c, const char *str, uint str_len)
 
    /* create a new string */
    *constant = value_new_string(c->allocator, str_len, c->class_string);
-   memcpy(((string_t*)value_get_object(*constant))->chars, str, str_len + 1);
+
+   string_t *string = value_get_object(*constant);
+   memcpy(string->chars, str, str_len);
+   string->chars[str_len] = '\0';
 
    /* return the index of the pushed constant */
    return constant - c->proto->constants;
@@ -617,7 +656,6 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
          }
          break;
 
-#if 0
       /*
        * lhs is a register and we assume that the compiler has called "prepare_logical_operator_lhs"
        * before calling this hence the TESTSET instruction has already been emitted.
@@ -702,7 +740,6 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
          }
          break;
       }
-#endif
 
       default: break;
    }
@@ -743,7 +780,7 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
    else {
       /* the binary operation is not a comparison but an arithmetic operation, emit the approriate
        * instruction */
-      emit(c, encode_ABC(op - BINOP_ADD + OP_ADD, es->target, lhs.val.location, lhs.val.location));
+      emit(c, encode_ABC(op - BINOP_ADD + OP_ADD, es->target, lhs.val.location, rhs.val.location));
       lhs = expr_location(es->target);
    }
 
@@ -763,6 +800,27 @@ error:
 /* parsing functions                                                                              */
 /*------------------------------------------------------------------------------------------------*/
 static expr_t parse_subexpression(compiler_t *, expr_state_t const *);
+static location_ref_t parse_expression(compiler_t *c, location_t target_hint);
+
+static expr_t parse_local_ref_or_function_call(compiler_t *c, expr_state_t *es)
+{
+   uint id_len = c->lexer.token_string_length;
+   
+   /* temporary remember the identifier as we need to carry on lexing to know whether it's a local
+    * variable reference or a function call */
+   char *id = alloca(c->lexer.token_string_length + 1);
+   memcpy(id, c->lexer.token_string, c->lexer.token_string_length + 1);
+   lex(c);
+
+   /* identifier refers to local variable? */
+   local_t *local = fetch_scope_local(c, id);
+   if (local) {
+      return expr_location(local->location);
+   }
+
+   assert(!"todo");
+   return expr_nil();
+}
 
 /*
  * Parses and returns a primary expression, i.e. constants, unary expressions, subexpressions,
@@ -790,6 +848,10 @@ static expr_t parse_primary_expression(compiler_t *c, expr_state_t *es)
          lex(c);
          parse_subexpression(c, es);
          expect(c, ')');
+         break;
+
+      case tok_identifier:
+         expr = parse_local_ref_or_function_call(c, es);
          break;
 
       default: syntax_error_at(c, source_loc); return expr_nil();
@@ -846,7 +908,7 @@ static expr_t parse_binary_expression_rhs(compiler_t *c, expr_state_t const *es,
        */
       if (next_binop_precedence > tok_precedence) {
          /* the target and whether the expression is currently negated are the same for the rhs, but
-          * use reset the jump instruction lists as rhs is a subexpression on its own */
+          * reset the jump instruction lists as rhs is a subexpression on its own */
          es_rhs.target = es->target;
          es_rhs.negated = es->negated;
          es_rhs.true_branches_begin = c->label_true.num_instructions;
@@ -874,35 +936,35 @@ static expr_t parse_subexpression(compiler_t *c, expr_state_t const *es)
    expr_state_t my_es = *es;
 
    /* store the source location for error reporting */
-   //source_location_t source_loc = c->lexer.source_location;
+   source_location_t source_loc = c->lexer.source_location;
    
    /* parse expression lhs */
    expr_t lhs = parse_primary_expression(c, &my_es);
 
    /* if peek '=' parse the assignment `lhs = rhs` */
-   #if 0
    if (accept(c, '=')) {
+
+      if (!lhs.positive) goto error_lhs_not_assignable;
       
       switch (lhs.type) {
          case EXPR_LOCATION:
             /* check the location is a valid assignable, i.e. neither a constant nor a temporary */
-            if (location_is_constant(lhs.value.location) ||
-                location_is_temporary(c, lhs.value.location)) {
+            if (location_is_constant(lhs.val.location) || location_is_temporary(c, lhs.val.location)) {
                goto error_lhs_not_assignable;
             }
-
+            emit_move(c, parse_expression(c, lhs.val.location), lhs.val.location);
+            return lhs;
 
          default:
             break;
       }
    }
-   #endif
    
    return parse_binary_expression_rhs(c, &my_es, lhs, 0);
-
-//error_lhs_not_assignable:
-   //error(c->lexer.issue_handler, source_loc, "lhs of assignment is not an assignable expression."); 
-   //return expr_nil();
+   
+error_lhs_not_assignable:
+   error(c->lexer.issue_handler, source_loc, "lhs of assignment is not an assignable expression.");
+   return expr_nil();
 }
 
 /*
@@ -981,7 +1043,7 @@ static void parse_variable_decl(compiler_t *c)
 
       /* define the local variable */
       push_scope_local(c, identifier_offset);
-
+      
    } while (accept(c, ','));
 }
 
@@ -998,12 +1060,9 @@ static void parse_statement(compiler_t *c)
          break;
 
       default: /* expression */
-      {
-         expr_state_t es = { c->temporary };
-         parse_subexpression(c, &es);
+         parse_expression(c, c->temporary);
          expect_end_of_stmt(c);
          break;
-      }
    }
 }
 
@@ -1033,6 +1092,14 @@ kj_intern prototype_t *compile(compile_info_t const *info)
 
    /* create the source-file main prototype we will compile into */
    prototype_t *main_proto = kj_alloc(prototype_t, 1, info->allocator);
+   
+   if (!main_proto) {
+      return NULL;
+   }
+
+   *main_proto = (prototype_t) {
+      .name = "@main"
+   };
 
    /* define an issue handler from provided issue reporter */
    issue_handler_t issue_handler = { info->issue_reporter_fn, info->issue_reporter_data };
@@ -1053,6 +1120,7 @@ kj_intern prototype_t *compile(compile_info_t const *info)
    compiler.allocator      = info->allocator;
    compiler.temp_allocator = linear_allocator_create(info->allocator,
                                                      LINEAR_ALLOCATOR_PAGE_MIN_SIZE);
+   compiler.proto          = main_proto;
    compiler.class_string   = info->class_string;
 
    /* kick off compilation! */

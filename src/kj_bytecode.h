@@ -10,6 +10,8 @@
 #include "kj_support.h"
 #include <assert.h>
 
+struct class;
+
 /* Enumeration that lists all Virtual Machine opcodes */
 typedef enum {
   /* operations that write into R(A) */
@@ -117,11 +119,18 @@ static inline void replace_C(instruction_t *i, int C)
 }
 
 typedef struct prototype {
+   const char     *name;
    uint            temporaries;
    uint            num_locals;
    uint            num_registers;
-   instruction_t * instructions;
+   instruction_t  *instructions;
    uint            num_instructions;
-   union value   * constants;
+   union value    *constants;
    uint            num_constants;
 } prototype_t;
+
+/*
+ * Dumps the compiled prototype bytecode to stdout for debugging showing the bytecode disassembly,
+ * constants for [proto] as well inner prototypes.
+ */
+void prototype_dump(prototype_t const* proto, int level, struct class const *string_class);
