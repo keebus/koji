@@ -44,11 +44,11 @@ typedef struct {
  */
 typedef struct compiler {
    lexer_t              lexer;
-   allocator_t        * allocator;
-   linear_allocator_t * temp_allocator;
-   char               * scope_identifiers;
+   allocator_t         *allocator;
+   linear_allocator_t  *temp_allocator;
+   char*scope_identifiers;
    uint                 scope_identifiers_size;
-   local_t            * locals;
+   local_t *            locals;
    uint                 num_locals;
    location_t           temporary;
    label_t              label_true;
@@ -117,9 +117,8 @@ typedef struct {
  */
 typedef struct {
    location_t  location;
-   uint        set_instructions[2];
-   uint        num_set_instructions;
-} location_ref_t;
+   uint        num_instructions;
+} expr_result_t;
 
 /*
  * #todo
@@ -381,7 +380,10 @@ static uint push_scope_identifier(compiler_t * c, const char *id, uint id_len)
  */
 static void push_scope_local(compiler_t *c, uint identifier_offset)
 {
-   c->locals
+   local_t *local = array_push_seq(&c->locals, &c->num_locals, c->allocator, local_t);
+   local->identifier_offset = identifier_offset;
+   local->location = c->temporary;
+   ++c->temporary;   
 }
 
 /*
@@ -439,6 +441,7 @@ static void emit(compiler_t *c, instruction_t i)
 {
    opcode_t const op = decode_op(i);
 
+   /* if instruction has target, update the current prototype total number of used registers */
    if (opcode_has_target(op)) {
       c->proto->num_registers = max_u(c->proto->num_registers, decode_A(i) + 1);
    }
@@ -451,7 +454,7 @@ static void emit(compiler_t *c, instruction_t i)
  * Emits the appropriate instruction/s to move location [from] to [to]. This function actually
  * performs some optimization checks in order to avoid emitting more instructions than necessary.
  */
-static void emit_move(compiler_t *c, location_ref_t from, location_t to)
+static void emit_move(compiler_t *c, expr_result_t from, location_t to)
 {
    if (from.location == to) return;
 
@@ -459,9 +462,15 @@ static void emit_move(compiler_t *c, location_ref_t from, location_t to)
     * that one or more instructions are setting to this location, we can simply replace the A
     * operand of all those instructions to [to] and optimize out the 'move' instruction.
     */
-   if (from.location >= c->temporary && from.num_set_instructions > 0) {
-      for (uint i = 0; i < from.num_set_instructions; ++i) {
-         replace_A(&c->proto->instructions[from.set_instructions[i]], to);
+   if (from.location >= c->temporary && from.num_instructions > 0) {
+      for (int i = c->proto->num_instructions - 1,
+             n = c->proto->num_instructions - from.num_instructions - 1; i > n; --i) {
+         instruction_t *instr = &c->proto->instructions[i];
+         
+         /* target matches result expression target register? if so, replace it with [to] */
+         if (decode_A(*instr) == from.location) {
+            replace_A(instr, to);
+         }
       }
    }
    else {
@@ -905,7 +914,7 @@ static expr_t parse_subexpression(compiler_t *c, expr_state_t const *es)
  * or a constant. After calling this function, you might want to move the result to a different
  * location by calling [emit_move()].
  */
-static location_ref_t parse_expression(compiler_t *c, location_t target_hint)
+static expr_result_t parse_expression(compiler_t *c, location_t target_hint)
 {
    /* cache some state in local variables for fast access */
    prototype_t *proto = c->proto;
@@ -931,23 +940,18 @@ static location_ref_t parse_expression(compiler_t *c, location_t target_hint)
    
    /* compiled expression instance that will hold final instruction location and the instructions
     * that ultimately write to that location */
-   location_ref_t result;
+   uint num_instructions = proto->num_instructions;
 
    /* ... */
 
    expr = compile_expr_to_location(c, expr, target_hint);
-
-   /* ... */
-   result.location = expr.val.location;
-   result.set_instructions[0] = proto->num_instructions - 1;
-   result.num_set_instructions = 1;
 
    /* reset compiler original state */
    c->label_true.num_instructions = true_label_instr_count;
    c->label_false.num_instructions = false_label_instr_count;
    c->temporary = old_temporary;
 
-   return result;
+   return (expr_result_t) { expr.val.location, proto->num_instructions - num_instructions };
 }
 
 /*
@@ -976,7 +980,7 @@ static void parse_variable_decl(compiler_t *c)
       }
 
       /* define the local variable */
-      define_local(c, identifier_offset);
+      push_scope_local(c, identifier_offset);
 
    } while (accept(c, ','));
 }
