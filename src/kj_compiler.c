@@ -118,7 +118,8 @@ typedef struct {
  */
 typedef struct {
    location_t  location;
-   uint        num_instructions;
+   uint        num_true_branches;
+   uint        num_false_branches;
 } expr_result_t;
 
 /*
@@ -155,15 +156,20 @@ static const int BINOP_PRECEDENCES[] = {
 /*
  * #todo
  */
-static const char *BINOP_TO_STR[] = { "<invalid>", "&&", " || ", " == ", " != ", "<", "<=", ">",
-                                      ">=", "+", "-", "*",  "/",  "%", "&", "|", "^", "<<", ">>" };
+static const char *BINOP_TO_STR[] = { "<invalid>", "*",  "/", "%", "+", "-", "<<",">>", "&", "|",
+   "^", "<", "<=", ">", ">=", "==", "!=", "&&", "||" };
+
+/*
+ * #todo
+ */
+static const opcode_t BINOP_TO_OPCODE[] = { 0, OP_MUL, OP_DIV, OP_MOD, OP_ADD, OP_SUB };
+
 /*
  * A state structure used to contain information about expression parsing and compilation such as
  * the desired target register, whether the expression should be negated and the indices of new jump
  * instructions in compiler state global true/false labels.
  */
 typedef struct {
-  location_t target;
   uint       true_branches_begin;
   uint       false_branches_begin;
   bool       negated;
@@ -240,6 +246,26 @@ static expr_t expr_comparison(expr_type_t type, bool test_value, int lhs_locatio
 static bool expr_is_statically_bool_convertible(expr_type_t type) {
   return type <= EXPR_STRING;
 }
+
+/*
+ * Converts [expr] to a boolean. 'expr_is_statically_bool_convertible(expr)' must return true.
+ */
+static bool expr_to_bool(expr_t expr)
+{
+	switch (expr.type) {
+		case EXPR_NIL:
+			return 0;
+
+		case EXPR_BOOL:
+		case EXPR_NUMBER:
+			return expr.val.number != 0;
+
+		default:
+         assert(0);
+         return 0;
+	}
+}
+
 
 /*------------------------------------------------------------------------------------------------*/
 /* parsing helper functions                                                                       */
@@ -398,7 +424,7 @@ static uint push_scope_identifier(compiler_t * c, const char *id, uint id_len)
  * Defines a new local variable in current prototype with an identifier starting at 
  * [identifier_offset] preiously pushed through [push_scope_identifier()].
  */
-static void push_scope_local(compiler_t *c, uint identifier_offset, uint location)
+static void push_scope_local(compiler_t *c, uint identifier_offset)
 {
    local_t *local = array_push_seq(&c->locals, &c->num_locals, c->allocator, local_t);
    local->identifier_offset = identifier_offset;
@@ -419,7 +445,6 @@ static local_t * fetch_scope_local(compiler_t *c, const char *identifier)
       }
    }
    return NULL;
->>>>>>> 330029f63906089fa29930a5e57d09e31674a372
 }
 
 /*
@@ -493,7 +518,7 @@ static void emit(compiler_t *c, instruction_t i)
  * Emits the appropriate instruction/s to move location [from] to [to]. This function actually
  * performs some optimization checks in order to avoid emitting more instructions than necessary.
  */
-static void emit_move(compiler_t *c, expr_result_t from, location_t to)
+static void retarget(compiler_t *c, expr_result_t from, location_t to)
 {
    if (from.location == to) return;
 
@@ -501,16 +526,16 @@ static void emit_move(compiler_t *c, expr_result_t from, location_t to)
     * that one or more instructions are setting to this location, we can simply replace the A
     * operand of all those instructions to [to] and optimize out the 'move' instruction.
     */
-   if (from.location >= c->temporary && from.num_instructions > 0) {
-      for (int i = c->proto->num_instructions - 1,
-             n = c->proto->num_instructions - from.num_instructions - 1; i > n; --i) {
-         instruction_t *instr = &c->proto->instructions[i];
-         
+   if (from.location >= c->temporary) {
+      /* first check whether last instruction targets old location, if so update it with the new
+       * desired location */
+      instruction_t *instr = &c->proto->instructions[c->proto->num_instructions - 1];
+      if (opcode_has_target(decode_op(*instr)) && decode_A(*instr) == from.location) {
          /* target matches result expression target register? if so, replace it with [to] */
-         if (decode_A(*instr) == from.location) {
-            replace_A(instr, to);
-         }
+         replace_A(instr, to);
       }
+
+      /* todo: branches */
    }
    else {
       /* we could not optimize out the move instruction, emit it. */
@@ -602,7 +627,7 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
    #define DEFAULT_ARITH_BINOP(opchar)                                                             \
          DEFAULT_ARITH_INVALID_OPS_CHECKS();                                                       \
          if (lhs.type == EXPR_NUMBER && rhs.type == EXPR_NUMBER) {                                 \
-            return expr_number(lhs.val.number + rhs.val.number);                                   \
+            return expr_number(lhs.val.number opchar rhs.val.number);                              \
          }                                                                                         
 
    /* make a binary operator between our lhs and the rhs; */
@@ -667,7 +692,7 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
       case BINOP_LOGICAL_OR:
          return (expr_is_statically_bool_convertible(lhs.type) && expr_to_bool(lhs)) ? 
                  expr_boolean(true) : rhs;
-
+/*
       case BINOP_EQ:
       case BINOP_NEQ:
       {
@@ -739,7 +764,7 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
             return lhs;
          }
          break;
-      }
+      }*/
 
       default: break;
    }
@@ -762,14 +787,14 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
    if (op >= BINOP_EQ && op <= BINOP_GTE) {
       /* maps binary operators to comparison expression types */
       static const expr_type_t COMPARISON_BINOP_TO_EXPR_TYPE[] = {
-         /* eq       neq      lt       lte       gt        gte */
-            EXPR_EQ, EXPR_EQ, EXPR_LT, EXPR_LTE, EXPR_LTE, EXPR_LT
+         /* lt       lte       gt        gte      eq        neq */
+            EXPR_LT, EXPR_LTE, EXPR_LTE, EXPR_LT, EXPR_EQ, EXPR_EQ
       };
 
       /* maps binary operators to comparison expression testing values */
       static const bool COMPARISON_BINOP_TO_TEST_VALUE[] = {
-         /* eq       neq      lt       lte       gt        gte */
-            true,    false,   true,    true,    false,     false
+         /* lt    lte   gt     gte    eq    neq */
+            true, true, false, false, true, false
       };
 
       expr_type_t expr_type = COMPARISON_BINOP_TO_EXPR_TYPE[op - BINOP_EQ];
@@ -780,8 +805,8 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
    else {
       /* the binary operation is not a comparison but an arithmetic operation, emit the approriate
        * instruction */
-      emit(c, encode_ABC(op - BINOP_ADD + OP_ADD, es->target, lhs.val.location, rhs.val.location));
-      lhs = expr_location(es->target);
+      emit(c, encode_ABC(BINOP_TO_OPCODE[op], c->temporary, lhs.val.location, rhs.val.location));
+      lhs = expr_location(c->temporary);
    }
 
    return lhs;
@@ -800,16 +825,19 @@ error:
 /* parsing functions                                                                              */
 /*------------------------------------------------------------------------------------------------*/
 static expr_t parse_subexpression(compiler_t *, expr_state_t const *);
-static location_ref_t parse_expression(compiler_t *c, location_t target_hint);
+static expr_result_t parse_expression(compiler_t *c);
 
+/*
+ * #todo
+ */
 static expr_t parse_local_ref_or_function_call(compiler_t *c, expr_state_t *es)
 {
    uint id_len = c->lexer.token_string_length;
    
    /* temporary remember the identifier as we need to carry on lexing to know whether it's a local
     * variable reference or a function call */
-   char *id = alloca(c->lexer.token_string_length + 1);
-   memcpy(id, c->lexer.token_string, c->lexer.token_string_length + 1);
+   char *id = alloca(id_len + 1);
+   memcpy(id, c->lexer.token_string, id_len + 1);
    lex(c);
 
    /* identifier refers to local variable? */
@@ -846,7 +874,7 @@ static expr_t parse_primary_expression(compiler_t *c, expr_state_t *es)
 
       case '(': /* subexpression */
          lex(c);
-         parse_subexpression(c, es);
+         expr = parse_subexpression(c, es);
          expect(c, ')');
          break;
 
@@ -895,7 +923,6 @@ static expr_t parse_binary_expression_rhs(compiler_t *c, expr_state_t const *es,
       /* if lhs uses the current free register, create a new state copy using the next register */
       location_t old_temporary = use_temporary(c, &lhs);
       expr_state_t es_rhs = *es;
-      es_rhs.target = c->temporary;
 
       /* compile the right-hand-side of the binary expression */
       expr_t rhs = parse_primary_expression(c, &es_rhs);
@@ -909,7 +936,6 @@ static expr_t parse_binary_expression_rhs(compiler_t *c, expr_state_t const *es,
       if (next_binop_precedence > tok_precedence) {
          /* the target and whether the expression is currently negated are the same for the rhs, but
           * reset the jump instruction lists as rhs is a subexpression on its own */
-         es_rhs.target = es->target;
          es_rhs.negated = es->negated;
          es_rhs.true_branches_begin = c->label_true.num_instructions;
          es_rhs.false_branches_begin = c->label_false.num_instructions;
@@ -952,7 +978,7 @@ static expr_t parse_subexpression(compiler_t *c, expr_state_t const *es)
             if (location_is_constant(lhs.val.location) || location_is_temporary(c, lhs.val.location)) {
                goto error_lhs_not_assignable;
             }
-            emit_move(c, parse_expression(c, lhs.val.location), lhs.val.location);
+            retarget(c, parse_expression(c), lhs.val.location);
             return lhs;
 
          default:
@@ -976,7 +1002,7 @@ error_lhs_not_assignable:
  * or a constant. After calling this function, you might want to move the result to a different
  * location by calling [emit_move()].
  */
-static expr_result_t parse_expression(compiler_t *c, location_t target_hint)
+static expr_result_t parse_expression(compiler_t *c)
 {
    /* cache some state in local variables for fast access */
    prototype_t *proto = c->proto;
@@ -992,28 +1018,29 @@ static expr_result_t parse_expression(compiler_t *c, location_t target_hint)
    expr_state_t es = {
       .true_branches_begin  = true_label_instr_count,
       .false_branches_begin = false_label_instr_count,
-      .target               = target_hint,
       .negated              = false
    };
    
    /* parse the subexpression with our blank state. The parsed expression might have generated some
     * branching instructions to true/false. */
    expr_t expr = parse_subexpression(c, &es);
-   
+
+   /* todo */
+
    /* compiled expression instance that will hold final instruction location and the instructions
-    * that ultimately write to that location */
-   uint num_instructions = proto->num_instructions;
-
-   /* ... */
-
-   expr = compile_expr_to_location(c, expr, target_hint);
+    * that ultimately write to that location
+    */
+   expr_result_t result;
+   result.location = compile_expr_to_location(c, expr, c->temporary).val.location;
+   result.num_true_branches = c->label_true.num_instructions - true_label_instr_count;
+   result.num_true_branches = c->label_false.num_instructions - false_label_instr_count;
 
    /* reset compiler original state */
    c->label_true.num_instructions = true_label_instr_count;
    c->label_false.num_instructions = false_label_instr_count;
    c->temporary = old_temporary;
 
-   return (expr_result_t) { expr.val.location, proto->num_instructions - num_instructions };
+   return result;
 }
 
 /*
@@ -1034,7 +1061,7 @@ static void parse_variable_decl(compiler_t *c)
       /* optionally, parse the initialization expression */
       if (accept(c, '=')) {
          /* parse the expression and make sure it lies in the current temporary */
-         emit_move(c, parse_expression(c, c->temporary), c->temporary);
+         retarget(c, parse_expression(c), c->temporary);
       }
       else {
          /* no initialization expression provided for this variable, initialize it to nil */
@@ -1060,7 +1087,7 @@ static void parse_statement(compiler_t *c)
          break;
 
       default: /* expression */
-         parse_expression(c, c->temporary);
+         parse_expression(c);
          expect_end_of_stmt(c);
          break;
    }

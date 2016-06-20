@@ -13,6 +13,7 @@
 struct class;
 
 /* Enumeration that lists all Virtual Machine opcodes */
+/* Note: If this list is modified, update opcode formats in 'bytecode.c' too. */
 typedef enum {
   /* operations that write into R(A) */
   OP_LOADNIL,  /* loadnil A, Bx;    ; R(A), ..., R(Bx) = nil */

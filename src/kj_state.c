@@ -38,6 +38,7 @@ static void load_issue_reporter_fn(void *data, source_location_t sloc, const cha
    ++issue_handler_data->issue_count;
 
    (void)message;
+   printf("(TEMP) error: %s\n", message);
    //koji_push_string(issue_handler_data->state, message, (uint)strlen(message));
 }
 
