@@ -239,7 +239,6 @@ static expr_t expr_comparison(expr_type_t type, bool test_value, int lhs_locatio
                      .positive = test_value };
 }
 
-
 /*
  * Returns whether an expression of specified [expr] can be *statically* converted to a bool.
  */
@@ -266,6 +265,10 @@ static bool expr_to_bool(expr_t expr)
 	}
 }
 
+/*
+ * Returns whether an expression of specified @type is a comparison.
+ */
+static bool expr_is_comparison(expr_type_t type) { return type >= EXPR_EQ; }
 
 /*------------------------------------------------------------------------------------------------*/
 /* parsing helper functions                                                                       */
@@ -512,35 +515,6 @@ static void emit(compiler_t *c, instruction_t i)
 
    *array_push_seq(&c->proto->instructions, &c->proto->num_instructions, c->allocator,
                    instruction_t) = i;
-}
-
-/*
- * Emits the appropriate instruction/s to move location [from] to [to]. This function actually
- * performs some optimization checks in order to avoid emitting more instructions than necessary.
- */
-static void retarget(compiler_t *c, expr_result_t from, location_t to)
-{
-   if (from.location == to) return;
-
-   /* if from location is a temporary location (i.e. not a local variable) and we know from [from]
-    * that one or more instructions are setting to this location, we can simply replace the A
-    * operand of all those instructions to [to] and optimize out the 'move' instruction.
-    */
-   if (from.location >= c->temporary) {
-      /* first check whether last instruction targets old location, if so update it with the new
-       * desired location */
-      instruction_t *instr = &c->proto->instructions[c->proto->num_instructions - 1];
-      if (opcode_has_target(decode_op(*instr)) && decode_A(*instr) == from.location) {
-         /* target matches result expression target register? if so, replace it with [to] */
-         replace_A(instr, to);
-      }
-
-      /* todo: branches */
-   }
-   else {
-      /* we could not optimize out the move instruction, emit it. */
-      emit(c, encode_ABx(OP_MOV, to, from.location));
-   }
 }
 
 /*
@@ -821,11 +795,106 @@ error:
 #undef MAKEBINOP
 }
 
+/*
+ * Computes and returns the offset specified from instruction index to the next instruction
+ * that will be emitted in current prototype.
+ */
+static int offset_to_next_instruction(compiler_t *c, int from_instruction_index)
+{
+	return c->proto->num_instructions - from_instruction_index - 1;
+}
+
+/*
+ * Compiles the lhs of a logical expression if [op] is such and [lhs] is a register or comparison.
+ * In a nutshell, the purpose of this function is to patch the current early out branches to the
+ * true or false label depending on @op, the truth value (positivity) of lhs and whether the whole
+ * expression should be negated (as stated by @es).
+ * What this function does is: compiles the comparison if lhs is one, or emit the test/testset if
+ * is a register if say op is an OR then it patches all existing branches to false in the compiled
+ * expression represented by lhs to this point so that the future rhs will "try again" the OR. The
+ * opposite holds for AND (jumps to true are patched to evaluate the future rhs because evaluating
+ * only the lhs to true is not enough in an AND).
+ */
+static void compile_logical_operation(compiler_t *c, const expr_state_t* es, binop_t op, expr_t lhs)
+{
+	if ((lhs.type != EXPR_LOCATION && !expr_is_comparison(lhs.type))
+		|| (op != BINOP_LOGICAL_AND && op != BINOP_LOGICAL_OR))
+		return;
+
+	prototype_t *proto = c->proto;
+
+	bool test_value = (op == BINOP_LOGICAL_OR) ^ es->negated;
+
+	/* compile condition */
+	switch (lhs.type) {
+		case EXPR_LOCATION:
+			if (!lhs.positive == es->negated) {
+				emit(c, encode_ABC(OP_TESTSET, MAX_REG_VALUE, lhs.val.location, test_value));
+			}
+			else {
+				assert(lhs.val.location >= 0); /* is non-constant */
+				emit(c, encode_ABC(OP_TEST, lhs.val.location, !test_value, 0));
+			}
+			break;
+
+		/*case EXPR_EQ: case EXPR_LT: case EXPR_LTE:
+			emit(c, encode_ABC(OP_EQ + lhs.type - KC_EXPR_TYPE_EQ, lhs.lhs, lhs.rhs,
+            (lhs.positive ^ es->negated) ^ !test_value));
+			break;*/
+
+		default: assert(false);
+	}
+   
+	/* push jump instruction index to the appropriate label. */
+	uint* offset = array_push(test_value ? &c->label_true : &c->label_false, c->allocator, uint);
+	*offset = proto->num_instructions;
+	emit(c, OP_JUMP);
+
+   /* and */
+	label_t *pjump_vector = &c->label_true;
+	uint begin = es->true_branches_begin;
+
+	if (test_value) /* or */
+	{
+		pjump_vector = &c->label_false;
+		begin = es->false_branches_begin;
+	}
+
+	uint num_jumps;
+	while ((num_jumps = pjump_vector->num_instructions) > begin) {
+
+      /* get the index of the last jump instruction in the jump vector */
+		uint index = pjump_vector->instructions[pjump_vector->num_instructions - 1];
+
+		/*
+		 * if instruction before the current jump instruction is a TESTSET, turn it to a simple TEST
+		 * instruction as its "set" is wasted since we need to test more locations before we can
+		 * finally set the target (example "c = a && b", if a is true, don't c just yet, we need to
+		 * test b first)
+		 */
+		if (index > 0 && decode_op(proto->instructions[index - 1]) == OP_TESTSET) {
+			instruction_t instr = proto->instructions[index - 1];
+
+			int tested_reg = decode_B(instr);
+			bool flag = (bool)decode_C(instr);
+
+			proto->instructions[index - 1] = encode_ABx(OP_TEST, tested_reg, flag);
+		}
+
+      /* affix the jump to this instruction as more testing is needed to determine if expression
+       * is true or false. */
+		replace_Bx(proto->instructions + index, offset_to_next_instruction(c, index));
+
+      /* shrink the size of the true or false jump vector by one */
+      pjump_vector->num_instructions = num_jumps - 1;
+	}
+}
+
 /*------------------------------------------------------------------------------------------------*/
 /* parsing functions                                                                              */
 /*------------------------------------------------------------------------------------------------*/
 static expr_t parse_subexpression(compiler_t *, expr_state_t const *);
-static expr_result_t parse_expression(compiler_t *c);
+static void parse_expression(compiler_t *c, location_t target);
 
 /*
  * #todo
@@ -916,7 +985,7 @@ static expr_t parse_binary_expression_rhs(compiler_t *c, expr_state_t const *es,
       source_location_t source_loc = c->lexer.source_location;
 
       /* todo explain this */
-      //compile_logical_operation(c, es, binop, lhs);
+      compile_logical_operation(c, es, binop, lhs);
 
       lex(c); /* eat the operator token */
 
@@ -978,7 +1047,7 @@ static expr_t parse_subexpression(compiler_t *c, expr_state_t const *es)
             if (location_is_constant(lhs.val.location) || location_is_temporary(c, lhs.val.location)) {
                goto error_lhs_not_assignable;
             }
-            retarget(c, parse_expression(c), lhs.val.location);
+            parse_expression(c, lhs.val.location);
             return lhs;
 
          default:
@@ -1002,7 +1071,7 @@ error_lhs_not_assignable:
  * or a constant. After calling this function, you might want to move the result to a different
  * location by calling [emit_move()].
  */
-static expr_result_t parse_expression(compiler_t *c)
+static void parse_expression(compiler_t *c, location_t target)
 {
    /* cache some state in local variables for fast access */
    prototype_t *proto = c->proto;
@@ -1025,22 +1094,144 @@ static expr_result_t parse_expression(compiler_t *c)
     * branching instructions to true/false. */
    expr_t expr = parse_subexpression(c, &es);
 
-   /* todo */
+   /* declare some bookeeping flags */
+	bool value_is_condition = expr_is_comparison(expr.type);
+   uint rhs_move_jump_index = 0;
 
    /* compiled expression instance that will hold final instruction location and the instructions
     * that ultimately write to that location
     */
-   expr_result_t result;
-   result.location = compile_expr_to_location(c, expr, c->temporary).val.location;
-   result.num_true_branches = c->label_true.num_instructions - true_label_instr_count;
-   result.num_true_branches = c->label_false.num_instructions - false_label_instr_count;
+   location_t location = compile_expr_to_location(c, expr, target).val.location;
+   
+   if (location != target) {
+      /* if from location is a temporary location (i.e. not a local variable) and we know from [from]
+       * that one or more instructions are setting to this location, we can simply replace the A
+       * operand of all those instructions to [to] and optimize out the 'move' instruction.
+       */
+      if (location >= c->temporary) {
+         /* first check whether last instruction targets old location, if so update it with the new
+          * desired location */
+         instruction_t *instr = &c->proto->instructions[c->proto->num_instructions - 1];
+         if (opcode_has_target(decode_op(*instr)) && decode_A(*instr) == location) {
+            /* target matches result expression target register? if so, replace it with [to] */
+            replace_A(instr, target);
+         }
+      }
+      else {
+         /* we could not optimize out the move instruction, emit it. */
+         emit(c, encode_ABx(OP_MOV, target, location));
+      }
+   }
 
-   /* reset compiler original state */
+   if (c->label_true.num_instructions <= true_label_instr_count &&
+      c->label_false.num_instructions <= false_label_instr_count) {
+			goto done;
+   }
+
+   rhs_move_jump_index = proto->num_instructions;
+   emit(c, encode_ABx(OP_JUMP, 0, 0));
+
+   /* iterate over instructions that branch to false and if any is not a testset instruction, it
+    * means that we need to emit a loadbool instruction to set the result to false, so for now just
+    * remember this by flagging set_value_to_false to true.
+    * Also update the target register of the TESTSET instruction to the actual target register.
+    */
+	bool set_value_to_false = false;
+   for (uint i = false_label_instr_count; i < c->label_false.num_instructions; ++i) {
+      uint index = c->label_false.instructions[i];
+      if (index > 0) {
+         instruction_t *instr = &proto->instructions[index - 1];
+         if (decode_op(*instr) == OP_TESTSET) {
+            replace_A(instr, target);
+         }
+         else {
+            set_value_to_false = true;
+            replace_Bx(proto->instructions + index, offset_to_next_instruction(c, index));
+         }
+      }
+   }
+
+   /* if we need to set the result to false, emit the loadbool instruction (to false) now and
+    * remember its index so that we can eventually patch it later */
+	uint load_false_instruction_index = 0;
+	if (set_value_to_false) {
+		load_false_instruction_index = proto->num_instructions;
+		emit(c, encode_ABC(OP_LOADBOOL, target, false, 0));
+	}
+
+   /* analogous to the false case, iterate over the list of instructions branching to true, flag
+    * set_value_to_true if instruction is not a testset, as we'll need to emit a loadbool to true
+    * instruction in such case. 
+    * Also patch all jumps to this point as the next instruction emitted could be the loadbool to
+    * true.
+    */
+	bool set_value_to_true = false;
+   for (uint i = true_label_instr_count, size = c->label_true.num_instructions; i < size; ++i) {
+		uint index = c->label_true.instructions[i];
+		if (index > 0) {
+         instruction_t *instr = &proto->instructions[index - 1];
+         if (decode_op(*instr) == OP_TESTSET) {
+            replace_A(instr, target);
+         }
+         else {
+			   set_value_to_true = true;
+			   replace_Bx(proto->instructions + index, offset_to_next_instruction(c, index));
+         }
+		}
+	}
+
+   /* emit the loadbool instruction to *true* if we need to */
+	if (set_value_to_true) {
+		emit(c, encode_ABC(OP_LOADBOOL, target, true, 0));
+	}
+
+   /* if we emitted a loadbool to *false* instruction before, we'll need to patch the jump offset to
+    * the current position (after the eventual loadbool to *true* has been emitted)
+    */
+	if (set_value_to_false) {
+		replace_C(proto->instructions + load_false_instruction_index,
+         offset_to_next_instruction(c, load_false_instruction_index));
+	}
+   
+   /* If the final subexpression was a register, check if we have added any loadb instruction.
+    * If so, set the right jump offset to this location, otherwise pop the last instruction which is
+    * the "jump" after the "mov" or "neg" to skip the loadbool instructions.
+    */
+	if (!value_is_condition) {
+		if (!set_value_to_true && !set_value_to_false) {
+			--proto->num_instructions;
+		}
+		else {
+			replace_Bx(proto->instructions + rhs_move_jump_index,
+            offset_to_next_instruction(c, rhs_move_jump_index));
+		}
+	}
+
+   /* finally set the jump offset of all remaining TESTSET instructions generated by the expression
+    * to true... 
+    */
+   for (uint i = true_label_instr_count, size = c->label_true.num_instructions; i < size; ++i) {
+      uint index = c->label_true.instructions[i];
+		if (index > 0 && decode_op(proto->instructions[index - 1]) == OP_TESTSET) {
+			replace_Bx(proto->instructions + index, offset_to_next_instruction(c, index));
+		}
+   }
+
+   /* ...and to false to the next instruction. */
+   for (uint i = false_label_instr_count; i < c->label_false.num_instructions; ++i) {
+      uint index = c->label_false.instructions[i];
+		if (index > 0 && decode_op(proto->instructions[index - 1]) == OP_TESTSET) {
+			replace_Bx(proto->instructions + index, offset_to_next_instruction(c, index));
+		}
+   }
+
+done:
+   /* restore the number of branches to what we found at the beginning. */
    c->label_true.num_instructions = true_label_instr_count;
    c->label_false.num_instructions = false_label_instr_count;
-   c->temporary = old_temporary;
 
-   return result;
+   /* restore temporaries */
+   c->temporary = old_temporary;
 }
 
 /*
@@ -1061,7 +1252,7 @@ static void parse_variable_decl(compiler_t *c)
       /* optionally, parse the initialization expression */
       if (accept(c, '=')) {
          /* parse the expression and make sure it lies in the current temporary */
-         retarget(c, parse_expression(c), c->temporary);
+         parse_expression(c, c->temporary);
       }
       else {
          /* no initialization expression provided for this variable, initialize it to nil */
@@ -1087,7 +1278,7 @@ static void parse_statement(compiler_t *c)
          break;
 
       default: /* expression */
-         parse_expression(c);
+         parse_expression(c, c->temporary);
          expect_end_of_stmt(c);
          break;
    }

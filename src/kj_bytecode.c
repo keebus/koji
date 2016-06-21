@@ -46,6 +46,7 @@
 
 typedef enum {
    OP_FORMAT_UNKNOWN,
+   OP_FORMAT_BX_OFFSET,
    OP_FORMAT_A_BX,
    OP_FORMAT_A_B_C,
 } op_format_t;
@@ -62,14 +63,14 @@ static const op_format_t OP_FORMATS[] = {
    OP_FORMAT_A_B_C, /* OP_DIV */
    OP_FORMAT_A_B_C, /* OP_MOD */
    OP_FORMAT_A_B_C, /* OP_POW */
-   0, /* OP_TESTSET */
+   OP_FORMAT_A_B_C, /* OP_TESTSET */
    0, /* OP_CLOSURE */
    0, /* OP_GLOBALS */
    0, /* OP_NEWTABLE */
    0, /* OP_GET */
    0, /* OP_THIS */
    0, /* OP_TEST */
-   0, /* OP_JUMP */
+   OP_FORMAT_BX_OFFSET, /* OP_JUMP */
    0, /* OP_LT */
    0, /* OP_SCALL */
    0, /* OP_CALL */
@@ -107,6 +108,10 @@ void prototype_dump(prototype_t const* proto, int level, class_t const *string_c
       int constant_reg = 0;
       
       switch (OP_FORMATS[op]) {
+         case OP_FORMAT_BX_OFFSET:
+            printf("%d\t\t; to %d", regBx, regBx + i + 2);
+            break;
+
          case OP_FORMAT_A_BX:
             printf("%d, %d", regA, regBx);
             constant_reg = regBx;
@@ -115,6 +120,7 @@ void prototype_dump(prototype_t const* proto, int level, class_t const *string_c
          case OP_FORMAT_A_B_C:
             printf("%d, %d, %d", regA, regB, regC);
             constant_reg = (regB < 0) ? regB : (regC < 0) ? regC : 0;
+
          default:
             break;
       }
@@ -122,7 +128,7 @@ void prototype_dump(prototype_t const* proto, int level, class_t const *string_c
       /* registers B and C might have constants, add a comment to the instruction to show the
        * constant value */
       if (constant_reg < 0) {
-         printf("\t\t; ");
+         printf("\t; ");
          value_t constant = proto->constants[-constant_reg - 1];
          if (value_is_number(constant)) {
             printf("%f", constant.number);
