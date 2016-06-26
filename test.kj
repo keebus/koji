@@ -1,4 +1,4 @@
 var a = 0
-var b = a && a
-a && b
-a && b
+var b = a
+
+a = (a || !(a && b)) + 1

@@ -52,8 +52,8 @@ typedef enum {
 } op_format_t;
 
 static const op_format_t OP_FORMATS[] = {
-   0, /* OP_LOADNIL */
-   0, /* OP_LOADBOOL */
+   OP_FORMAT_A_BX, /* OP_LOADNIL */
+   OP_FORMAT_A_B_C, /* OP_LOADBOOL */
    OP_FORMAT_A_BX, /* OP_MOV */
    OP_FORMAT_A_BX, /* OP_NEG */
    OP_FORMAT_A_BX, /* OP_UNM */
@@ -69,7 +69,7 @@ static const op_format_t OP_FORMATS[] = {
    0, /* OP_NEWTABLE */
    0, /* OP_GET */
    0, /* OP_THIS */
-   0, /* OP_TEST */
+   OP_FORMAT_A_BX, /* OP_TEST */
    OP_FORMAT_BX_OFFSET, /* OP_JUMP */
    0, /* OP_LT */
    0, /* OP_SCALL */

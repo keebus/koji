@@ -170,9 +170,10 @@ static const opcode_t BINOP_TO_OPCODE[] = { 0, OP_MUL, OP_DIV, OP_MOD, OP_ADD, O
  * instructions in compiler state global true/false labels.
  */
 typedef struct {
-  uint       true_branches_begin;
-  uint       false_branches_begin;
-  bool       negated;
+  uint true_branches_begin;
+  uint false_branches_begin;
+  bool negated;
+  uint temporary;
 } expr_state_t;
 
 /*------------------------------------------------------------------------------------------------*/
@@ -269,6 +270,24 @@ static bool expr_to_bool(expr_t expr)
  * Returns whether an expression of specified @type is a comparison.
  */
 static bool expr_is_comparison(expr_type_t type) { return type >= EXPR_EQ; }
+
+/*
+ * Applies a (logical) negation to the expression. It returns the negated result.
+ */
+static expr_t expr_negate(expr_t e)
+{
+	switch (e.type) {
+		case EXPR_NIL:
+			return expr_boolean(true);
+
+		case EXPR_NUMBER:
+			return expr_boolean(!expr_to_bool(e));
+
+		default:
+			e.positive = !e.positive;
+			return e;
+	}
+}
 
 /*------------------------------------------------------------------------------------------------*/
 /* parsing helper functions                                                                       */
@@ -391,6 +410,16 @@ static binop_t token_to_binop(token_t tok) {
     case '>>': return BINOP_BIT_RSH;
     default:   return BINOP_INVALID;
   }
+}
+
+expr_state_t make_expr_state(compiler_t *c)
+{
+   return (expr_state_t) {
+      .true_branches_begin = c->label_true.num_instructions,
+      .false_branches_begin =  c->label_false.num_instructions,
+      .negated = false,
+      .temporary = c->temporary,
+   };
 }
 
 /*
@@ -590,7 +619,7 @@ static expr_t compile_expr_to_location(compiler_t *c, expr_t e, int target_hint)
  * between @lhs and @rhs. This function also checks whether the operation can be optimized to a
  * constant if possible before falling back to emitting the actual instructions.
  */
-static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
+static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
                                         source_location_t op_source_loc, binop_t op, expr_t lhs,
                                         expr_t rhs)
 {
@@ -666,7 +695,8 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
       case BINOP_LOGICAL_OR:
          return (expr_is_statically_bool_convertible(lhs.type) && expr_to_bool(lhs)) ? 
                  expr_boolean(true) : rhs;
-/*
+
+
       case BINOP_EQ:
       case BINOP_NEQ:
       {
@@ -674,22 +704,25 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
          if (lhs.type == EXPR_NIL || rhs.type == EXPR_NIL)
             return expr_boolean(((lhs.type == EXPR_NIL) == (rhs.type == EXPR_NIL)) ^ invert);
          else if (expr_is_constant(lhs.type) && expr_is_constant(rhs.type)) {
-            if ((lhs.type == EXPR_BOOL) != (rhs.type == EXPR_BOOL))
+            if ((lhs.type == EXPR_BOOL) != (rhs.type == EXPR_BOOL) ||
+                (lhs.type == EXPR_STRING) != (rhs.type == EXPR_STRING))
                goto error;
             else if (lhs.type == EXPR_BOOL)
-               lhs = expr_boolean(lhs.val.boolean == rhs.val.boolean) ^ invert);
-            else if (lhs.type == EXPR_NUMBER || rhs.type == EXPR_NUMBER)
-               lhs = expr_boolean((expr_to_real(lhs) == expr_to_real(rhs)) ^ invert);
-            lhs = expr_boolean((lhs.integer == rhs.integer) ^ invert);
-            return lhs;
+               return expr_boolean((lhs.val.boolean == rhs.val.boolean) ^ invert);
+            if ((lhs.type == EXPR_STRING) != (rhs.type == EXPR_STRING)) {
+               goto error;
+            }
+            if (lhs.type == EXPR_NUMBER || rhs.type == EXPR_NUMBER)
+               return expr_boolean((expr_to_real(lhs) == expr_to_real(rhs)) ^ invert);
+            assert(lhs.type)
          }
          break;
       }
 
-      case KC_BINOP_LT:
-      case KC_BINOP_GTE:
+      case BINOP_LT:
+      case BINOP_GTE:
       {
-         kj_bool invert = binop == KC_BINOP_GTE;
+         bool invert = (op == BINOP_GTE);
          if (lhs.type == EXPR_NIL) {
             lhs = expr_boolean((rhs.type == EXPR_NIL) == invert);
             return lhs;
@@ -704,11 +737,10 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
             if ((lhs.type == EXPR_BOOL) != (rhs.type == EXPR_BOOL))
                goto error;
             if (lhs.type == EXPR_BOOL)
-               lhs = expr_boolean((lhs.integer < rhs.integer) ^ invert);
-            if (lhs.type == EXPR_REAL || rhs.type == EXPR_REAL)
+               return expr_boolean((lhs.val.boolean < rhs.val.boolean) ^ invert);
+            if (lhs.type == EXPR_NUMBER || rhs.type == EXPR_NUMBER)
                lhs = expr_boolean((expr_to_real(lhs) < expr_to_real(rhs)) ^ invert);
-            lhs = expr_boolean((lhs.integer < rhs.integer) ^ invert);
-            return lhs;
+            return expr_boolean((expr_to_real(lhs) < expr_to_real(rhs)) ^ invert);;
          }
          break;
       }
@@ -738,7 +770,7 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t const *es,
             return lhs;
          }
          break;
-      }*/
+      }
 
       default: break;
    }
@@ -890,209 +922,15 @@ static void compile_logical_operation(compiler_t *c, const expr_state_t* es, bin
 	}
 }
 
-/*------------------------------------------------------------------------------------------------*/
-/* parsing functions                                                                              */
-/*------------------------------------------------------------------------------------------------*/
-static expr_t parse_subexpression(compiler_t *, expr_state_t const *);
-static void parse_expression(compiler_t *c, location_t target);
-
 /*
- * #todo
+ *
  */
-static expr_t parse_local_ref_or_function_call(compiler_t *c, expr_state_t *es)
+static void close_expression(compiler_t *c, expr_state_t *es, expr_t expr, location_t target)
 {
-   uint id_len = c->lexer.token_string_length;
-   
-   /* temporary remember the identifier as we need to carry on lexing to know whether it's a local
-    * variable reference or a function call */
-   char *id = alloca(id_len + 1);
-   memcpy(id, c->lexer.token_string, id_len + 1);
-   lex(c);
-
-   /* identifier refers to local variable? */
-   local_t *local = fetch_scope_local(c, id);
-   if (local) {
-      return expr_location(local->location);
-   }
-
-   assert(!"todo");
-   return expr_nil();
-}
-
-/*
- * Parses and returns a primary expression, i.e. constants, unary expressions, subexpressions,
- * function calls.
- */
-static expr_t parse_primary_expression(compiler_t *c, expr_state_t *es)
-{
-   source_location_t source_loc = c->lexer.source_location;
-   expr_t expr = expr_nil();
-   
-   switch (c->lexer.lookahead)
-   {
-      /* literals */
-      case kw_nil: lex(c); expr = expr_nil(); break;
-      case kw_true: lex(c); expr = expr_boolean(true); break;
-      case kw_false: lex(c); expr = expr_boolean(false); break;
-      case tok_number: lex(c); expr = expr_number(c->lexer.token_number); break;
-      case tok_string:
-         expr = expr_new_string(c, c->lexer.token_string_length);
-         memcpy(expr.val.string.chars, c->lexer.token_string, c->lexer.token_string_length);
-         lex(c);
-         break;
-
-      case '(': /* subexpression */
-         lex(c);
-         expr = parse_subexpression(c, es);
-         expect(c, ')');
-         break;
-
-      case tok_identifier:
-         expr = parse_local_ref_or_function_call(c, es);
-         break;
-
-      default: syntax_error_at(c, source_loc); return expr_nil();
-   }
-   
-   return expr;
-}
-
-/*
- * Parses and compiles the potential right hand side of a binary expression if binary operators
- * are found. Note that the right hand side of a binary expression may well be a chain of additional
- * binary expressions. This function parses the chain of binary expressions taking care of operator
- * precedence. While the precedence of the next binary operator is equal or less than the current
- * one the function keeps parsing the expression (primary) terms in a loop. As soon as a higher
- * precedence operator is found, the function recursively calls itself so that the next operator to
- * give priority to that operator.
- */
-static expr_t parse_binary_expression_rhs(compiler_t *c, expr_state_t const *es, expr_t lhs,
-                                          int precedence)
-{
-   for (;;) {
-      /* what's the lookahead operator? */
-      binop_t binop = token_to_binop(c->lexer.lookahead);
-
-      /* and what is it's precedence? */
-      int tok_precedence = BINOP_PRECEDENCES[binop];
-
-      /* if the next operator precedence is lower than expression precedence (or next token is not
-       * an operator) then we're done.
-       */
-      if (tok_precedence < precedence) return lhs;
-
-      /* remember operator source location as the expression location for error reporting */
-      source_location_t source_loc = c->lexer.source_location;
-
-      /* todo explain this */
-      compile_logical_operation(c, es, binop, lhs);
-
-      lex(c); /* eat the operator token */
-
-      /* if lhs uses the current free register, create a new state copy using the next register */
-      location_t old_temporary = use_temporary(c, &lhs);
-      expr_state_t es_rhs = *es;
-
-      /* compile the right-hand-side of the binary expression */
-      expr_t rhs = parse_primary_expression(c, &es_rhs);
-
-      /* look at the new operator precedence */
-      int next_binop_precedence = BINOP_PRECEDENCES[token_to_binop(c->lexer.lookahead)];
-
-      /* if next operator precedence is higher than current expression, then call recursively this
-       * function to give higher priority to the next binary operation (pass our rhs as their lhs)
-       */
-      if (next_binop_precedence > tok_precedence) {
-         /* the target and whether the expression is currently negated are the same for the rhs, but
-          * reset the jump instruction lists as rhs is a subexpression on its own */
-         es_rhs.negated = es->negated;
-         es_rhs.true_branches_begin = c->label_true.num_instructions;
-         es_rhs.false_branches_begin = c->label_false.num_instructions;
-
-         /* parse the expression rhs using higher precedence than operator precedence */
-         rhs = parse_binary_expression_rhs(c, &es_rhs, rhs, tok_precedence + 1);
-      }
-
-      /* sub-expr has been evaluated, restore the free register to the one before compiling rhs */
-      c->temporary = old_temporary;
-
-      /* compile the binary operation */
-      lhs = compile_binary_expression(c, es, source_loc, binop, lhs, rhs);
-   }
-}
-
-/*
- * Parses and returns a subexpression, a sequence of primary expressions separated by binary
- * operators. This function takes an explicit, existing expression state so that it can be called
- * to parse sub expressions of an existing expression.
- */
-static expr_t parse_subexpression(compiler_t *c, expr_state_t const *es)
-{
-   expr_state_t my_es = *es;
-
-   /* store the source location for error reporting */
-   source_location_t source_loc = c->lexer.source_location;
-   
-   /* parse expression lhs */
-   expr_t lhs = parse_primary_expression(c, &my_es);
-
-   /* if peek '=' parse the assignment `lhs = rhs` */
-   if (accept(c, '=')) {
-
-      if (!lhs.positive) goto error_lhs_not_assignable;
-      
-      switch (lhs.type) {
-         case EXPR_LOCATION:
-            /* check the location is a valid assignable, i.e. neither a constant nor a temporary */
-            if (location_is_constant(lhs.val.location) || location_is_temporary(c, lhs.val.location)) {
-               goto error_lhs_not_assignable;
-            }
-            parse_expression(c, lhs.val.location);
-            return lhs;
-
-         default:
-            break;
-      }
-   }
-   
-   return parse_binary_expression_rhs(c, &my_es, lhs, 0);
-   
-error_lhs_not_assignable:
-   error(c->lexer.issue_handler, source_loc, "lhs of assignment is not an assignable expression.");
-   return expr_nil();
-}
-
-/*
- * Parses and compiles a full expression. A full expression is a subexpression with a "cleared"
- * expression state (e.g. no existing branches, current temporary as target and positive flag set
- * to true). After the subexpression is compiled, it resolves any existing branch to true or false
- * by emitting the appropriate test/testset/loadbool/jump/etc instructions.
- * The expression returned by this function is guaranteed to lie in some location, whether a local
- * or a constant. After calling this function, you might want to move the result to a different
- * location by calling [emit_move()].
- */
-static void parse_expression(compiler_t *c, location_t target)
-{
-   /* cache some state in local variables for fast access */
    prototype_t *proto = c->proto;
-
-   /* save the current number of branching instructions so that we can the state as we found it
-    * upon return. Also backup the first free temporary to be restored before returning.
-    */
-   uint true_label_instr_count = c->label_true.num_instructions;
-   uint false_label_instr_count = c->label_false.num_instructions;
-   uint old_temporary = c->temporary;
-
-   /* prepare a blank expression state */
-   expr_state_t es = {
-      .true_branches_begin  = true_label_instr_count,
-      .false_branches_begin = false_label_instr_count,
-      .negated              = false
-   };
    
-   /* parse the subexpression with our blank state. The parsed expression might have generated some
-    * branching instructions to true/false. */
-   expr_t expr = parse_subexpression(c, &es);
+   uint true_label_instr_count = es->true_branches_begin;
+   uint false_label_instr_count = es->false_branches_begin;
 
    /* declare some bookeeping flags */
 	bool value_is_condition = expr_is_comparison(expr.type);
@@ -1124,7 +962,7 @@ static void parse_expression(compiler_t *c, location_t target)
    }
 
    if (c->label_true.num_instructions <= true_label_instr_count &&
-      c->label_false.num_instructions <= false_label_instr_count) {
+       c->label_false.num_instructions <= false_label_instr_count) {
 			goto done;
    }
 
@@ -1225,13 +1063,243 @@ static void parse_expression(compiler_t *c, location_t target)
 		}
    }
 
-done:
-   /* restore the number of branches to what we found at the beginning. */
-   c->label_true.num_instructions = true_label_instr_count;
-   c->label_false.num_instructions = false_label_instr_count;
+ done:
+   /* restore the compilation state */
+   c->label_true.num_instructions = es->true_branches_begin;
+   c->label_false.num_instructions = es->false_branches_begin;
+   c->temporary = es->temporary;
+}
 
-   /* restore temporaries */
-   c->temporary = old_temporary;
+/*------------------------------------------------------------------------------------------------*/
+/* parsing functions                                                                              */
+/*------------------------------------------------------------------------------------------------*/
+static expr_t parse_expression(compiler_t *, expr_state_t *);
+static void parse_expression_to(compiler_t *c, location_t target);
+
+/*
+ * #todo
+ */
+static expr_t parse_local_ref_or_function_call(compiler_t *c, expr_state_t *es)
+{
+   uint id_len = c->lexer.token_string_length;
+   
+   /* temporary remember the identifier as we need to carry on lexing to know whether it's a local
+    * variable reference or a function call */
+   char *id = alloca(id_len + 1);
+   memcpy(id, c->lexer.token_string, id_len + 1);
+   lex(c);
+
+   /* identifier refers to local variable? */
+   local_t *local = fetch_scope_local(c, id);
+   if (local) {
+      return expr_location(local->location);
+   }
+
+   assert(!"todo");
+   return expr_nil();
+}
+
+/*
+ * Parses and returns a subexpression as in "(a + 2)".
+ */
+static expr_t parse_subexpression(compiler_t *c, expr_state_t *es)
+{
+   lex(c); /* eat the '(' */
+
+   /* prepare a sub expression state identical to the incoming state but with updated
+      * number of temporaries */
+   expr_state_t sub_es = *es;
+   sub_es.temporary = c->temporary;
+   expr_t expr = parse_expression(c, es);
+
+   expect(c, ')');
+
+   /* if what follows the subexpression is anything but a logical operator (and/or) then it
+      * the expression must be closed */
+   switch (c->lexer.lookahead) {
+      case '+': case '-': case '*': case '/': case '(': case '&': case '|': case '[': 
+      close_expression(c, &sub_es, expr, sub_es.temporary);
+      expr = expr_location(sub_es.temporary);
+   }
+
+   return expr;
+}
+
+/*
+ * Parses and returns a primary expression, i.e. constants, unary expressions, subexpressions,
+ * function calls.
+ */
+static expr_t parse_primary_expression(compiler_t *c, expr_state_t *es)
+{
+   source_location_t source_loc = c->lexer.source_location;
+   expr_t expr = expr_nil();
+   
+   switch (c->lexer.lookahead) {
+      /* literals */
+      case kw_nil: lex(c); expr = expr_nil(); break;
+      case kw_true: lex(c); expr = expr_boolean(true); break;
+      case kw_false: lex(c); expr = expr_boolean(false); break;
+      case tok_number: lex(c); expr = expr_number(c->lexer.token_number); break;
+      case tok_string:
+         expr = expr_new_string(c, c->lexer.token_string_length);
+         memcpy(expr.val.string.chars, c->lexer.token_string, c->lexer.token_string_length);
+         lex(c);
+         break;
+
+      case '(': /* subexpression */
+         expr = parse_subexpression(c, es);
+         break;
+
+      case '!': /* negation */
+         lex(c);
+			es->negated = !es->negated;
+			expr = expr_negate(parse_primary_expression(c, es));
+         es->negated = !es->negated;
+			break;
+
+      case tok_identifier:
+         expr = parse_local_ref_or_function_call(c, es);
+         break;
+
+      default: syntax_error_at(c, source_loc); return expr_nil();
+   }
+   
+   return expr;
+}
+
+/*
+ * Parses and compiles the potential right hand side of a binary expression if binary operators
+ * are found. Note that the right hand side of a binary expression may well be a chain of additional
+ * binary expressions. This function parses the chain of binary expressions taking care of operator
+ * precedence. While the precedence of the next binary operator is equal or less than the current
+ * one the function keeps parsing the expression (primary) terms in a loop. As soon as a higher
+ * precedence operator is found, the function recursively calls itself so that the next operator to
+ * give priority to that operator.
+ */
+static expr_t parse_binary_expression_rhs(compiler_t *c, expr_state_t *es, expr_t lhs,
+                                          int precedence)
+{
+   for (;;) {
+      /* what's the lookahead operator? */
+      binop_t binop = token_to_binop(c->lexer.lookahead);
+
+      /* and what is it's precedence? */
+      int tok_precedence = BINOP_PRECEDENCES[binop];
+
+      /* if the next operator precedence is lower than expression precedence (or next token is not
+       * an operator) then we're done.
+       */
+      if (tok_precedence < precedence) return lhs;
+
+      /* remember operator source location as the expression location for error reporting */
+      source_location_t source_loc = c->lexer.source_location;
+
+      /* todo explain this */
+      compile_logical_operation(c, es, binop, lhs);
+
+      lex(c); /* eat the operator token */
+
+      /* if lhs uses the current free register, create a new state copy using the next register */
+      location_t old_temporary = use_temporary(c, &lhs);
+      expr_state_t es_rhs = *es;
+
+      /* compile the right-hand-side of the binary expression */
+      expr_t rhs = parse_primary_expression(c, &es_rhs);
+
+      /* look at the new operator precedence */
+      int next_binop_precedence = BINOP_PRECEDENCES[token_to_binop(c->lexer.lookahead)];
+
+      /* if next operator precedence is higher than current expression, then call recursively this
+       * function to give higher priority to the next binary operation (pass our rhs as their lhs)
+       */
+      if (next_binop_precedence > tok_precedence) {
+         /* the target and whether the expression is currently negated are the same for the rhs, but
+          * reset the jump instruction lists as rhs is a subexpression on its own */
+         es_rhs.negated = es->negated;
+         es_rhs.true_branches_begin = c->label_true.num_instructions;
+         es_rhs.false_branches_begin = c->label_false.num_instructions;
+
+         /* parse the expression rhs using higher precedence than operator precedence */
+         rhs = parse_binary_expression_rhs(c, &es_rhs, rhs, tok_precedence + 1);
+      }
+
+      /* sub-expr has been evaluated, restore the free register to the one before compiling rhs */
+      c->temporary = old_temporary;
+
+      /* compile the binary operation */
+      lhs = compile_binary_expression(c, es, source_loc, binop, lhs, rhs);
+   }
+}
+
+/*
+ * Parses and returns a subexpression, a sequence of primary expressions separated by binary
+ * operators. This function takes an explicit, existing expression state so that it can be called
+ * to parse sub expressions of an existing expression.
+ */
+static expr_t parse_expression(compiler_t *c, expr_state_t *es)
+{
+   expr_state_t my_es = *es;
+
+   /* store the source location for error reporting */
+   source_location_t source_loc = c->lexer.source_location;
+   
+   /* parse expression lhs */
+   expr_t lhs = parse_primary_expression(c, &my_es);
+
+   /* if peek '=' parse the assignment `lhs = rhs` */
+   if (accept(c, '=')) {
+
+      if (!lhs.positive) goto error_lhs_not_assignable;
+      
+      switch (lhs.type) {
+         case EXPR_LOCATION:
+            /* check the location is a valid assignable, i.e. neither a constant nor a temporary */
+            if (location_is_constant(lhs.val.location) || location_is_temporary(c, lhs.val.location)) {
+               goto error_lhs_not_assignable;
+            }
+            parse_expression_to(c, lhs.val.location);
+            return lhs;
+
+         default:
+            break;
+      }
+   }
+   
+   return parse_binary_expression_rhs(c, &my_es, lhs, 0);
+   
+error_lhs_not_assignable:
+   error(c->lexer.issue_handler, source_loc, "lhs of assignment is not an assignable expression.");
+   return expr_nil();
+}
+
+/*
+ * Parses and compiles a full expression. A full expression is a subexpression with a "cleared"
+ * expression state (e.g. no existing branches, current temporary as target and positive flag set
+ * to true). After the subexpression is compiled, it resolves any existing branch to true or false
+ * by emitting the appropriate test/testset/loadbool/jump/etc instructions.
+ * The expression returned by this function is guaranteed to lie in some location, whether a local
+ * or a constant. After calling this function, you might want to move the result to a different
+ * location by calling [emit_move()].
+ */
+static void parse_expression_to(compiler_t *c, location_t target)
+{
+   /* save the current number of branching instructions so that we can the state as we found it
+    * upon return. Also backup the first free temporary to be restored before returning.
+    */
+   expr_state_t es = {
+      .true_branches_begin  = c->label_true.num_instructions,
+      .false_branches_begin = c->label_false.num_instructions,
+      .negated              = false,
+      .temporary            = c->temporary,
+   };
+
+   /* parse the subexpression with our blank state. The parsed expression might have generated some
+    * branching instructions to true/false. */
+   expr_t expr = parse_expression(c, &es);
+
+   /* immediately close the expression, i.e. make sure it is compiled to the 'target' location and
+    * all open branches are closed */
+   close_expression(c, &es, expr, target);
 }
 
 /*
@@ -1252,7 +1320,7 @@ static void parse_variable_decl(compiler_t *c)
       /* optionally, parse the initialization expression */
       if (accept(c, '=')) {
          /* parse the expression and make sure it lies in the current temporary */
-         parse_expression(c, c->temporary);
+         parse_expression_to(c, c->temporary);
       }
       else {
          /* no initialization expression provided for this variable, initialize it to nil */
@@ -1278,9 +1346,12 @@ static void parse_statement(compiler_t *c)
          break;
 
       default: /* expression */
-         parse_expression(c, c->temporary);
+      {
+         expr_state_t es = make_expr_state(c);
+         parse_expression(c, &es);
          expect_end_of_stmt(c);
          break;
+      }
    }
 }
 
