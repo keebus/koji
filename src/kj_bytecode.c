@@ -11,39 +11,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#if 0
- /* operations that write into R(A) */
-  OP_LOADNIL,  /* loadnil A, Bx;    ; R(A), ..., R(Bx) = nil */
-  OP_LOADBOOL, /* loadbool A, B, C  ; R(A) = bool(B) then jump by C */
-  OP_MOV,      /* mov A, Bx         ; R(A) = R(Bx) */
-  OP_NEG,      /* neg A, Bx         ; R(A) = not R(Bx) */
-  OP_UNM,      /* unm A, Bx         ; R(A) = -R(Bx) */
-  OP_ADD,      /* add A, B, C       ; R(A) = R(B) + R(C) */
-  OP_SUB,      /* sub A, B, C       ; R(A) = R(B) - R(C) */
-  OP_MUL,      /* mul A, B, C       ; R(A) = R(B) * R(C) */
-  OP_DIV,      /* div A, B, C       ; R(A) = R(B) / R(C) */
-  OP_MOD,      /* mod A, B, C       ; R(A) = R(B) % R(C) */
-  OP_POW,      /* pow A, B, C       ; R(A) = pow(R(B), R(C)) */
-  OP_TESTSET,  /* testset A, B, C   ; if R(B) == (bool)C then R(A) = R(B) else jump 1 */
-  OP_CLOSURE,  /* closure A, Bx     ; R(A) = closure for prototype Bx */
-  OP_GLOBALS,  /* globals A         ; get the global table into register A */
-  OP_NEWTABLE, /* newtable A        ; creates a new table in R(A) */
-  OP_GET,      /* get A, B, C       ; R(A) = R(B)[R(C)] */
-  OP_THIS,     /* this A            ; R(A) = this */
-
-  /* operations that do not write into R(A) */
-  OP_TEST,     /* test A, Bx      ; if (bool)R(A) != (bool)B then jump 1 */
-  OP_JUMP,     /* jump Bx         ; jump by Bx instructions */
-  OP_EQ,       /* eq A, B, C      ; if (R(A) == R(B)) == (bool)C then nothing else jump 1 */
-  OP_LT,       /* lt A, B, C      ; if (R(A) < R(B)) == (bool)C then nothing else jump 1 */
-  OP_LTE,      /* lte A, B, C     ; if (R(A) <= R(B)) == (bool)C then nothing else jump 1 */
-  OP_SCALL,    /* scall A, B, C   ; call static function at K[B] with C arguments starting from R(A) */
-  OP_CALL,     /* call A, B, C    ; call closure R(B) with C arguments starting at R(A) */
-  OP_MCALL,    /* mcall A, B, C   ; call object R(A - 1) method with name R(B) with C arguments from R(A) on */
-  OP_SET,      /* set A, B, C     ; R(A)[R(B)] = R(C) */
-  OP_RET,      /* ret A, B        ; return values R(A), ..., R(B)*/
-#endif
-
 typedef enum {
    OP_FORMAT_UNKNOWN,
    OP_FORMAT_BX_OFFSET,
@@ -71,7 +38,9 @@ static const op_format_t OP_FORMATS[] = {
    0, /* OP_THIS */
    OP_FORMAT_A_BX, /* OP_TEST */
    OP_FORMAT_BX_OFFSET, /* OP_JUMP */
-   0, /* OP_LT */
+   OP_FORMAT_A_B_C, /* OP_EQ */
+   OP_FORMAT_A_B_C, /* OP_LT */
+   OP_FORMAT_A_B_C, /* OP_LTE */
    0, /* OP_SCALL */
    0, /* OP_CALL */
    0, /* OP_MCALL */
@@ -106,10 +75,12 @@ void prototype_dump(prototype_t const* proto, int level, class_t const *string_c
       for (uint j = 0, n = 10 - strlen(OP_STRINGS[op]); j < n; ++j) printf(" ");
 
       int constant_reg = 0;
-      
+      int offset = 0xffffffff;
+
       switch (OP_FORMATS[op]) {
          case OP_FORMAT_BX_OFFSET:
-            printf("%d\t\t; to %d", regBx, regBx + i + 2);
+            printf("%d\t", regBx);
+            offset = regBx;
             break;
 
          case OP_FORMAT_A_BX:
@@ -120,6 +91,7 @@ void prototype_dump(prototype_t const* proto, int level, class_t const *string_c
          case OP_FORMAT_A_B_C:
             printf("%d, %d, %d", regA, regB, regC);
             constant_reg = (regB < 0) ? regB : (regC < 0) ? regC : 0;
+            break;
 
          default:
             break;
@@ -138,6 +110,10 @@ void prototype_dump(prototype_t const* proto, int level, class_t const *string_c
             assert(string->object.class == string_class); (void)string_class;
             printf("\"%s\"", string->chars);
          }
+      }
+
+      if (offset != 0xffffffff) {
+         printf("\t; to %d", offset + i + 2);
       }
 
       printf("\n");

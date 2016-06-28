@@ -116,15 +116,6 @@ typedef struct {
 /*
  * #todo
  */
-typedef struct {
-   location_t  location;
-   uint        num_true_branches;
-   uint        num_false_branches;
-} expr_result_t;
-
-/*
- * #todo
- */
 typedef enum {
    BINOP_INVALID,
    BINOP_MUL,
@@ -241,14 +232,15 @@ static expr_t expr_comparison(expr_type_t type, bool test_value, int lhs_locatio
 }
 
 /*
- * Returns whether an expression of specified [expr] can be *statically* converted to a bool.
+ * Returns whether expression is a constant (i.e. nil, boolean, number or string).
  */
-static bool expr_is_statically_bool_convertible(expr_type_t type) {
-  return type <= EXPR_STRING;
+static bool expr_is_constant(expr_type_t type)
+{
+   return type <= EXPR_STRING;
 }
 
 /*
- * Converts [expr] to a boolean. 'expr_is_statically_bool_convertible(expr)' must return true.
+ * Converts [expr] to a boolean. 'expr_is_constant(expr)' must return true.
  */
 static bool expr_to_bool(expr_t expr)
 {
@@ -279,6 +271,12 @@ static expr_t expr_negate(expr_t e)
 	switch (e.type) {
 		case EXPR_NIL:
 			return expr_boolean(true);
+
+      case EXPR_BOOL:
+         return expr_boolean(!e.val.boolean);
+
+      case EXPR_STRING:
+         return expr_boolean(false);
 
 		case EXPR_NUMBER:
 			return expr_boolean(!expr_to_bool(e));
@@ -619,9 +617,8 @@ static expr_t compile_expr_to_location(compiler_t *c, expr_t e, int target_hint)
  * between @lhs and @rhs. This function also checks whether the operation can be optimized to a
  * constant if possible before falling back to emitting the actual instructions.
  */
-static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
-                                        source_location_t op_source_loc, binop_t op, expr_t lhs,
-                                        expr_t rhs)
+static expr_t compile_binary_expression(compiler_t *c, source_location_t op_source_loc, binop_t op,
+                                        expr_t lhs, expr_t rhs)
 {
    #define DEFAULT_ARITH_INVALID_OPS_CHECKS()\
          if (lhs.type <= EXPR_BOOL   || rhs.type <= EXPR_BOOL) goto error;                         \
@@ -689,11 +686,11 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
        * before calling this hence the TESTSET instruction has already been emitted.
        */
       case BINOP_LOGICAL_AND:
-         return (expr_is_statically_bool_convertible(lhs.type) && !expr_to_bool(lhs)) ?
+         return (expr_is_constant(lhs.type) && !expr_to_bool(lhs)) ?
                  expr_boolean(false) : rhs;
 
       case BINOP_LOGICAL_OR:
-         return (expr_is_statically_bool_convertible(lhs.type) && expr_to_bool(lhs)) ? 
+         return (expr_is_constant(lhs.type) && expr_to_bool(lhs)) ? 
                  expr_boolean(true) : rhs;
 
 
@@ -703,71 +700,64 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
          const bool invert = (op == BINOP_NEQ);
          if (lhs.type == EXPR_NIL || rhs.type == EXPR_NIL)
             return expr_boolean(((lhs.type == EXPR_NIL) == (rhs.type == EXPR_NIL)) ^ invert);
-         else if (expr_is_constant(lhs.type) && expr_is_constant(rhs.type)) {
-            if ((lhs.type == EXPR_BOOL) != (rhs.type == EXPR_BOOL) ||
-                (lhs.type == EXPR_STRING) != (rhs.type == EXPR_STRING))
-               goto error;
-            else if (lhs.type == EXPR_BOOL)
+         if (expr_is_constant(lhs.type) && expr_is_constant(rhs.type)) {
+            if (lhs.type == EXPR_BOOL && rhs.type == EXPR_BOOL)
                return expr_boolean((lhs.val.boolean == rhs.val.boolean) ^ invert);
-            if ((lhs.type == EXPR_STRING) != (rhs.type == EXPR_STRING)) {
-               goto error;
-            }
-            if (lhs.type == EXPR_NUMBER || rhs.type == EXPR_NUMBER)
-               return expr_boolean((expr_to_real(lhs) == expr_to_real(rhs)) ^ invert);
-            assert(lhs.type)
+            if (lhs.type == EXPR_STRING && rhs.type == EXPR_STRING)
+               return expr_boolean(
+                  (lhs.val.string.length == rhs.val.string.length &&
+                  memcmp(lhs.val.string.chars, rhs.val.string.chars, lhs.val.string.length) == 0)
+                     ^ invert);
+            if (lhs.type == EXPR_NUMBER && rhs.type == EXPR_NUMBER)
+               return expr_boolean((lhs.val.number == rhs.val.number) ^ invert);
+            goto error;
          }
-         break;
       }
 
       case BINOP_LT:
       case BINOP_GTE:
       {
          bool invert = (op == BINOP_GTE);
-         if (lhs.type == EXPR_NIL) {
-            lhs = expr_boolean((rhs.type == EXPR_NIL) == invert);
-            return lhs;
-         }
-
-         if (rhs.type == EXPR_NIL) {
-            lhs = expr_boolean((lhs.type == EXPR_NIL) != invert);
-            return lhs;
-         }
-
+         if (lhs.type == EXPR_NIL)
+            return expr_boolean((rhs.type == EXPR_NIL) == invert);
+         if (rhs.type == EXPR_NIL)
+            return expr_boolean((lhs.type == EXPR_NIL) != invert);
          if (expr_is_constant(lhs.type) && expr_is_constant(rhs.type)) {
-            if ((lhs.type == EXPR_BOOL) != (rhs.type == EXPR_BOOL))
-               goto error;
-            if (lhs.type == EXPR_BOOL)
+            if (lhs.type == EXPR_BOOL && rhs.type == EXPR_BOOL)
                return expr_boolean((lhs.val.boolean < rhs.val.boolean) ^ invert);
-            if (lhs.type == EXPR_NUMBER || rhs.type == EXPR_NUMBER)
-               lhs = expr_boolean((expr_to_real(lhs) < expr_to_real(rhs)) ^ invert);
-            return expr_boolean((expr_to_real(lhs) < expr_to_real(rhs)) ^ invert);;
+            if (lhs.type == EXPR_STRING && rhs.type == EXPR_STRING) {
+               bool lt = lhs.val.string.length < rhs.val.string.length ||
+                  (lhs.val.string.length == rhs.val.string.length &&
+                  memcmp(lhs.val.string.chars, rhs.val.string.chars, lhs.val.string.length) < 0);
+               return expr_boolean(lt ^ invert);
+            }
+            if (lhs.type == EXPR_NUMBER && rhs.type == EXPR_NUMBER)
+               return expr_boolean((lhs.val.number < rhs.val.number) ^ invert);
+            goto error;
          }
          break;
       }
 
-      case KC_BINOP_LTE:
-      case KC_BINOP_GT:
+      case BINOP_LTE:
+      case BINOP_GT:
       {
-         kj_bool invert = binop == KC_BINOP_GT;
-         if (lhs.type == EXPR_NIL) {
-            lhs = expr_boolean((rhs.type == EXPR_NIL) == invert);
-            return lhs;
-         }
-
-         if (rhs.type == EXPR_NIL) {
-            lhs = expr_boolean((lhs.type == EXPR_NIL) != invert);
-            return lhs;
-         }
-
+         bool invert = (op == BINOP_GT);
+         if (lhs.type == EXPR_NIL)
+            return expr_boolean((rhs.type == EXPR_NIL) == invert);
+         if (rhs.type == EXPR_NIL)
+            return expr_boolean((lhs.type == EXPR_NIL) != invert);
          if (expr_is_constant(lhs.type) && expr_is_constant(rhs.type)) {
-            if ((lhs.type == EXPR_BOOL) != (rhs.type == EXPR_BOOL))
-               goto error;
-            if (lhs.type == EXPR_BOOL)
-               lhs = expr_boolean((lhs.integer <= rhs.integer) ^ invert);
-            if (lhs.type == EXPR_REAL || rhs.type == EXPR_REAL)
-               lhs = expr_boolean((expr_to_real(lhs) <= expr_to_real(rhs)) ^ invert);
-            lhs = expr_boolean((lhs.integer <= rhs.integer) ^ invert);
-            return lhs;
+            if (lhs.type == EXPR_BOOL && rhs.type == EXPR_BOOL)
+               return expr_boolean((lhs.val.boolean <= rhs.val.boolean) ^ invert);
+            if (lhs.type == EXPR_STRING && rhs.type == EXPR_STRING) {
+               bool lt = lhs.val.string.length <= rhs.val.string.length ||
+                  (lhs.val.string.length == rhs.val.string.length &&
+                  memcmp(lhs.val.string.chars, rhs.val.string.chars, lhs.val.string.length) <= 0);
+               return expr_boolean(lt ^ invert);
+            }
+            if (lhs.type == EXPR_NUMBER && rhs.type == EXPR_NUMBER)
+               return expr_boolean((lhs.val.number <= rhs.val.number) ^ invert);
+            goto error;
          }
          break;
       }
@@ -790,7 +780,7 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
    c->temporary = old_temporary;
 
    /* if the binary operation is a comparison generate and return a comparison expression */
-   if (op >= BINOP_EQ && op <= BINOP_GTE) {
+   if (op >= BINOP_LT && op <= BINOP_NEQ) {
       /* maps binary operators to comparison expression types */
       static const expr_type_t COMPARISON_BINOP_TO_EXPR_TYPE[] = {
          /* lt       lte       gt        gte      eq        neq */
@@ -803,8 +793,8 @@ static expr_t compile_binary_expression(compiler_t *c, expr_state_t *es,
             true, true, false, false, true, false
       };
 
-      expr_type_t expr_type = COMPARISON_BINOP_TO_EXPR_TYPE[op - BINOP_EQ];
-      bool        positive  = COMPARISON_BINOP_TO_TEST_VALUE[op - BINOP_EQ];
+      expr_type_t expr_type = COMPARISON_BINOP_TO_EXPR_TYPE[op - BINOP_LT];
+      bool        positive  = COMPARISON_BINOP_TO_TEST_VALUE[op - BINOP_LT];
 
       lhs = expr_comparison(expr_type, positive, lhs.val.location, rhs.val.location);
    }
@@ -869,10 +859,10 @@ static void compile_logical_operation(compiler_t *c, const expr_state_t* es, bin
 			}
 			break;
 
-		/*case EXPR_EQ: case EXPR_LT: case EXPR_LTE:
-			emit(c, encode_ABC(OP_EQ + lhs.type - KC_EXPR_TYPE_EQ, lhs.lhs, lhs.rhs,
-            (lhs.positive ^ es->negated) ^ !test_value));
-			break;*/
+		case EXPR_EQ: case EXPR_LT: case EXPR_LTE:
+			emit(c, encode_ABC(OP_EQ + lhs.type - EXPR_EQ, lhs.val.comparison.lhs,
+              lhs.val.comparison.rhs, (lhs.positive ^ es->negated) ^ !test_value));
+			break;
 
 		default: assert(false);
 	}
@@ -933,48 +923,57 @@ static void close_expression(compiler_t *c, expr_state_t *es, expr_t expr, locat
    uint false_label_instr_count = es->false_branches_begin;
 
    /* declare some bookeeping flags */
-	bool value_is_condition = expr_is_comparison(expr.type);
+	bool value_is_comparison = expr_is_comparison(expr.type);
    uint rhs_move_jump_index = 0;
+   bool set_value_to_false = false;
 
-   /* compiled expression instance that will hold final instruction location and the instructions
-    * that ultimately write to that location
-    */
-   location_t location = compile_expr_to_location(c, expr, target).val.location;
-   
-   if (location != target) {
-      /* if from location is a temporary location (i.e. not a local variable) and we know from [from]
-       * that one or more instructions are setting to this location, we can simply replace the A
-       * operand of all those instructions to [to] and optimize out the 'move' instruction.
+   if (value_is_comparison) {
+      emit(c, encode_ABC(OP_EQ + expr.type - EXPR_EQ, expr.val.comparison.lhs,
+         expr.val.comparison.rhs, expr.positive));
+		*array_push(&c->label_true, c->allocator, uint) = proto->num_instructions;
+		emit(c, encode_ABx(OP_JUMP, 0, 0));
+		set_value_to_false = true;
+   }
+   else {
+      /* compiled expression instance that will hold final instruction location and the instructions
+       * that ultimately write to that location
        */
-      if (location >= c->temporary) {
-         /* first check whether last instruction targets old location, if so update it with the new
-          * desired location */
-         instruction_t *instr = &c->proto->instructions[c->proto->num_instructions - 1];
-         if (opcode_has_target(decode_op(*instr)) && decode_A(*instr) == location) {
-            /* target matches result expression target register? if so, replace it with [to] */
-            replace_A(instr, target);
+      location_t location = compile_expr_to_location(c, expr, target).val.location;
+   
+      if (location != target) {
+         /* if from location is a temporary location (i.e. not a local variable) and we know from [from]
+          * that one or more instructions are setting to this location, we can simply replace the A
+          * operand of all those instructions to [to] and optimize out the 'move' instruction.
+          */
+         if (location >= c->temporary) {
+            /* first check whether last instruction targets old location, if so update it with the new
+             * desired location */
+            instruction_t *instr = &c->proto->instructions[c->proto->num_instructions - 1];
+            if (opcode_has_target(decode_op(*instr)) && decode_A(*instr) == location) {
+               /* target matches result expression target register? if so, replace it with [to] */
+               replace_A(instr, target);
+            }
+         }
+         else {
+            /* we could not optimize out the move instruction, emit it. */
+            emit(c, encode_ABx(OP_MOV, target, location));
          }
       }
-      else {
-         /* we could not optimize out the move instruction, emit it. */
-         emit(c, encode_ABx(OP_MOV, target, location));
+
+      if (c->label_true.num_instructions <= true_label_instr_count &&
+          c->label_false.num_instructions <= false_label_instr_count) {
+			   goto done;
       }
-   }
 
-   if (c->label_true.num_instructions <= true_label_instr_count &&
-       c->label_false.num_instructions <= false_label_instr_count) {
-			goto done;
+      rhs_move_jump_index = proto->num_instructions;
+      emit(c, encode_ABx(OP_JUMP, 0, 0));
    }
-
-   rhs_move_jump_index = proto->num_instructions;
-   emit(c, encode_ABx(OP_JUMP, 0, 0));
 
    /* iterate over instructions that branch to false and if any is not a testset instruction, it
     * means that we need to emit a loadbool instruction to set the result to false, so for now just
     * remember this by flagging set_value_to_false to true.
     * Also update the target register of the TESTSET instruction to the actual target register.
     */
-	bool set_value_to_false = false;
    for (uint i = false_label_instr_count; i < c->label_false.num_instructions; ++i) {
       uint index = c->label_false.instructions[i];
       if (index > 0) {
@@ -1035,7 +1034,7 @@ static void close_expression(compiler_t *c, expr_state_t *es, expr_t expr, locat
     * If so, set the right jump offset to this location, otherwise pop the last instruction which is
     * the "jump" after the "mov" or "neg" to skip the loadbool instructions.
     */
-	if (!value_is_condition) {
+	if (!value_is_comparison) {
 		if (!set_value_to_true && !set_value_to_false) {
 			--proto->num_instructions;
 		}
@@ -1106,12 +1105,14 @@ static expr_t parse_subexpression(compiler_t *c, expr_state_t *es)
 {
    lex(c); /* eat the '(' */
 
-   /* prepare a sub expression state identical to the incoming state but with updated
-      * number of temporaries */
+   /* prepare a sub expression state identical to the incoming state but with updated number of
+    * temporaries */
    expr_state_t sub_es = *es;
    sub_es.temporary = c->temporary;
-   expr_t expr = parse_expression(c, es);
 
+   /* parse the subexpression with local expression state */
+   expr_t expr = parse_expression(c, &sub_es);
+   
    expect(c, ')');
 
    /* if what follows the subexpression is anything but a logical operator (and/or) then it
@@ -1227,7 +1228,7 @@ static expr_t parse_binary_expression_rhs(compiler_t *c, expr_state_t *es, expr_
       c->temporary = old_temporary;
 
       /* compile the binary operation */
-      lhs = compile_binary_expression(c, es, source_loc, binop, lhs, rhs);
+      lhs = compile_binary_expression(c, source_loc, binop, lhs, rhs);
    }
 }
 
