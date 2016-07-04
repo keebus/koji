@@ -48,7 +48,39 @@ static const op_format_t OP_FORMATS[] = {
    0, /* OP_RET */
 };
 
-void prototype_dump(prototype_t const* proto, int level, class_t const *string_class)
+
+/*
+ * (internal) Destroys prototype @p resources and frees its memory.
+ */
+static void prototype_delete(prototype_t *p, allocator_t *allocator)
+{
+	assert(p->references == 0);
+	kj_free(p->instructions, allocator);
+
+	/* delete all child prototypes that reach reference to zero */
+	for (uint i = 0; i < p->num_prototypes; ++i) {
+		prototype_release(p->prototypes[i], allocator);
+	}
+	kj_free(p->prototypes, allocator);
+
+	/* destroy constant values */
+	for (uint i = 0; i < p->num_constants; ++i) {
+		value_destroy(p->constants + i, allocator);
+	}
+	kj_free(p->constants, allocator);
+
+	kj_free(p, allocator);
+}
+
+kj_intern void prototype_release(prototype_t *proto, allocator_t *allocator)
+{
+   if (--proto->references == 0)
+   {
+      prototype_delete(proto, allocator);
+   }
+}
+
+kj_intern void prototype_dump(prototype_t const* proto, int level, class_t const *string_class)
 {
    /* build a spacing string */
    uint margin_length = level * 3;
@@ -106,7 +138,7 @@ void prototype_dump(prototype_t const* proto, int level, class_t const *string_c
             printf("%f", constant.number);
          }
          else if (value_is_object(constant)) {
-            string_t *string = value_get_object(constant);
+            string_t *string = (string_t*)value_get_object(constant);
             assert(string->object.class == string_class); (void)string_class;
             printf("\"%s\"", string->chars);
          }

@@ -23,11 +23,15 @@ int main(int argc, char **argv)
    (void)argv;
    
    koji_state_t *koji = koji_open(NULL, NULL, NULL, NULL);
-   koji_load_file(koji, "../test.kj");
-   koji_close(koji);
+   if (koji_load_file(koji, "../test.kj") == KOJI_ERROR)
+   {
+      printf("Could not copmlie script.\n");
+      return -1;
+   }
 
-   //test_values();
-   //test_string();
+   koji_resume(koji);
+
+   koji_close(koji);
 }
 
 void test_values(void)
@@ -66,7 +70,7 @@ void test_values(void)
    assert(!value_is_boolean(value));
    assert(!value_is_number(value));
    assert(value_is_object(value));
-   assert(value_get_object(value) == &arg);
+   assert(value_get_object(value) == (void*)&arg);
 
    value = value_boolean(true);
    assert(!value_is_nil(value));
@@ -86,7 +90,7 @@ void test_values(void)
 void test_string(void)
 {
    allocator_t alloc = { NULL, default_malloc, default_realloc, default_free, };
-   value_t value = value_new_string(&alloc, 20, NULL );
+   value_t value = value_new_string(&alloc, NULL, 20);
 
    value_destroy(&value, &alloc);
 }

@@ -134,7 +134,12 @@ KOJI_API koji_result_t koji_load_file(koji_state_t *state, const char *filename)
  * Destroys an existing koji state, releasing all held references to values used by it and the
  * acquired memory and resources.
  */
-KOJI_API void koji_close(koji_state_t *);
+KOJI_API void koji_close(koji_state_t *state);
+
+/*
+ * #todo
+ */
+KOJI_API koji_result_t koji_resume(koji_state_t *state);
 
 #ifdef __cplusplus
 } /* extern C */

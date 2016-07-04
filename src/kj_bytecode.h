@@ -120,6 +120,7 @@ static inline void replace_C(instruction_t *i, int C)
 }
 
 typedef struct prototype {
+   uint            references;
    const char     *name;
    uint            temporaries;
    uint            num_locals;
@@ -128,10 +129,17 @@ typedef struct prototype {
    uint            num_instructions;
    union value    *constants;
    uint            num_constants;
+   struct prototype **prototypes;
+   uint            num_prototypes;
 } prototype_t;
+
+/*
+ * #doctodo
+ */
+kj_intern void prototype_release(prototype_t *proto, allocator_t *allocator);
 
 /*
  * Dumps the compiled prototype bytecode to stdout for debugging showing the bytecode disassembly,
  * constants for [proto] as well inner prototypes.
  */
-void prototype_dump(prototype_t const* proto, int level, struct class const *string_class);
+kj_intern void prototype_dump(prototype_t const* proto, int level, struct class const *string_class);

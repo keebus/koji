@@ -11,13 +11,13 @@
 #include "kj_io.h"
 #include "kj_support.h"
 #include "kj_value.h"
+#include "kj_vm.h"
 
 #include <stdio.h>
 #include <string.h>
 
 struct koji_state {
-   allocator_t    allocator;
-   class_t        class_string;
+   vm_t vm;
 };
 
 /*
@@ -59,42 +59,38 @@ KOJI_API koji_state_t * koji_open(koji_malloc_fn_t malloc_fn, koji_realloc_fn_t 
    };
 
    koji_state_t *state = kj_alloc(koji_state_t, 1, &allocator);
-   state->allocator = allocator;
+   
+   /* initialize the Virtual Machine within the state */
+   vm_init(&state->vm, allocator);
 
    return state;
-}
-
-KOJI_API void koji_close(koji_state_t *state)
-{
-   kj_free(state, &state->allocator);
 }
 
 KOJI_API koji_result_t koji_load(koji_state_t *state, const char *source_name,
                                  koji_stream_read_t stream_read_fn, void *stream_read_data)
 {
-  prototype_t *main_proto = compile(&(compile_info_t) {
-      .allocator = &state->allocator,
+  prototype_t *proto = compile(&(compile_info_t) {
+      .allocator = &state->vm.allocator,
       .source_name = source_name,
       .stream_fn = stream_read_fn,
       .stream_data = stream_read_data,
       .issue_reporter_fn = load_issue_reporter_fn,
       .issue_reporter_data = &(load_issue_handler_data_t) { .state = state },
-      .class_string = &state->class_string,
+      .class_string = &state->vm.class_string,
   });
 
   /* some error occurred and the prototype could not be compiled, report the error. */
-  if (!main_proto) return KOJI_ERROR;
+  if (!proto) return KOJI_ERROR;
 
   /* temporary */
-  prototype_dump(main_proto, 0, &state->class_string);
+  prototype_dump(proto, 0, &state->vm.class_string);
 
   /* reset the number of references as the ref count will be increased when the prototype is
    * referenced by a the new frame */
-  //main_proto->references = 0;
+  proto->references = 0;
 
   /* create a closure to main prototype and push it to the stack */
-  //vm_push_frame(&s->vm, main_proto, 0, (value_t){0});
-  kj_free(main_proto, &state->allocator);
+  vm_push_frame(&state->vm, proto, 0);
 
   return KOJI_SUCCESS;
 }
@@ -120,4 +116,16 @@ KOJI_API koji_result_t koji_load_file(koji_state_t *state, const char *filename)
    
    fclose(file);
    return r;
+}
+
+KOJI_API void koji_close(koji_state_t *state)
+{
+   allocator_t allocator = state->vm.allocator;
+   vm_deinit(&state->vm);
+   kj_free(state, &allocator);
+}
+
+KOJI_API koji_result_t koji_resume(koji_state_t *state)
+{
+   return vm_resume(&state->vm);
 }

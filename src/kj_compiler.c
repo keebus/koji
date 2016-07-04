@@ -520,9 +520,9 @@ static int fetch_constant_string(compiler_t *c, const char *str, uint str_len)
                                       value_t);
 
    /* create a new string */
-   *constant = value_new_string(c->allocator, str_len, c->class_string);
+   *constant = value_new_string(c->allocator, c->class_string, str_len);
 
-   string_t *string = value_get_object(*constant);
+   string_t *string = (string_t *)value_get_object(*constant);
    memcpy(string->chars, str, str_len);
    string->chars[str_len] = '\0';
 
@@ -610,6 +610,26 @@ static expr_t compile_expr_to_location(compiler_t *c, expr_t e, int target_hint)
          assert(!"Unreachable");
          return expr_nil();
    }
+}
+
+/*
+ * Compiles the unary minus of expression @e and returns the result.
+ */
+static expr_t compile_unary_minus(compiler_t *c, source_location_t sourceloc, expr_t e)
+{
+	switch (e.type) {
+		case EXPR_NUMBER:
+			return expr_number(-e.val.number);
+
+		case EXPR_LOCATION:
+			emit(c, encode_ABx(OP_UNM, c->temporary, e.val.location));
+			return expr_location(c->temporary);
+
+		default:
+			error(c->lexer.issue_handler, sourceloc,
+				"cannot apply operator unary minus to a value of type %s.", EXPR_TYPE_TO_STRING[e.type]);
+	}
+	return expr_nil();
 }
 
 /*
@@ -1095,6 +1115,7 @@ static expr_t parse_local_ref_or_function_call(compiler_t *c, expr_state_t *es)
    }
 
    assert(!"todo");
+   (void)es;
    return expr_nil();
 }
 
@@ -1156,6 +1177,11 @@ static expr_t parse_primary_expression(compiler_t *c, expr_state_t *es)
 			es->negated = !es->negated;
 			expr = expr_negate(parse_primary_expression(c, es));
          es->negated = !es->negated;
+			break;
+
+      case '-': /* unary minus */
+         lex(c);
+			expr = compile_unary_minus(c, source_loc, parse_primary_expression(c, es));
 			break;
 
       case tok_identifier:
@@ -1366,13 +1392,22 @@ static void parse_statements(compiler_t *c)
    }
 }
 
+/* Parses the body of a prototype, i.e. its instructions. */
+static void parse_prototype_body(compiler_t *c)
+{
+   parse_statements(c);
+
+   /* emit a return nil instruction anyway */
+   emit(c, encode_ABx(OP_RET, 0, 0));
+}
+
 /*
  * Parses the content of a script source file. This is nothing more but the body of the main
  * prototype followed by an end of stream.
  */
 static void parse_module(compiler_t *c)
 {
-      parse_statements(c);
+      parse_prototype_body(c);
       expect(c, tok_eos);
 }
 
@@ -1388,6 +1423,7 @@ kj_intern prototype_t *compile(compile_info_t const *info)
    }
 
    *main_proto = (prototype_t) {
+      .references = 1,
       .name = "@main"
    };
 
@@ -1419,7 +1455,7 @@ kj_intern prototype_t *compile(compile_info_t const *info)
    goto cleanup;
 
 error:
-   kj_free(main_proto, info->allocator); /* #fixme */
+   prototype_release(main_proto, info->allocator);
    main_proto = NULL;
 
 cleanup:
