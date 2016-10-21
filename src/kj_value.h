@@ -11,6 +11,8 @@
 #include <assert.h>
 #include <stdarg.h>
 
+struct vm;
+
 typedef enum {
    VALUE_NIL,
    VALUE_BOOL,
@@ -32,18 +34,21 @@ typedef struct object {
    struct class  *class;
 } object_t;
 
-struct operator {
+typedef value_t (*operator_t)(struct vm *vm, object_t *object, value_t arg);
+
+struct operator_method {
    method_type_t type;
-   value_t (*fn)(object_t *object, value_t arg);
+   operator_t fn;
 };
 
 typedef union {
    method_type_t type;
-   struct operator operator;
+   struct operator_method operator;
 } method_t;
 
 typedef struct class {
    object_t object;
+   const char *name;
    method_t operator_neg;
    method_t operator_add;
    method_t operator_sub;
@@ -125,12 +130,12 @@ inline object_t* value_get_object(value_t value)
    return (void*)(intptr_t)(value.bits & BITS_TAG_PAYLOAD);
 }
 
-kj_intern value_t value_new_string(allocator_t *alloc, class_t *string_class, uint length);
+kj_intern string_t * string_new(allocator_t *alloc, class_t *class_string, uint length);
 
-kj_intern value_t value_new_stringf(allocator_t *alloc, class_t *string_class, const char *format,
+kj_intern value_t value_new_stringf(allocator_t *alloc, class_t *class_string, const char *format,
                                     ...);
 
-kj_intern value_t value_new_stringfv(allocator_t *alloc, class_t *string_class, const char *format,
+kj_intern value_t value_new_stringfv(allocator_t *alloc, class_t *class_string, const char *format,
                                      va_list args);
 
 kj_intern void value_destroy(value_t *value, allocator_t *alloc);
@@ -162,3 +167,8 @@ inline void value_set_number(value_t * dest, allocator_t * allocator, koji_numbe
 }
 
 kj_intern const char * value_type_str(value_t value);
+
+inline method_t method_make_operator(operator_t operator)
+{
+   return (method_t) { METHOD_TYPE_OPERATOR, .operator.fn = operator };
+}

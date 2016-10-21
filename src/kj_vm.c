@@ -9,6 +9,7 @@
 #include "kj_bytecode.h"
 #include "kj_value.h"
 #include <stdarg.h>
+#include <string.h>
 
 /*-----------------------------------------------------------------------------------------------*/
 /* static                                                                                        */
@@ -27,17 +28,36 @@ static value_t * _vm_value(vm_t *vm, vm_frame_t *frame, int location)
             frame->proto->constants - (location + 1));
 }
 
-static value_t _vm_call_operator(vm_t *vm, object_t *object, method_t *method, value_t arg)
-{
-   switch (method->type)
-   {
-      case METHOD_TYPE_OPERATOR:
-         return method->operator.fn(object, arg);
-      
-      default: assert(!"unreachable"); return value_nil();
-   }
-}
+/* invalid operator */
+#define DEFINE_INVALID_OPERATOR(op)\
+   static value_t invalid_operator_##op(struct vm *vm, object_t *object, value_t arg)\
+   {\
+      (void)arg;\
+      vm_throw(vm, "class '%s' does not define the operator '%s'.", object->class->name, #op);\
+      return value_nil();\
+   }\
 
+DEFINE_INVALID_OPERATOR(add)
+DEFINE_INVALID_OPERATOR(sub)
+DEFINE_INVALID_OPERATOR(mul)
+DEFINE_INVALID_OPERATOR(div)
+DEFINE_INVALID_OPERATOR(mod)
+
+/* string operator add */
+static value_t string_op_add(struct vm *vm, object_t *object, value_t arg)
+{
+   string_t *lhs = (string_t*)object;
+   string_t *rhs = (string_t*)value_get_object(arg);
+   if (!value_is_object(arg) || rhs->object.class != &vm->class_string) {
+      vm_throw(vm, "cannot add a string with a %s.", value_type_str(arg));
+   }
+
+   string_t *result = string_new(&vm->allocator, &vm->class_string, lhs->size + rhs->size);
+   memcpy(result->chars, lhs->chars, lhs->size);
+   memcpy(result->chars + lhs->size, rhs->chars, rhs->size + 1);
+   
+   return value_object(result);
+}
 
 /*------------------------------------------------------------------------------------------------*/
 /* internal                                                                                       */
@@ -56,6 +76,14 @@ kj_intern void vm_init(vm_t *vm, allocator_t allocator)
    vm->value_stack_ptr = 0;
 	vm->value_stack_size = 16;
 	vm->value_stack = kj_alloc(value_t, vm->value_stack_size, &vm->allocator);
+
+   /* setup builtin class string */
+   vm->class_string = (class_t) { 1 };
+   vm->class_string.operator_add = method_make_operator(string_op_add);
+   vm->class_string.operator_sub = method_make_operator(invalid_operator_sub);
+   vm->class_string.operator_mul = method_make_operator(invalid_operator_mul);
+   vm->class_string.operator_div = method_make_operator(invalid_operator_div);
+   vm->class_string.operator_mod = method_make_operator(invalid_operator_mod);
 }
 
 kj_intern void vm_deinit(vm_t *vm)
@@ -176,7 +204,9 @@ kj_intern koji_result_t vm_resume(vm_t * vm)
    instruction_t const *instructions;
    value_t *ra;
    value_t arg1, arg2;
-   value_t *parg1, *parg2;
+   value_t *parg1;
+   object_t *object;
+   method_t *method;
 
    /* jumped to when a new frame is pushed onto the stack */
 new_frame:
@@ -209,7 +239,7 @@ new_frame:
       case OP_NEG:
          ra = RA;
          arg1 = *ARG(Bx);
-         value_set_boolean(ra, allocator, !value_to_boolean(*ARG(BX)));
+         value_set_boolean(ra, allocator, !value_to_boolean(*ARG(Bx)));
 			break;
 
 		case OP_UNM:
@@ -217,9 +247,9 @@ new_frame:
          arg1 = *ARG(Bx);
          if (value_is_number(arg1)) value_set_number(ra, allocator, -arg1.number);
          else if (value_is_object(arg1)) {
-            object_t *object = value_get_object(arg1);
-            value_move(ra, allocator,
-               _vm_call_operator(vm, object, &object->class->operator_neg, value_nil()));
+            object = value_get_object(arg1);
+            method = &object->class->operator_neg;
+            goto call_operator;
          }
          else vm_throw(vm, "cannot apply unary minus operation to a %s value.", value_type_str(arg1));
 			break;
@@ -236,9 +266,9 @@ new_frame:
          }\
          else if (value_is_object(arg1))\
          {\
-            object_t *object = value_get_object(arg1);\
-            value_move(ra, allocator,\
-               _vm_call_operator(vm, object, &object->class->operator_##name_, arg2));\
+            object = value_get_object(arg1);\
+            method = &object->class->operator_##name_;\
+            goto call_operator;\
          }\
          else\
          {\
@@ -264,9 +294,9 @@ new_frame:
 			/* if arg B to boolean matches the boolean value in C, make the jump otherwise
 				* skip the jump */
 			int newpc = frame->pc + 1;
-			const value_t *arg = ARG(B);
-			if (value_to_bool(arg) == decode_C(instr)) {
-				value_set(RA, allocator, arg);
+			parg1 = ARG(B);
+			if (value_to_boolean(*parg1) == decode_C(instr)) {
+				value_set(RA, allocator, parg1);
 				newpc += decode_Bx(instructions[frame->pc]);
 			}
 			frame->pc = newpc;
@@ -275,6 +305,20 @@ new_frame:
 
       case OP_RET:
          return KOJI_SUCCESS;
+
+      /* #todo explain */
+      call_operator:
+         switch (method->type)
+         {
+            case METHOD_TYPE_OPERATOR:
+               arg1 = method->operator.fn(vm, object, arg2);
+               break;
+
+            default:
+               assert(!"unreachable");
+         }
+         value_move(ra, allocator, arg1);
+         break;
 
       default:
          assert(!"Opcode not implemented.");

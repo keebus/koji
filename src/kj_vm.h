@@ -30,7 +30,7 @@ typedef struct {
 /*
  * Write the #documentation.
  */
-typedef struct {
+typedef struct vm {
    allocator_t allocator;
 
 	/* whether the VM is in a valid state for execution (no error occurred) */

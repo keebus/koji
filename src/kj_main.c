@@ -90,7 +90,7 @@ void test_values(void)
 void test_string(void)
 {
    allocator_t alloc = { NULL, default_malloc, default_realloc, default_free, };
-   value_t value = value_new_string(&alloc, NULL, 20);
+   value_t value = value_object(string_new(&alloc, NULL, 20));
 
    value_destroy(&value, &alloc);
 }

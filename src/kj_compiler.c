@@ -295,7 +295,8 @@ static expr_t expr_negate(expr_t e)
  */
 static void syntax_error_at(compiler_t *c, source_location_t sourceloc)
 {
-   error(c->lexer.issue_handler, sourceloc, "unexpected '%s'.", lexer_lookahead_to_string(&c->lexer));
+   error(c->lexer.issue_handler, sourceloc, "unexpected '%s'.",
+      lexer_lookahead_to_string(&c->lexer));
 }
 
 /*
@@ -520,11 +521,11 @@ static int fetch_constant_string(compiler_t *c, const char *str, uint str_len)
                                       value_t);
 
    /* create a new string */
-   *constant = value_new_string(c->allocator, c->class_string, str_len);
-
-   string_t *string = (string_t *)value_get_object(*constant);
+   string_t *string = string_new(c->allocator, c->class_string, str_len);
    memcpy(string->chars, str, str_len);
    string->chars[str_len] = '\0';
+
+   *constant = value_object(string);
 
    /* return the index of the pushed constant */
    return constant - c->proto->constants;
@@ -961,13 +962,14 @@ static void close_expression(compiler_t *c, expr_state_t *es, expr_t expr, locat
       location_t location = compile_expr_to_location(c, expr, target).val.location;
    
       if (location != target) {
-         /* if from location is a temporary location (i.e. not a local variable) and we know from [from]
-          * that one or more instructions are setting to this location, we can simply replace the A
-          * operand of all those instructions to [to] and optimize out the 'move' instruction.
+         /* if from location is a temporary location (i.e. not a local variable) and we know from
+          * [from] that one or more instructions are setting to this location, we can simply replace
+          * the A  operand of all those instructions to [to] and optimize out the 'move'
+          * instruction.
           */
          if (location >= c->temporary) {
-            /* first check whether last instruction targets old location, if so update it with the new
-             * desired location */
+            /* first check whether last instruction targets old location, if so update it with the
+             * new desired location */
             instruction_t *instr = &c->proto->instructions[c->proto->num_instructions - 1];
             if (opcode_has_target(decode_op(*instr)) && decode_A(*instr) == location) {
                /* target matches result expression target register? if so, replace it with [to] */
@@ -1281,7 +1283,8 @@ static expr_t parse_expression(compiler_t *c, expr_state_t *es)
       switch (lhs.type) {
          case EXPR_LOCATION:
             /* check the location is a valid assignable, i.e. neither a constant nor a temporary */
-            if (location_is_constant(lhs.val.location) || location_is_temporary(c, lhs.val.location)) {
+            if (location_is_constant(lhs.val.location) ||
+                location_is_temporary(c, lhs.val.location)) {
                goto error_lhs_not_assignable;
             }
             parse_expression_to(c, lhs.val.location);

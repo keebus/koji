@@ -14,13 +14,15 @@ static bool object_deref(object_t *object)
    return --object->references == 0;
 }
 
-kj_intern value_t value_new_string(allocator_t *alloc, class_t *string_class, uint length)
+kj_intern string_t * string_new(allocator_t *alloc, class_t *class_string, uint length)
 {
    string_t *string = kj_malloc(sizeof(string_t) + length + 1, kj_alignof(string_t), alloc);
+   if (!string) return NULL;
+   ++class_string->object.references;
    string->object.references = 1;
-   string->object.class = string_class;
+   string->object.class = class_string;
    string->size = length;
-   return value_object(string);
+   return string;
 }
 
 kj_intern value_t value_new_stringf(allocator_t *alloc, class_t *string_class, const char *format,
@@ -37,10 +39,9 @@ kj_intern value_t value_new_stringfv(allocator_t *alloc, class_t *string_class, 
                                      va_list args)
 {
    uint length = vsnprintf(NULL, 0, format, args);
-   value_t value = value_new_string(alloc, string_class, length);
-   string_t *string = (string_t *)value_get_object(value);
+   string_t *string = string_new(alloc, string_class, length);
    vsnprintf(string->chars, length + 1, format, args);
-   return value;
+   return value_object(string);
 }
 
 kj_intern void value_destroy(value_t *value, allocator_t *alloc)
