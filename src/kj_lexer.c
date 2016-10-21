@@ -1,6 +1,6 @@
 /*
  * koji scripting language
- * Copyright (C) 2015 Canio Massimo Tristano <massimo.tristano@gmail.com>
+ * Copyright (C) 2015 Canio Massimo Tristano <massimo.tristano[gmail].com>
  * This source file is part of the koji scripting language, distributed under public domain.
  * See LICENSE for further licensing information.
  */
@@ -9,9 +9,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static int skip(lexer_t *l)
+/*
+ * Skips the current character and return the next one in the stream.
+ */
+static int lexer_skip(lexer_t* l)
 {
-   if (l->curr_char == '\n') {
+   if (l->curr_char == '\n')
+   {
       ++l->source_location.line;
       l->source_location.column = 0;
    }
@@ -20,93 +24,109 @@ static int skip(lexer_t *l)
    return l->curr_char;
 }
 
-static int state_push(lexer_t *l)
+/*
+ * Pushes the current character to the token string and returns the next one.
+ */
+static int lexer_push(lexer_t* l)
 {
-   if (l->token_string_length + 2 > l->token_string_capacity) {
-      l->token_string =
-         kj_realloc(l->token_string, l->token_string_capacity * 2, 1, l->allocator);
+   if (l->lookahead_string_length + 2 > l->lookahead_string_capacity)
+   {
+      l->lookahead_string = kj_realloc(l->lookahead_string, l->lookahead_string_capacity * 2, 1, l->allocator);
    }
 
-   l->token_string[l->token_string_length++] = (char)l->curr_char;
-   l->token_string[l->token_string_length] = '\0';
+   l->lookahead_string[l->lookahead_string_length++] = (char)l->curr_char;
+   l->lookahead_string[l->lookahead_string_length] = '\0';
 
-   return skip(l);
+   return lexer_skip(l);
 }
 
-static void clear_token_string(lexer_t *l)
+/*
+ * Clears the token string to empty string.
+ */
+static void lexer_clear_token_string(lexer_t* l)
 {
-   l->token_string_length = 0;
-   l->token_string[0] = '\0';
+   l->lookahead_string_length = 0;
+   l->lookahead_string[0] = '\0';
 }
 
-static int accept_str(lexer_t *l, const char *str)
+/*
+ * Tries to read a whole string [str] from stream and returns whether all string was read.
+ */
+static int lexer_accept_str(lexer_t* l, const char* str)
 {
-   while (l->curr_char == *str) {
-      state_push(l);
+   while (l->curr_char == *str)
+   {
+      lexer_push(l);
       ++str;
    }
    return *str == 0;
 }
 
-static int accept_char(lexer_t *l, char ch)
+/*
+ * Accepts a character [ch] from the stream and returns if it was accepted.
+ */
+static int lexer_accept_char(lexer_t* l, char ch)
 {
-   if (l->curr_char == ch) {
-      state_push(l);
+   if (l->curr_char == ch)
+   {
+      lexer_push(l);
       return true;
    }
    return false;
 }
 
 /*
- * @returns whether the next char is a valid name char.
+ * Returns whether the next char is a valid name char.
  */
-static bool is_identifier_char(int ch, bool first_char)
+static bool lexer_is_identifier_char(int ch, bool first_char)
 {
-   return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch == '_') ||
-      (!first_char && ch >= '0' && ch <= '9');
+   return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch == '_') || (!first_char && ch >= '0' && ch <= '9');
 }
 
 /*
  * Scans the input for an name. \p first_char specifies whether this is the first name character
  * read. It sets l->lookahead to the tok_identifier if some name was read and returns it.
  */
-static token_t scan_identifier(lexer_t *l, bool first_char)
+static token_t lexer_scan_identifier(lexer_t* l, bool first_char)
 {
-   while (is_identifier_char(l->curr_char, first_char)) {
-      state_push(l);
+   while (lexer_is_identifier_char(l->curr_char, first_char))
+   {
+      lexer_push(l);
       l->lookahead = tok_identifier;
       first_char = false;
    }
    return l->lookahead;
 }
 
-kj_intern void lexer_init(lexer_info_t info, lexer_t *l)
+
+kj_intern void lexer_init(lexer_info_t* info, lexer_t* l)
 {
-   l->allocator = info.allocator;
-   l->issue_handler = info.issue_handler;
-   l->stream_fn = info.stream_fn;
-   l->stream_data = info.stream_data;
-   l->token_string_capacity = 16;
-   l->token_string = kj_malloc(l->token_string_capacity, kj_alignof(char), l->allocator);
-   l->token_string_length = 0;
-   l->source_location.filename = info.filename;
+   l->allocator = info->allocator;
+   l->issue_handler = info->issue_handler;
+   l->stream_fn = info->stream_fn;
+   l->stream_data = info->stream_data;
+   l->lookahead_string_capacity = 16;
+   l->lookahead_string = kj_malloc(l->lookahead_string_capacity, kj_alignof(char), l->allocator);
+   l->lookahead_string_length = 0;
+   l->source_location.filename = info->filename;
    l->source_location.line = 1;
    l->source_location.column = 0;
    l->newline = 0;
    l->curr_char = 0;
 
-   skip(l);
+   lexer_skip(l);
    lexer_scan(l);
 }
 
-kj_intern void lexer_deinit(lexer_t *l)
+kj_intern void lexer_deinit(lexer_t* l)
 {
-   kj_free(l->token_string, l->allocator);
+   kj_free(l->lookahead_string, l->allocator);
 }
 
-kj_intern const char *lexer_token_to_string(token_t tok, char *buffer, uint buffer_size)
+kj_intern const char* lexer_token_to_string(token_t tok, char* buffer, uint buffer_size)
 {
-   switch (tok) {
+   switch (tok)
+   {
       case tok_eos:           return "end-of-stream";
       case tok_number:        return "number";
       case tok_string:        return "string";
@@ -126,24 +146,26 @@ kj_intern const char *lexer_token_to_string(token_t tok, char *buffer, uint buff
       case kw_var:            return "var";
       case kw_while:          return "while";
       default:
-         snprintf(buffer, buffer_size, "'%s'", (const char *)&tok);
+         snprintf(buffer, buffer_size, "'%s'", (const char*)&tok);
          return buffer;
    }
 }
 
-kj_intern const char *lexer_lookahead_to_string(lexer_t *l)
+kj_intern const char* lexer_lookahead_to_string(lexer_t* l)
 {
-   return (l->lookahead == tok_eos) ? "end-of-stream" : l->token_string;
+   return (l->lookahead == tok_eos) ? "end-of-stream" : l->lookahead_string;
 }
 
-kj_intern token_t lexer_scan(lexer_t *l)
+kj_intern token_t lexer_scan(lexer_t* l)
 {
    l->lookahead = tok_eos;
-   clear_token_string(l);
+   lexer_clear_token_string(l);
 
-   for (;;) {
+   for (;;)
+   {
       bool decimal = false;
-      switch (l->curr_char) {
+      switch (l->curr_char)
+      {
          case KOJI_EOF:
             return tok_eos;
 
@@ -153,7 +175,7 @@ kj_intern token_t lexer_scan(lexer_t *l)
          case ' ':
          case '\r':
          case '\t':
-            skip(l);
+            lexer_skip(l);
             break;
 
          case ',':
@@ -166,31 +188,33 @@ kj_intern token_t lexer_scan(lexer_t *l)
          case '{':
          case '}':
             l->lookahead = l->curr_char;
-            state_push(l);
+            lexer_push(l);
             return l->lookahead;
 
-            /* strings */
+            /* strings  */
          case '"':
          case '\'':
          {
             int delimiter = l->curr_char;
-            skip(l);
-            while (l->curr_char != KOJI_EOF && l->curr_char != delimiter) {
-               state_push(l);
+            lexer_skip(l);
+            while (l->curr_char != KOJI_EOF && l->curr_char != delimiter)
+            {
+               lexer_push(l);
             }
-            if (l->curr_char != delimiter) {
+            if (l->curr_char != delimiter)
+            {
                error(l->issue_handler, l->source_location,
                   "end-of-stream while scanning string.");
                return l->lookahead = tok_eos;
             }
-            skip(l);
+            lexer_skip(l);
             return l->lookahead = tok_string;
          }
 
          {
          case '.':
             decimal = true;
-            state_push(l);
+            lexer_push(l);
             if (l->curr_char < '0' || l->curr_char > '9')
                return l->lookahead = '.';
 
@@ -204,188 +228,196 @@ kj_intern token_t lexer_scan(lexer_t *l)
          case '7':
          case '8':
          case '9':
-            if (!decimal) {
-               /* First sequence of numbers before optional dot. */
-               while (l->curr_char >= '0' && l->curr_char <= '9') state_push(l);
+            if (!decimal)
+            {
+               /* First sequence of numbers before optional dot.  */
+               while (l->curr_char >= '0' && l->curr_char <= '9') lexer_push(l);
 
-               if (l->curr_char == '.') {
-                  state_push(l);
+               if (l->curr_char == '.')
+               {
+                  lexer_push(l);
                   decimal = true;
                }
             }
 
-            if (decimal) {
-               /* Scan decimal part */
-               while (l->curr_char >= '0' && l->curr_char <= '9') state_push(l);
-            } else if (l->curr_char == 'e') {
+            if (decimal)
+            {
+               /* Scan decimal part  */
+               while (l->curr_char >= '0' && l->curr_char <= '9') lexer_push(l);
+            } else if (l->curr_char == 'e')
+            {
                decimal = true;
-               state_push(l);
-               while (l->curr_char >= '0' && l->curr_char <= '9') state_push(l);
+               lexer_push(l);
+               while (l->curr_char >= '0' && l->curr_char <= '9') lexer_push(l);
             }
 
-            l->token_number = (koji_number_t)atof(l->token_string);
+            l->lookahead_number = (kj_number_t)atof(l->lookahead_string);
             return l->lookahead = tok_number;
          }
 
          case '~':
             l->lookahead = l->curr_char;
-            state_push(l);
+            lexer_push(l);
             return l->lookahead;
 
          case '!':
-            state_push(l);
-            return l->lookahead = (accept_char(l, '=') ? '!=' : '!');
+            lexer_push(l);
+            return l->lookahead = (lexer_accept_char(l, '=') ? '!=' : '!');
 
          case '&':
-            state_push(l);
-            return l->lookahead = (accept_char(l, '&') ? '&&' : '&');
+            lexer_push(l);
+            return l->lookahead = (lexer_accept_char(l, '&') ? '&&' : '&');
 
          case '|':
-            state_push(l);
-            return l->lookahead = (accept_char(l, '|') ? '||' : '|');
+            lexer_push(l);
+            return l->lookahead = (lexer_accept_char(l, '|') ? '||' : '|');
 
          case '=':
-            state_push(l);
-            return l->lookahead = (accept_char(l, '=') ? '==' : '=');
+            lexer_push(l);
+            return l->lookahead = (lexer_accept_char(l, '=') ? '==' : '=');
 
          case '<':
-            state_push(l);
-            return l->lookahead = (accept_char(l, '=') ? '<=' :
-                                   accept_char(l, '<') ? '<<' : '<');
+            lexer_push(l);
+            return l->lookahead = (lexer_accept_char(l, '=') ? '<=' :
+               lexer_accept_char(l, '<') ? '<<' : '<');
 
          case '>':
-            state_push(l);
-            return l->lookahead = (accept_char(l, '=') ? '>=' :
-                                   accept_char(l, '>') ? '>>' : '>');
+            lexer_push(l);
+            return l->lookahead = (lexer_accept_char(l, '=') ? '>=' :
+               lexer_accept_char(l, '>') ? '>>' : '>');
 
          case '+':
-            state_push(l);
-            return l->lookahead = (accept_char(l, '=') ? '+=' : '+');
+            lexer_push(l);
+            return l->lookahead = (lexer_accept_char(l, '=') ? '+=' : '+');
 
          case '-':
-            state_push(l);
-            return l->lookahead = (accept_char(l, '=') ? '-=' : '-');
+            lexer_push(l);
+            return l->lookahead = (lexer_accept_char(l, '=') ? '-=' : '-');
 
          case '*':
-            state_push(l);
-            return l->lookahead = (accept_char(l, '=') ? '*=' : '*');
+            lexer_push(l);
+            return l->lookahead = (lexer_accept_char(l, '=') ? '*=' : '*');
 
          case '/':
-            state_push(l);
-            if (accept_char(l, '='))
+            lexer_push(l);
+            if (lexer_accept_char(l, '='))
                return l->lookahead = '/=';
-            else if (l->curr_char == '/') /* line-comment */
+            else if (l->curr_char == '/') /* line-comment  */
             {
-               skip(l);
-               clear_token_string(l);
-               while (l->curr_char != '\n' && l->curr_char != -1) skip(l);
+               lexer_skip(l);
+               lexer_clear_token_string(l);
+               while (l->curr_char != '\n' && l->curr_char != -1) lexer_skip(l);
                break;
             }
-            /* todo add block comment */
+            /* #todo add block comment  */
             return l->lookahead = '/';
 
-            /* keywords */
+            /* keywords  */
          case 'd':
-            state_push(l);
+            lexer_push(l);
             l->lookahead = tok_identifier;
-            switch (l->curr_char) {
+            switch (l->curr_char)
+            {
                case 'e':
-                  state_push(l);
-                  if (accept_str(l, "f")) l->lookahead = kw_def;
+                  lexer_push(l);
+                  if (lexer_accept_str(l, "f")) l->lookahead = kw_def;
                   break;
                case 'o':
-                  state_push(l);
+                  lexer_push(l);
                   l->lookahead = kw_do;
                   break;
             }
-            return l->lookahead = scan_identifier(l, false);
+            return l->lookahead = lexer_scan_identifier(l, false);
 
          case 'e':
-            state_push(l);
+            lexer_push(l);
             l->lookahead = tok_identifier;
-            if (accept_str(l, "lse")) l->lookahead = kw_else;
-            return l->lookahead = scan_identifier(l, false);
+            if (lexer_accept_str(l, "lse")) l->lookahead = kw_else;
+            return l->lookahead = lexer_scan_identifier(l, false);
 
          case 'f':
-            state_push(l);
+            lexer_push(l);
             l->lookahead = tok_identifier;
-            switch (l->curr_char) {
+            switch (l->curr_char)
+            {
                case 'a':
-                  state_push(l);
-                  if (accept_str(l, "lse")) l->lookahead = kw_false;
+                  lexer_push(l);
+                  if (lexer_accept_str(l, "lse")) l->lookahead = kw_false;
                   break;
                case 'o':
-                  state_push(l);
-                  if (accept_str(l, "r")) l->lookahead = kw_for;
+                  lexer_push(l);
+                  if (lexer_accept_str(l, "r")) l->lookahead = kw_for;
                   break;
             }
-            return l->lookahead = scan_identifier(l, false);
+            return l->lookahead = lexer_scan_identifier(l, false);
 
          case 'g':
-            state_push(l);
+            lexer_push(l);
             l->lookahead = tok_identifier;
-            if (accept_str(l, "lobals")) l->lookahead = kw_globals;
-            return l->lookahead = scan_identifier(l, false);
+            if (lexer_accept_str(l, "lobals")) l->lookahead = kw_globals;
+            return l->lookahead = lexer_scan_identifier(l, false);
 
          case 'i':
-            state_push(l);
+            lexer_push(l);
             l->lookahead = tok_identifier;
-            switch (l->curr_char) {
+            switch (l->curr_char)
+            {
                case 'f':
-                  state_push(l);
+                  lexer_push(l);
                   l->lookahead = kw_if;
                   break;
                case 'n':
-                  state_push(l);
+                  lexer_push(l);
                   l->lookahead = kw_in;
                   break;
             }
-            return l->lookahead = scan_identifier(l, false);
+            return l->lookahead = lexer_scan_identifier(l, false);
 
          case 'n':
-            state_push(l);
+            lexer_push(l);
             l->lookahead = tok_identifier;
-            if (accept_char(l, 'i') && accept_char(l, 'l')) l->lookahead = kw_nil;
-            return l->lookahead = scan_identifier(l, false);
-            
+            if (lexer_accept_char(l, 'i') && lexer_accept_char(l, 'l')) l->lookahead = kw_nil;
+            return l->lookahead = lexer_scan_identifier(l, false);
+
          case 'r':
-            state_push(l);
+            lexer_push(l);
             l->lookahead = tok_identifier;
-            if (accept_str(l, "eturn")) l->lookahead = kw_return;
-            return l->lookahead = scan_identifier(l, false);
+            if (lexer_accept_str(l, "eturn")) l->lookahead = kw_return;
+            return l->lookahead = lexer_scan_identifier(l, false);
 
          case 't':
-            state_push(l);
+            lexer_push(l);
             l->lookahead = tok_identifier;
-            switch (l->curr_char) {
+            switch (l->curr_char)
+            {
                case 'h':
-                  state_push(l);
-                  if (accept_str(l, "is")) l->lookahead = kw_this;
+                  lexer_push(l);
+                  if (lexer_accept_str(l, "is")) l->lookahead = kw_this;
                   break;
                case 'r':
-                  state_push(l);
-                  if (accept_str(l, "ue")) l->lookahead = kw_true;
+                  lexer_push(l);
+                  if (lexer_accept_str(l, "ue")) l->lookahead = kw_true;
                   break;
             }
-            return l->lookahead = scan_identifier(l, false);
+            return l->lookahead = lexer_scan_identifier(l, false);
 
          case 'v':
-            state_push(l);
+            lexer_push(l);
             l->lookahead = tok_identifier;
-            if (accept_str(l, "ar")) l->lookahead = kw_var;
-            return l->lookahead = scan_identifier(l, false);
+            if (lexer_accept_str(l, "ar")) l->lookahead = kw_var;
+            return l->lookahead = lexer_scan_identifier(l, false);
 
          case 'w':
-            state_push(l);
+            lexer_push(l);
             l->lookahead = tok_identifier;
-            if (accept_str(l, "hile")) l->lookahead = kw_while;
-            return l->lookahead = scan_identifier(l, false);
+            if (lexer_accept_str(l, "hile")) l->lookahead = kw_while;
+            return l->lookahead = lexer_scan_identifier(l, false);
 
          default:
-            scan_identifier(l, true);
-            if (l->lookahead != tok_identifier) {
-               error(l->issue_handler, l->source_location,
-                  "unexpected character '%c' found.", l->curr_char);
+            lexer_scan_identifier(l, true);
+            if (l->lookahead != tok_identifier)
+            {
+               error(l->issue_handler, l->source_location, "unexpected character '%c' found.", l->curr_char);
             }
             return l->lookahead;
       }

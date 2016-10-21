@@ -80,7 +80,7 @@ kj_intern void prototype_release(prototype_t *proto, allocator_t *allocator)
    }
 }
 
-kj_intern void prototype_dump(prototype_t const* proto, int level, class_t const *string_class)
+kj_intern void prototype_dump(prototype_t const* proto, int level, klass_t const *string_class)
 {
    /* build a spacing string */
    uint margin_length = level * 3;
@@ -139,7 +139,7 @@ kj_intern void prototype_dump(prototype_t const* proto, int level, class_t const
          }
          else if (value_is_object(constant)) {
             string_t *string = (string_t*)value_get_object(constant);
-            assert(string->object.class == string_class); (void)string_class;
+            assert(string->object.klass == string_class); (void)string_class;
             printf("\"%s\"", string->chars);
          }
       }

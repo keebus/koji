@@ -22,16 +22,16 @@ int main(int argc, char **argv)
    (void)argc;
    (void)argv;
    
-   koji_state_t *koji = koji_open(NULL, NULL, NULL, NULL);
-   if (koji_load_file(koji, "../test.kj") == KOJI_ERROR)
+   kj_state_t *koji = kj_open(NULL, NULL, NULL, NULL);
+   if (kj_load_file(koji, "../test.kj") == KOJI_ERROR)
    {
-      printf("Could not copmlie script.\n");
+      printf("Could not compile script.\n");
       return -1;
    }
 
-   koji_resume(koji);
+   kj_resume(koji);
 
-   koji_close(koji);
+   kj_close(koji);
 }
 
 void test_values(void)

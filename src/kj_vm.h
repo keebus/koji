@@ -54,11 +54,11 @@ typedef struct {
 	/* stack pointer */
 	uint value_stack_ptr;
 
-   /*  */
+   /* #documentation */
    jmp_buf error_handler;
 
-   /*  */
-   class_t class_string;
+   /* #documentation */
+   klass_t class_string;
 } vm_t;
 
 /*
@@ -80,7 +80,7 @@ kj_intern void vm_push_frame(vm_t *vm, struct prototype *proto, uint stack_base)
 /*
  * Write the #documentation.
  */
-kj_intern koji_result_t vm_resume(vm_t *vm);
+kj_intern kj_result_t vm_resume(vm_t *vm);
 
 /*
  * Write the #documentation.

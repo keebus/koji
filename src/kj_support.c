@@ -11,13 +11,13 @@
 /*------------------------------------------------------------------------------------------------*/
 /* allocator                                                                                      */
 /*------------------------------------------------------------------------------------------------*/
-void * default_malloc(void* userdata, koji_size_t size, koji_size_t alignment)
+void * default_malloc(void* userdata, kj_size_t size, kj_size_t alignment)
 {
    (void)userdata;
    return _aligned_malloc(size, alignment);
 }
 
-void * default_realloc(void* userdata, void *ptr, koji_size_t size, koji_size_t alignment)
+void * default_realloc(void* userdata, void *ptr, kj_size_t size, kj_size_t alignment)
 {
    (void)userdata;
    return _aligned_realloc(ptr, size, alignment);

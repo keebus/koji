@@ -4,7 +4,7 @@
  * This source file is part of the koji scripting language, distributed under public domain.
  * See LICENSE for further licensing information.
  */
- 
+
 #include "kj_api.h"
 #include "kj_compiler.h"
 #include "kj_bytecode.h"
@@ -16,7 +16,8 @@
 #include <stdio.h>
 #include <string.h>
 
-struct koji_state {
+struct kj_state
+{
    vm_t vm;
 };
 
@@ -24,9 +25,10 @@ struct koji_state {
  * This issue handler wraps the state so that all issues that need reporting are pushed as strings
  * onto the stack. It also tracks the number of issues that it reports.
  */
-typedef struct {
-   koji_state_t * state;
-   uint           issue_count;
+typedef struct
+{
+   kj_state_t* state;
+   uint        issue_count;
 } load_issue_handler_data_t;
 
 
@@ -39,7 +41,7 @@ static void load_issue_reporter_fn(void *data, source_location_t sloc, const cha
 
    (void)message;
    printf("(TEMP) error: %s\n", message);
-   //koji_push_string(issue_handler_data->state, message, (uint)strlen(message));
+   //kj_push_string(issue_handler_data->state, message, (uint)strlen(message));
 }
 
 /*
@@ -47,8 +49,7 @@ static void load_issue_reporter_fn(void *data, source_location_t sloc, const cha
   kj_push_stringf(s, format, __VA_ARGS__), longjmp(s->error_jump_buf, 1)
 */
 
-KOJI_API koji_state_t * koji_open(koji_malloc_fn_t malloc_fn, koji_realloc_fn_t realloc_fn,
-                                  koji_free_fn_t free_fn, void *alloc_userdata)
+KOJI_API kj_state_t * kj_open(kj_malloc_fn_t malloc_fn, kj_realloc_fn_t realloc_fn, kj_free_fn_t free_fn, void *alloc_userdata)
 {
    /* setup the allocator object */
    allocator_t allocator = {
@@ -58,74 +59,78 @@ KOJI_API koji_state_t * koji_open(koji_malloc_fn_t malloc_fn, koji_realloc_fn_t 
       .free = free_fn ? free_fn : default_free,
    };
 
-   koji_state_t *state = kj_alloc(koji_state_t, 1, &allocator);
-   
+   kj_state_t *state = kj_alloc(kj_state_t, 1, &allocator);
+
    /* initialize the Virtual Machine within the state */
    vm_init(&state->vm, allocator);
 
    return state;
 }
 
-KOJI_API koji_result_t koji_load(koji_state_t *state, const char *source_name,
-                                 koji_stream_read_t stream_read_fn, void *stream_read_data)
+KOJI_API kj_result_t kj_load(kj_state_t *state, const char *source_name, kj_stream_read_t stream_read_fn, void *stream_read_data)
 {
-  prototype_t *proto = compile(&(compile_info_t) {
-      .allocator = &state->vm.allocator,
-      .source_name = source_name,
-      .stream_fn = stream_read_fn,
-      .stream_data = stream_read_data,
-      .issue_reporter_fn = load_issue_reporter_fn,
-      .issue_reporter_data = &(load_issue_handler_data_t) { .state = state },
-      .class_string = &state->vm.class_string,
-  });
+   load_issue_handler_data_t lihd = { state };
 
-  /* some error occurred and the prototype could not be compiled, report the error. */
-  if (!proto) return KOJI_ERROR;
+   compile_info_t ci;
+   ci.allocator = &state->vm.allocator;
+   ci.source_name = source_name;
+   ci.stream_fn = stream_read_fn;
+   ci.stream_data = stream_read_data;
+   ci.issue_reporter_fn = load_issue_reporter_fn;
+   ci.issue_reporter_data = &lihd;
+   ci.class_string = &state->vm.class_string;
 
-  /* temporary */
-  prototype_dump(proto, 0, &state->vm.class_string);
+   /* compile the source into a prototype */
+   prototype_t* proto = compile(&ci);
 
-  /* reset the number of references as the ref count will be increased when the prototype is
-   * referenced by a the new frame */
-  proto->references = 0;
+   /* some error occurred and the prototype could not be compiled, report the error. */
+   if (!proto) return KOJI_ERROR;
 
-  /* create a closure to main prototype and push it to the stack */
-  vm_push_frame(&state->vm, proto, 0);
+   /* #todo temporary */
+   prototype_dump(proto, 0, &state->vm.class_string);
 
-  return KOJI_SUCCESS;
+   /* reset the number of references as the ref count will be increased when the prototype is
+      referenced by a the new frame */
+   proto->references = 0;
+
+   /* create a closure to main prototype and push it to the stack */
+   vm_push_frame(&state->vm, proto, 0);
+
+   return KOJI_SUCCESS;
 }
 
-KOJI_API koji_result_t koji_load_string(koji_state_t *state, const char *source)
+KOJI_API kj_result_t kj_load_string(kj_state_t *state, const char *source)
 {
-   return koji_load(state, "<string>", stream_read_string, (void*)&source);
+   return kj_load(state, "<string>", stream_read_string, (void*)&source);
 }
 
-KOJI_API koji_result_t koji_load_file(koji_state_t *state, const char *filename)
+KOJI_API kj_result_t kj_load_file(kj_state_t *state, const char *filename)
 {
    /* try opening the file and report an error if file could not be open */
    FILE *file = NULL;
    fopen_s(&file, filename, "r");
 
-   if (!file) {
+   if (!file)
+   {
       //kj_push_stringf(s, "cannot open file '%s'.", filename);
       return KOJI_ERROR;
    }
-   
+
    /* load the file */
-   koji_result_t r = koji_load(state, filename, stream_read_file, file);
-   
+   kj_result_t r = kj_load(state, filename, stream_read_file, file);
+
    fclose(file);
    return r;
 }
 
-KOJI_API void koji_close(koji_state_t *state)
+KOJI_API void kj_close(kj_state_t *state)
 {
    allocator_t allocator = state->vm.allocator;
    vm_deinit(&state->vm);
    kj_free(state, &allocator);
 }
 
-KOJI_API koji_result_t koji_resume(koji_state_t *state)
+KOJI_API kj_result_t kj_resume(kj_state_t *state)
 {
    return vm_resume(&state->vm);
 }
