@@ -113,9 +113,9 @@ static inline uint max_u(uint a, uint b) { return a > b ? a : b; }
  */
 typedef struct {
    void *user_data;
-   koji_malloc_fn_t malloc;
-   koji_realloc_fn_t realloc;
-   koji_free_fn_t free;
+   kj_malloc_fn_t malloc;
+   kj_realloc_fn_t realloc;
+   kj_free_fn_t free;
 } allocator_t;
 
 /*
@@ -140,8 +140,8 @@ typedef struct {
  * system (aligned) malloc/realloc/free.
  */
 
-kj_intern void * default_malloc(void*, koji_size_t size, koji_size_t alignment);
-kj_intern void * default_realloc(void*, void *ptr, koji_size_t size, koji_size_t alignment);
+kj_intern void * default_malloc(void*, kj_size_t size, kj_size_t alignment);
+kj_intern void * default_realloc(void*, void *ptr, kj_size_t size, kj_size_t alignment);
 kj_intern void   default_free(void*, void *ptr);
 
 /*

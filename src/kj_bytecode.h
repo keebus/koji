@@ -10,7 +10,7 @@
 #include "kj_support.h"
 #include <assert.h>
 
-struct class;
+struct klass;
 
 /* Enumeration that lists all Virtual Machine opcodes */
 /* Note: If this list is modified, update opcode formats in 'bytecode.c' too. */
@@ -35,16 +35,16 @@ typedef enum {
   OP_THIS,     /* this A            ; R(A) = this */
 
   /* operations that do not write into R(A) */
-  OP_TEST,     /* test A, Bx      ; if (bool)R(A) != (bool)B then jump 1 */
-  OP_JUMP,     /* jump Bx         ; jump by Bx instructions */
-  OP_EQ,       /* eq A, B, C      ; if (R(A) == R(B)) == (bool)C then nothing else jump 1 */
-  OP_LT,       /* lt A, B, C      ; if (R(A) < R(B)) == (bool)C then nothing else jump 1 */
-  OP_LTE,      /* lte A, B, C     ; if (R(A) <= R(B)) == (bool)C then nothing else jump 1 */
-  OP_SCALL,    /* scall A, B, C   ; call static function at K[B] with C arguments starting from R(A) */
-  OP_CALL,     /* call A, B, C    ; call closure R(B) with C arguments starting at R(A) */
-  OP_MCALL,    /* mcall A, B, C   ; call object R(A - 1) method with name R(B) with C arguments from R(A) on */
-  OP_SET,      /* set A, B, C     ; R(A)[R(B)] = R(C) */
-  OP_RET,      /* ret A, B        ; return values R(A), ..., R(B)*/
+  OP_TEST,     /* test A, Bx        ; if (bool)R(A) != (bool)B then jump 1 */
+  OP_JUMP,     /* jump Bx           ; jump by Bx instructions */
+  OP_EQ,       /* eq A, B, C        ; if (R(A) == R(B)) == (bool)C then nothing else jump 1 */
+  OP_LT,       /* lt A, B, C        ; if (R(A) < R(B)) == (bool)C then nothing else jump 1 */
+  OP_LTE,      /* lte A, B, C       ; if (R(A) <= R(B)) == (bool)C then nothing else jump 1 */
+  OP_SCALL,    /* scall A, B, C     ; call static function at K[B] with C arguments starting from R(A) */
+  OP_CALL,     /* call A, B, C      ; call closure R(B) with C arguments starting at R(A) */
+  OP_MCALL,    /* mcall A, B, C     ; call object R(A - 1) method with name R(B) with C arguments from R(A) on */
+  OP_SET,      /* set A, B, C       ; R(A)[R(B)] = R(C) */
+  OP_RET,      /* ret A, B          ; return values R(A), ..., R(B)*/
 } opcode_t;
 
 static const char *OP_STRINGS[] = {
@@ -101,45 +101,45 @@ static inline int decode_C(instruction_t i) { return (int)i >> 23; }
 static inline int decode_Bx(instruction_t i) { return (int)i >> 14; }
 
 /* Sets instruction argument A. */
-static inline void replace_A(instruction_t *i, int A)
+static inline void replace_A(instruction_t* i, int A)
 {
    assert(A >= 0);
    *i = (*i & 0xFFFFC03F) | (A << 6);
 }
 
 /* Sets instruction argument Bx. */
-static inline void replace_Bx(instruction_t *i, int Bx)
+static inline void replace_Bx(instruction_t* i, int Bx)
 {
    *i = (*i & 0x3FFF) | (Bx << 14);
 }
 
 /* Set instruction argument C */
-static inline void replace_C(instruction_t *i, int C)
+static inline void replace_C(instruction_t* i, int C)
 {
    *i = (*i & 0x7FFFFF) | (C << 23);
 }
 
 typedef struct prototype {
-   uint            references;
-   const char     *name;
-   uint            temporaries;
-   uint            num_locals;
-   uint            num_registers;
-   instruction_t  *instructions;
-   uint            num_instructions;
-   union value    *constants;
-   uint            num_constants;
-   struct prototype **prototypes;
-   uint            num_prototypes;
+   uint                 references;
+   const char*          name;
+   uint                 temporaries;
+   uint                 num_locals;
+   uint                 num_registers;
+   instruction_t*       instructions;
+   uint                 num_instructions;
+   union value*         constants;
+   uint                 num_constants;
+   struct prototype**   prototypes;
+   uint                 num_prototypes;
 } prototype_t;
 
 /*
  * #doctodo
  */
-kj_intern void prototype_release(prototype_t *proto, allocator_t *allocator);
+kj_intern void prototype_release(prototype_t* proto, allocator_t* allocator);
 
 /*
  * Dumps the compiled prototype bytecode to stdout for debugging showing the bytecode disassembly,
  * constants for [proto] as well inner prototypes.
  */
-kj_intern void prototype_dump(prototype_t const* proto, int level, struct class const *string_class);
+kj_intern void prototype_dump(prototype_t const* proto, int level, struct klass const* string_class);

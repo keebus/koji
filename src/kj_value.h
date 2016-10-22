@@ -4,7 +4,7 @@
  * This source file is part of the koji scripting language, distributed under public domain.
  * See LICENSE for further licensing information.
  */
- 
+
 #pragma once
 
 #include "kj_support.h"
@@ -13,51 +13,91 @@
 
 struct vm;
 
-typedef enum {
+ /*
+  * Write the #documentation.
+  */
+typedef enum
+{
    VALUE_NIL,
    VALUE_BOOL,
    VALUE_NUMBER,
    VALUE_OBJECT,
 } value_type_t;
 
-typedef enum {
-   METHOD_TYPE_OPERATOR,
-} method_type_t;
-
-typedef union value {
+/*
+ * Write the #documentation.
+ */
+typedef union value
+{
    double   number;
    uint64_t bits;
 } value_t;
 
-typedef struct object {
+/*
+ * Write the #documentation.
+ */
+typedef struct object
+{
    uint           references;
-   struct class  *class;
+   struct klass  *klass;
 } object_t;
 
-typedef value_t (*operator_t)(struct vm *vm, object_t *object, value_t arg);
+/*
+ * Write the #documentation.
+ */
+typedef enum
+{
+   CLASS_TYPE_BUILTIN,
+} klass_type_t;
 
-struct operator_method {
-   method_type_t type;
-   operator_t fn;
+typedef enum
+{
+   KLASS_OPERATOR_ADD,
+   KLASS_OPERATOR_SUB,
+   KLASS_OPERATOR_MUL,
+   KLASS_OPERATOR_DIV,
+   KLASS_OPERATOR_MOD,
+   KLASS_OPERATOR_NEG,
+   KLASS_OPERATOR_COUNT
+} klass_operator_type_t;
+
+/*
+ * Write the #documentation.
+ */
+typedef value_t(*builtin_klass_operator_t)(struct vm*, object_t* object, value_t arg);
+
+/*
+ * Write the #documentation.
+ */
+struct builtin_class_data
+{
+   builtin_klass_operator_t operators[KLASS_OPERATOR_COUNT];
 };
 
-typedef union {
-   method_type_t type;
-   struct operator_method operator;
-} method_t;
+/*
+ * Write the #documentation.
+ */
+union class_data
+{
+   struct builtin_class_data builtin;
+};
 
-typedef struct class {
+/*
+ * Write the #documentation.
+ */
+typedef struct klass
+{
    object_t object;
-   const char *name;
-   method_t operator_neg;
-   method_t operator_add;
-   method_t operator_sub;
-   method_t operator_mul;
-   method_t operator_div;
-   method_t operator_mod;
-} class_t;
+   klass_type_t type;
+   const char* name;
+   union class_data data;
+} klass_t;
 
-typedef struct {
+/*
+ * Write the #documentation.
+ */
+typedef struct
+{
    object_t    object;
    uint        size;
    char        chars[];
@@ -69,53 +109,83 @@ typedef struct {
 #define BITS_TAG_BOOLEAN   ((uint64_t)(0x7ffc000000000000))
 #define BITS_TAG_OBJECT    ((uint64_t)(0xfffc000000000000))
 
+/*
+ * Write the #documentation.
+ */
 inline value_t value_nil(void)
 {
    return (value_t) { .bits = BITS_NAN_MASK };
 }
 
+/*
+ * Write the #documentation.
+ */
 inline value_t value_boolean(bool boolean)
 {
    return (value_t) { .bits = BITS_TAG_BOOLEAN | boolean };
 }
 
-inline value_t value_number(koji_number_t number)
+/*
+ * Write the #documentation.
+ */
+inline value_t value_number(kj_number_t number)
 {
    return (value_t) { .number = number };
 }
 
+/*
+ * Write the #documentation.
+ */
 inline value_t value_object(void const *ptr)
 {
    assert(((uint64_t)ptr & BITS_TAG_MASK) == 0 && "Pointer with some bit higher than 48th set.");
    return (value_t) { .bits = (BITS_TAG_OBJECT | (uint64_t)ptr) };
 }
 
+/*
+ * Write the #documentation.
+ */
 inline bool value_is_nil(value_t value)
 {
    return value.bits == BITS_NAN_MASK;
 }
 
+/*
+ * Write the #documentation.
+ */
 inline bool value_is_boolean(value_t value)
 {
    return (value.bits & BITS_TAG_MASK) == BITS_TAG_BOOLEAN;
 }
 
+/*
+ * Write the #documentation.
+ */
 inline bool value_is_number(value_t value)
 {
    return (value.bits & BITS_NAN_MASK) != BITS_NAN_MASK;
 }
 
+/*
+ * Write the #documentation.
+ */
 inline  bool value_is_object(value_t value)
 {
    return (value.bits & BITS_TAG_MASK) == BITS_TAG_OBJECT;
 }
 
+/*
+ * Write the #documentation.
+ */
 inline  bool value_get_boolean(value_t value)
 {
    assert(value_is_boolean(value));
    return (value.bits & (uint64_t)1);
 }
 
+/*
+ * Write the #documentation.
+ */
 inline bool value_to_boolean(value_t value)
 {
    if (value_is_boolean(value)) return value_get_boolean(value);
@@ -124,51 +194,82 @@ inline bool value_to_boolean(value_t value)
    return true;
 }
 
+/*
+ * Write the #documentation.
+ */
 inline object_t* value_get_object(value_t value)
 {
    assert(value_is_object(value));
    return (void*)(intptr_t)(value.bits & BITS_TAG_PAYLOAD);
 }
 
-kj_intern string_t * string_new(allocator_t *alloc, class_t *class_string, uint length);
+/*
+ * Write the #documentation.
+ */
+kj_intern value_t value_new_string(allocator_t *alloc, klass_t *string_class, uint length);
 
-kj_intern value_t value_new_stringf(allocator_t *alloc, class_t *class_string, const char *format,
-                                    ...);
+/*
+ * Write the #documentation.
+ */
+kj_intern value_t value_new_stringf(allocator_t *alloc, klass_t *string_class, const char *format, ...);
 
-kj_intern value_t value_new_stringfv(allocator_t *alloc, class_t *class_string, const char *format,
-                                     va_list args);
+/*
+ * Write the #documentation.
+ */
+kj_intern value_t value_new_stringfv(allocator_t *alloc, klass_t *string_class, const char *format, va_list args);
 
+/*
+ * Write the #documentation.
+ */
 kj_intern void value_destroy(value_t *value, allocator_t *alloc);
 
-kj_intern void value_set(value_t * dest, allocator_t * allocator, value_t * src);
+/*
+ * Write the #documentation.
+ */
+kj_intern void value_set(value_t * dest, allocator_t * allocator, value_t const *src);
 
+/*
+ * Write the #documentation.
+ */
 inline void value_move(value_t * dest, allocator_t * allocator, value_t src)
 {
    value_destroy(dest, allocator);
    *dest = src;
 }
 
+/*
+ * Write the #documentation.
+ */
 inline void value_set_nil(value_t * dest, allocator_t * allocator)
 {
    value_destroy(dest, allocator);
    *dest = value_nil();
 }
 
+/*
+ * Write the #documentation.
+ */
 inline void value_set_boolean(value_t * dest, allocator_t * allocator, bool value)
 {
    value_destroy(dest, allocator);
    *dest = value_boolean(value);
 }
 
-inline void value_set_number(value_t * dest, allocator_t * allocator, koji_number_t value)
+/*
+ * Write the #documentation.
+ */
+inline void value_set_number(value_t * dest, allocator_t * allocator, kj_number_t value)
 {
    value_destroy(dest, allocator);
    dest->number = value;
 }
 
+/*
+ * Write the #documentation.
+ */
 kj_intern const char * value_type_str(value_t value);
 
-inline method_t method_make_operator(operator_t operator)
-{
-   return (method_t) { METHOD_TYPE_OPERATOR, .operator.fn = operator };
-}
+/*
+ * Write the #documentation.
+ */
+kj_intern void string_class_init(klass_t* c);
