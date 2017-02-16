@@ -10,39 +10,43 @@
 #include "koji.h"
 #include "kj_error.h"
 
-/*
- * Value representing an enumerated token value (e.g. kw_while) or a valid sequence of characters
- * (e.g. '>=').
- */
+ /*
+  * Value representing an enumerated token value (e.g. kw_while) or a valid sequence of characters
+  * (e.g. '>=').
+  */
 typedef int token_t;
+
+#define TOKENS(_)\
+	_(tok_eos, "end-of-stream")\
+	_(tok_number, "number")\
+	_(tok_string, "string")\
+	_(tok_identifier, "identifier")\
+	_(kw_debug, "debug")\
+	_(kw_def, "def")\
+	_(kw_do, "do")\
+	_(kw_else, "else")\
+	_(kw_false, "false")\
+	_(kw_for, "for")\
+	_(kw_globals, "globals")\
+	_(kw_if, "if")\
+	_(kw_in, "in")\
+	_(kw_nil, "nil")\
+	_(kw_return, "return")\
+	_(kw_this, "this")\
+	_(kw_true, "true")\
+	_(kw_var, "var")\
+	_(kw_while, "while")\
+
+#define DEFINE_TOKEN_ENUM(enum_, _) enum_,
 
 /*
  * The enumeration of all tokens and keywords recognized by the lexer.
  */
-enum
-{
-   /* tokens */
-   tok_eos = -127,
-   tok_number,
-   tok_string,
-   tok_identifier,
-
-   /* keywords */
-   kw_def,
-   kw_do,
-   kw_else,
-   kw_false,
-   kw_globals,
-   kw_for,
-   kw_if,
-   kw_in,
-   kw_nil,
-   kw_return,
-   kw_this,
-   kw_true,
-   kw_var,
-   kw_while,
+enum {
+	TOKENS(DEFINE_TOKEN_ENUM)
 };
+
+#undef DEFINE_TOKEN_ENUM
 
 /*
  * A lexer scans a stream using a provided stream_reader matching tokens recognized by the language
@@ -51,64 +55,62 @@ enum
  * appropriate output bytecode. This lexer is implemented as a basic state machine that implements
  * the language tokens regular expression.
  */
-struct lexer
-{
-   /* The next character in the stream. */
-   int curr_char;
+struct lexer {
+	/* The next character in the stream. */
+	int curr_char;
 
-   /* Allocator used to allocate the lookahead string. */
-   struct koji_allocator allocator;
+	/* Allocator used to allocate the lookahead string. */
+	struct koji_allocator allocator;
 
-   /* Used to report scanning issues. */
-   struct issue_handler* issue_handler;
+	/* Used to report scanning issues. */
+	struct issue_handler* issue_handler;
 
-   /* Input stream data. */
-   void* stream_data;
+	/* Input stream data. */
+	void* stream_data;
 
-   /* Input stream function. */
-   koji_stream_read_t stream_fn;
+	/* Input stream function. */
+	koji_stream_read_t stream_fn;
 
-   /* Identifies a location in the input source code. */
-   struct source_location source_location;
+	/* Identifies a location in the input source code. */
+	struct source_location source_location;
 
-   /* The type of the next token in the stream (called lookahead). */
-   token_t lookahead;
+	/* The type of the next token in the stream (called lookahead). */
+	token_t lookahead;
 
-   /* Whether at least one new-line was scanned before this token. */
-   bool newline;
+	/* Whether at least one new-line was scanned before this token. */
+	bool newline;
 
-   /* Lookahead string. */
-   char* lookahead_string;
+	/* Lookahead string. */
+	char* lookahead_string;
 
-   /* Lookahead string size (number of characters excluded the null byte). */
-   int lookahead_string_length;
+	/* Lookahead string size (number of characters excluded the null byte). */
+	int lookahead_string_length;
 
-   /* The lookahead string buffer capacity in bytes. */
-   int lookahead_string_capacity;
+	/* The lookahead string buffer capacity in bytes. */
+	int lookahead_string_capacity;
 
-   /* Iff the lookahead is a `tok_number` this variable holds its numerical value. */
-   koji_number_t lookahead_number;
+	/* Iff the lookahead is a `tok_number` this variable holds its numerical value. */
+	koji_number_t lookahead_number;
 };
 
 /*
  * Write the #documentation.
  */
-struct lexer_info
-{
-   /* Write the #documentation. */
-   struct koji_allocator allocator;
+struct lexer_info {
+	/* Write the #documentation. */
+	struct koji_allocator allocator;
 
-   /* Write the #documentation. */
-   struct issue_handler* issue_handler;
+	/* Write the #documentation. */
+	struct issue_handler* issue_handler;
 
-   /* Write the #documentation. */
-   const char* filename;
+	/* Write the #documentation. */
+	const char* filename;
 
-   /* Write the #documentation. */
-   koji_stream_read_t stream_fn;
+	/* Write the #documentation. */
+	koji_stream_read_t stream_fn;
 
-   /* Write the #documentation. */
-   void* stream_data;
+	/* Write the #documentation. */
+	void* stream_data;
 };
 
 /*

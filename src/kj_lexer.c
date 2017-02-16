@@ -119,29 +119,14 @@ kj_intern void lexer_deinit(struct lexer* l)
 
 kj_intern const char* lexer_token_to_string(token_t tok, char* buffer, int buffer_size)
 {
+#define TOKEN_CASE(enum_, str) case enum_ : return str;
 	switch (tok) {
-		case tok_eos:           return "end-of-stream";
-		case tok_number:        return "number";
-		case tok_string:        return "string";
-		case tok_identifier:    return "identifier";
-		case kw_def:            return "def";
-		case kw_do:             return "do";
-		case kw_else:           return "else";
-		case kw_false:          return "false";
-		case kw_globals:        return "globals";
-		case kw_for:            return "for";
-		case kw_if:             return "if";
-		case kw_in:             return "in";
-		case kw_nil:            return "nil";
-		case kw_return:         return "return";
-		case kw_this:           return "this";
-		case kw_true:           return "true";
-		case kw_var:            return "var";
-		case kw_while:          return "while";
+		TOKENS(TOKEN_CASE);
 		default:
 			snprintf(buffer, buffer_size, "'%s'", (const char*)&tok);
 			return buffer;
 	}
+#undef TOKEN_CASE
 }
 
 kj_intern const char* lexer_lookahead_to_string(struct lexer* l)
