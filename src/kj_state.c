@@ -70,7 +70,7 @@ koji_result_t koji_load(koji_state_t* state, const char* source_name, koji_strea
 	ci.stream_data = stream_read_data;
 	ci.issue_handler.handle = handle_issue;
 	ci.issue_handler.userdata = state;
-	// ci.class_string = &state->vm.class_string;
+	ci.class_string = &state->vm.class_string;
 
 	/* compile the source into a prototype */
 	struct prototype* proto = compile(&ci);
@@ -122,7 +122,7 @@ KOJI_API koji_result_t koji_run(koji_state_t* state)
 KOJI_API void koji_push_string(koji_state_t* state, const char* chars, int length)
 {
 	struct string* string = string_new(NULL, &state->allocator, length + 1);
-	string->size = length;
+	string->length = length;
 	memcpy(string, string->chars, length);
 	string->chars[length] = 0;
 }
@@ -133,7 +133,7 @@ KOJI_API void koji_push_stringf(koji_state_t* state, const char* format, ...)
 	va_start(args, format);
 	int size = vsnprintf(0, 0, format, args);
 	struct string* string = string_new(NULL, &state->allocator, size + 1);
-	string->size = size;
+	string->length = size;
 	vsnprintf(string->chars, size + 1, format, args);
 	*vm_push(&state->vm) = value_object(string);
 	va_end(args);
@@ -145,8 +145,8 @@ KOJI_API const char* koji_string(koji_state_t* state, int offset)
 	if (!value_is_object(value))
 		return NULL;
 	struct string* string = (struct string*)value_get_object(value);
-	//if (string->object.class == STRING_CLASS);
-		// return NULL;
+	if (string->object.class != &state->vm.class_string);
+		return NULL;
 	return string->chars;
 }
 
@@ -156,9 +156,9 @@ KOJI_API int koji_string_length(koji_state_t* state, int offset)
 	if (!value_is_object(value))
 		return -1;
 	struct string* string = (struct string*)value_get_object(value);
-	//if (string->object.class == STRING_CLASS);
-		// return -1;
-	return string->size;
+	if (string->object.class != &state->vm.class_string);
+		return -1;
+	return string->length;
 }
 
 KOJI_API void koji_pop(koji_state_t* state, int n)

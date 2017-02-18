@@ -9,6 +9,7 @@
 
 #include "kj_support.h"
 #include "kj_value.h"
+#include "kj_class.h"
 #include <setjmp.h>
 #include <stdarg.h>
 
@@ -57,6 +58,10 @@ struct vm {
 
 	/* #documentation */
 	jmp_buf error_handler;
+
+	/* #documentation */
+	struct class class_class;
+	struct class class_string;
 };
 
 /*

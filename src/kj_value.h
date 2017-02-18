@@ -35,11 +35,6 @@ struct object {
    struct class*  class;
 };
 
-struct class {
-	struct object object;
-	const char* name;
-};
-
 #define BITS_NAN_MASK      ((uint64_t)(0x7ff4000000000000))
 #define BITS_TAG_MASK      ((uint64_t)(0xffff000000000000))
 #define BITS_TAG_PAYLOAD   ~BITS_TAG_MASK

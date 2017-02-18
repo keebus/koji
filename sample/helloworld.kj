@@ -1,7 +1,4 @@
-var a = 1;
-var b = 2;
 
-var c = a + b;
-
-globals(c, c +1, c * 23 )
-
+var a = 1
+var b = 3
+globals(a + 2 + b)

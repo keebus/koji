@@ -1,0 +1,19 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/obj/x32/Debug
+/bin/x32/Debug
+/.vs/koji/v15
+/kojic.vcxproj.user
+/kojic.vcxproj.filters
+/kojic.vcxproj
+/koji.sln
+/kojic.vcxproj.user
+/kojic.vcxproj.filters
+/kojic.vcxproj
+/koji.sln
+/kojic.vcxproj.user
+/kojic.vcxproj.filters
+/kojic.vcxproj
+/koji.sln

@@ -48,7 +48,7 @@ struct compiler {
 	struct label        label_true;
 	struct label        label_false;
 	struct prototype*   proto;
-	/*klass_t            * class_string;*/
+	struct class*       class_string;
 };
 
 /*
@@ -544,8 +544,8 @@ static int fetch_constant_string(struct compiler* c, const char* chars, int leng
 
 		/* is i-th constant a string and do the strings match? if so, no need to add a new constant */
 		if (value_is_object(*constant)
-			&& (object = value_get_object(*constant))->class == /* c->class_string */ 0
-			&& ((struct string const*)object)->size == length
+			&& (object = value_get_object(*constant))->class == c->class_string
+			&& ((struct string const*)object)->length == length
 			&& memcmp(((struct string const*)object)->chars, chars, length) == 0) {
 			return i;
 		}
@@ -555,7 +555,7 @@ static int fetch_constant_string(struct compiler* c, const char* chars, int leng
 	value_t* constant = array_push_seq(&c->proto->constants, &c->proto->num_constants, &c->lexer.allocator, value_t, 1);
 
 	/* create a new string */
-	struct string* string = string_new(NULL, &c->lexer.allocator, length);
+	struct string* string = string_new(c->class_string, &c->lexer.allocator, length);
 	memcpy(string->chars, chars, length);
 	string->chars[length] = '\0';
 
@@ -1486,7 +1486,8 @@ static void parse_debug_stmt(struct compiler* c)
 
 	if (!peek(c, ')')) {
 		do {
-			parse_expression_to(c, c->temporary++);
+			parse_expression_to(c, c->temporary);
+			++c->temporary;
 		} while (accept(c, ','));
 	}
 
@@ -1596,7 +1597,7 @@ kj_intern struct prototype* compile(struct compile_info* info)
 	/* finish setting up compiler state */
 	compiler.temp_allocator = linear_allocator_create(&info->allocator, LINEAR_ALLOCATOR_PAGE_MIN_SIZE);
 	compiler.proto = main_proto;
-	//compiler.class_string = info->class_string;
+	compiler.class_string = info->class_string;
 
 	/* kick off compilation! */
 	parse_module(&compiler);

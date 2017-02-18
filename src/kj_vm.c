@@ -8,6 +8,7 @@
 #include "kj_vm.h"
 #include "kj_bytecode.h"
 #include "kj_string.h"
+#include "kj_class.h"
 
 static bool object_deref(struct object* object)
 {
@@ -15,41 +16,43 @@ static bool object_deref(struct object* object)
 	return --object->references == 0;
 }
 
-static void value_destroy(struct vm* vm, value_t value)
+static void vm_value_destroy(struct vm* vm, value_t value)
 {
 	if (value_is_object(value)) {
 		struct object* object = value_get_object(value);
 		if (object_deref(object)) {
 			if (object_deref((struct object*)object->class))
 				kj_free_type(object->class, 1, &vm->allocator);
+			object->class->destructor(vm, object->class, object);
 			kj_free_type(object, 1, &vm->allocator);
 		}
 	}
 }
 
-static void value_set_nil(struct vm* vm, value_t* value)
+static void vm_value_set_nil(struct vm* vm, value_t* value)
 {
-	value_destroy(vm, *value);
+	vm_value_destroy(vm, *value);
 	*value = value_nil();
 }
 
-static void value_set_boolean(struct vm* vm, value_t* value, bool boolean)
+static void vm_value_set_boolean(struct vm* vm, value_t* value, bool boolean)
 {
-	value_destroy(vm, *value);
+	vm_value_destroy(vm, *value);
 	*value = value_boolean(boolean);
 }
 
-static void value_set_number(struct vm* vm, value_t* value, koji_number_t number)
+static void vm_value_set_number(struct vm* vm, value_t* value, koji_number_t number)
 {
-	value_destroy(vm, *value);
+	vm_value_destroy(vm, *value);
 	*value = value_number(number);
 }
 
-static void value_set(struct vm* vm, value_t* dest, value_t const* src)
+static void vm_value_set(struct vm* vm, value_t* dest, value_t const* src)
 {
+
 	if (dest == src) return;
 
-	value_destroy(vm, *dest);
+	vm_value_destroy(vm, *dest);
 	*dest = *src;
 
 	/* if value is an object, bump up its reference count */
@@ -84,13 +87,20 @@ kj_intern void vm_init(struct vm* vm, struct koji_allocator allocator)
 	vm->value_stack_ptr = 0;
 	vm->value_stack_size = 16;
 	vm->value_stack = kj_alloc_type(value_t, vm->value_stack_size, &vm->allocator);
+
+	/* init builtin classes */
+	vm->class_class.object.class = &vm->class_class;
+	vm->class_class.object.references = 1;
+	vm->class_class.name = "class";
+
+	class_string_init(&vm->class_string, &vm->class_class);
 }
 
 kj_intern void vm_deinit(struct vm* vm)
 {
 	/* destroy all values on the stack */
 	for (int i = 0; i < vm->value_stack_ptr; ++i) {
-		value_destroy(vm, vm->value_stack[i]);
+		vm_value_destroy(vm, vm->value_stack[i]);
 	}
 	kj_free_type(vm->value_stack, vm->value_stack_size, &vm->allocator);
 
@@ -167,7 +177,7 @@ kj_intern void vm_popn(struct vm* vm, int n)
 {
 	for (int i = 0; i < n; ++i) {
 		value_t* value = vm_top(vm, -1);
-		value_destroy(vm, *value);
+		vm_value_destroy(vm, *value);
 	}
 	vm->value_stack_ptr -= n;
 }
@@ -196,7 +206,7 @@ kj_intern koji_result_t vm_resume(struct vm* vm)
 
 new_frame: /* jumped to when a new frame is pushed onto the stack */
 	/* check that some frame is on the stack, otherwise no function can be called, simply return
-	   success */
+		success */
 	if (vm->frame_stack_ptr == 0)
 		return KOJI_OK;
 
@@ -209,68 +219,69 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 		switch (decode_op(instr)) {
 			case OP_LOADNIL:
 				for (int r = decode_A(instr), to = r + decode_Bx(instr); r < to; ++r)
-					value_set_nil(vm, vm_register(vm, frame, r));
+					vm_value_set_nil(vm, vm_register(vm, frame, r));
 				break;
 
 			case OP_LOADBOOL:
-				value_set_boolean(vm, RA, (bool)decode_B(instr));
+				vm_value_set_boolean(vm, RA, (bool)decode_B(instr));
 				frame->pc += decode_C(instr);
 				break;
 
 			case OP_MOV:
-				value_set(vm, RA, ARG(Bx));
+				vm_value_set(vm, RA, ARG(Bx));
 				break;
 
 			case OP_NEG:
 				ra = RA;
 				arg1 = *ARG(Bx);
-				value_set_boolean(vm, ra, !value_to_boolean(*ARG(Bx)));
+				vm_value_set_boolean(vm, ra, !value_to_boolean(*ARG(Bx)));
 				break;
 
 			case OP_UNM:
 				ra = RA;
 				arg1 = *ARG(Bx);
 				if (value_is_number(arg1)) {
-					value_set_number(vm, ra, -arg1.number);
+					vm_value_set_number(vm, ra, -arg1.number);
 				}
-				/*else if (value_is_object(arg1)) {
-					struct object* object = value_get_object(arg1);
-					value_move(ra, allocator, vm_call_operator(vm, object, CLASS_OPERATOR_NEG, value_nil()));
-				}*/
+				else if (value_is_object(arg1)) {
+					struct object *object = value_get_object(arg1);
+					struct class* class = object->class;
+					vm_value_destroy(vm, *ra);
+					*ra = class->operator(vm, class, object, CLASS_OPERATOR_UNM, arg1);
+				}
 				else {
 					vm_throw(vm, "cannot apply unary minus operation to a %s value.", value_type_str(arg1));
 				}
 				break;
 
 				/* binary operators */
-#define BINARY_OPERATOR(case_, op_, name_, klassop, NUMBER_MODIFIER)\
-            case case_:\
-               ra = RA;\
-               arg1 = *ARG(B);\
-               arg2 = *ARG(C);\
-               if (value_is_number(arg1) && value_is_number(arg2))\
-               {\
-                  value_set_number(vm, ra, (koji_number_t)(NUMBER_MODIFIER(arg1.number) op_ NUMBER_MODIFIER(arg2.number)));\
-               }\
-               else\
-               {\
-                  vm_throw(vm, "cannot apply binary operator " #name_ " between a %s and a %s.", value_type_str(arg1), value_type_str(arg2));\
-               }\
-               break;
-				/*else if (value_is_object(arg1))\
-			   {\
-				  object_t *object = value_get_object(arg1);\
-				  value_move(ra, allocator, vm_call_operator(vm, object, klassop, arg2));\
-			   }\*/
+#define BINARY_OPERATOR(case_, op_, name_, classop, NUMBER_MODIFIER)\
+			case case_:\
+				ra = RA;\
+				arg1 = *ARG(B);\
+				arg2 = *ARG(C);\
+				if (value_is_number(arg1) && value_is_number(arg2)) {\
+					vm_value_set_number(vm, ra, (koji_number_t)(NUMBER_MODIFIER(arg1.number) op_ NUMBER_MODIFIER(arg2.number)));\
+				}\
+				else if (value_is_object(arg1)) {\
+					struct object *object = value_get_object(arg1);\
+					struct class* class = object->class;\
+					vm_value_destroy(vm, *ra);\
+					*ra = class->operator(vm, class, object, classop, arg2);\
+				}\
+				else {\
+					vm_throw(vm, "cannot apply binary operator " #name_ " between a %s and a %s.", value_type_str(arg1), value_type_str(arg2));\
+				}\
+				break;
 
 #define PASSTHROUGH(x) x
 #define CAST_TO_INT(x) ((int64_t)x)
 
-			BINARY_OPERATOR(OP_ADD, +, add, KLASS_OPERATOR_ADD, PASSTHROUGH)
-			BINARY_OPERATOR(OP_SUB, -, sub, KLASS_OPERATOR_SUB, PASSTHROUGH)
-			BINARY_OPERATOR(OP_MUL, *, mul, KLASS_OPERATOR_MUL, PASSTHROUGH)
-			BINARY_OPERATOR(OP_DIV, / , div, KLASS_OPERATOR_DIV, PASSTHROUGH)
-			BINARY_OPERATOR(OP_MOD, %, mod, KLASS_OPERATOR_MOD, CAST_TO_INT)
+			BINARY_OPERATOR(OP_ADD, +, add, CLASS_OPERATOR_ADD, PASSTHROUGH)
+			BINARY_OPERATOR(OP_SUB, -, sub, CLASS_OPERATOR_SUB, PASSTHROUGH)
+			BINARY_OPERATOR(OP_MUL, *, mul, CLASS_OPERATOR_MUL, PASSTHROUGH)
+			BINARY_OPERATOR(OP_DIV, / , div, CLASS_OPERATOR_DIV, PASSTHROUGH)
+			BINARY_OPERATOR(OP_MOD, %, mod, CLASS_OPERATOR_MOD, CAST_TO_INT)
 
 #undef PASSTHROUGH
 #undef CAST_TO_INT
@@ -281,7 +292,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 				int newpc = frame->pc + 1;
 				value_t const* arg = ARG(B);
 				if (value_to_boolean(*arg) == decode_C(instr)) {
-					value_set(vm, RA, arg);
+					vm_value_set(vm, RA, arg);
 					newpc += decode_Bx(instructions[frame->pc]);
 				}
 				frame->pc = newpc;
@@ -306,11 +317,14 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 
 				/* copy locals from starting from 0 from the current frame to the previous frame result locals */
 				for (int reg = decode_A(instr), to_reg = decode_Bx(instr); reg < to_reg; ++reg, ++i)
-					value_set(vm, vm_register(vm, frame, i), vm_value(vm, frame, reg));
+					vm_value_set(vm, vm_register(vm, frame, i), vm_value(vm, frame, reg));
 				
 				/* set all other current locals to nil */
-				for (int end = /* frame->proto->num_arguments + */ frame->proto->num_registers; i < end; ++i)
-					value_destroy(vm, *vm_register(vm, frame, i));
+				for (int end =/* frame->proto->num_arguments +*/ frame->proto->num_registers; i < end; ++i) {
+					value_t* value = vm_register(vm, frame, i);
+					vm_value_destroy(vm, *value);
+					*value = value_nil();
+				}
 
 				/* pop the frame, release the prototype reference */
 				prototype_release(frame->proto, allocator);
@@ -325,9 +339,10 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					if (value_is_nil(*r)) printf("nil");
 					else if (value_is_boolean(*r)) printf("%s", value_get_boolean(*r) ? "true" : "false");
 					else if (value_is_number(*r)) printf("%f", r->number);
-					else {
+					else if (value_get_object(*r)->class == &vm->class_string)
+						printf("%s", ((struct string*)value_get_object(*r))->chars);
+					else
 						printf("<object:%p>", value_get_object(*r));
-					}
 					printf(", ");
 				}
 				printf("\n");

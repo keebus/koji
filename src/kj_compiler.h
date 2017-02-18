@@ -15,20 +15,22 @@
  * client and consumed by the compile() function. All fields are mandatory.
  */
 struct compile_info {
-   /* the allocator to use for all allocation operations */
-   struct koji_allocator allocator;
+	/* the allocator to use for all allocation operations */
+	struct koji_allocator allocator;
 
-   /* the source stream "name", e.g. for source files it might be the file path */
-   const char *source_name;
+	/* the source stream "name", e.g. for source files it might be the file path */
+	const char *source_name;
 
-   /* the stream function used to read the source stream */
-   koji_stream_read_t stream_fn;
+	/* the stream function used to read the source stream */
+	koji_stream_read_t stream_fn;
 
-   /* the stream context data passed to the stream function on character read */
-   void* stream_data;
+	/* the stream context data passed to the stream function on character read */
+	void* stream_data;
 
-   /* the issue reporter that will be used to report compilation issues */
-   struct issue_handler issue_handler;
+	/* the issue reporter that will be used to report compilation issues */
+	struct issue_handler issue_handler;
+
+	struct class* class_string;
 };
 
 /*
