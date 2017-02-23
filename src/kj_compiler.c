@@ -387,7 +387,7 @@ static void expect_end_of_stmt(struct compiler* c)
 /*
  * Pushes an offset to the [label] and returns a pointer to it.
  */
-static inline int* label_push(struct compiler *c, struct label* label)
+static int* label_push(struct compiler *c, struct label* label)
 {
 	return array_push(&label->instructions, &label->num_instructions, &label->capacity, &c->lexer.allocator, int, 1);
 }
@@ -410,7 +410,7 @@ static void label_bind_to(struct compiler *c, struct label *label, int begin, in
  * Binds jump instructions in [label] starting from [begin] to the next instruction that will be
  * emitted to current prototype.
  */
-kj_intern void label_bind_here(struct compiler *c, struct label *label, int begin)
+static void label_bind_here(struct compiler *c, struct label *label, int begin)
 {
 	label_bind_to(c, label, begin, c->proto->num_instructions);
 }
@@ -736,33 +736,28 @@ static struct expr compile_binary_expression(struct compiler* c, struct source_l
 			}
 			break;
 
-			/*
-			 * lhs is a register and we assume that the compiler has called "prepare_logical_operator_lhs"
-			 * before calling this hence the TESTSET instruction has already been emitted.
-			 */
+		/*
+		 * lhs is a register and we assume that the compiler has called "prepare_logical_operator_lhs"
+		 * before calling this hence the TESTSET instruction has already been emitted.
+		 */
 		case BINOP_LOGICAL_AND:
-			return (expr_is_constant(lhs.type) && !expr_to_bool(lhs)) ?
-				expr_boolean(false) : rhs;
+			return (expr_is_constant(lhs.type) && !expr_to_bool(lhs)) ? expr_boolean(false) : rhs;
 
 		case BINOP_LOGICAL_OR:
-			return (expr_is_constant(lhs.type) && expr_to_bool(lhs)) ?
-				expr_boolean(true) : rhs;
-
+			return (expr_is_constant(lhs.type) && expr_to_bool(lhs)) ? expr_boolean(true) : rhs;
 
 		case BINOP_EQ:
 		case BINOP_NEQ:
 		{
 			const bool invert = (op == BINOP_NEQ);
-			if (lhs.type == EXPR_NIL || rhs.type == EXPR_NIL)
+			if (lhs.type == EXPR_NIL || rhs.type == EXPR_NIL) {
 				return expr_boolean(((lhs.type == EXPR_NIL) == (rhs.type == EXPR_NIL)) ^ invert);
+			}
 			if (expr_is_constant(lhs.type) && expr_is_constant(rhs.type)) {
 				if (lhs.type == EXPR_BOOL && rhs.type == EXPR_BOOL)
 					return expr_boolean((lhs.val.boolean == rhs.val.boolean) ^ invert);
 				if (lhs.type == EXPR_STRING && rhs.type == EXPR_STRING)
-					return expr_boolean(
-					(lhs.val.string.length == rhs.val.string.length &&
-						memcmp(lhs.val.string.chars, rhs.val.string.chars, lhs.val.string.length) == 0)
-						^ invert);
+					return expr_boolean((lhs.val.string.length == rhs.val.string.length && memcmp(lhs.val.string.chars, rhs.val.string.chars, lhs.val.string.length) == 0) ^ invert);
 				if (lhs.type == EXPR_NUMBER && rhs.type == EXPR_NUMBER)
 					return expr_boolean((lhs.val.number == rhs.val.number) ^ invert);
 				goto error;
@@ -781,9 +776,7 @@ static struct expr compile_binary_expression(struct compiler* c, struct source_l
 				if (lhs.type == EXPR_BOOL && rhs.type == EXPR_BOOL)
 					return expr_boolean((lhs.val.boolean < rhs.val.boolean) ^ invert);
 				if (lhs.type == EXPR_STRING && rhs.type == EXPR_STRING) {
-					bool lt = lhs.val.string.length < rhs.val.string.length ||
-						(lhs.val.string.length == rhs.val.string.length &&
-							memcmp(lhs.val.string.chars, rhs.val.string.chars, lhs.val.string.length) < 0);
+					bool lt = lhs.val.string.length < rhs.val.string.length || (lhs.val.string.length == rhs.val.string.length && memcmp(lhs.val.string.chars, rhs.val.string.chars, lhs.val.string.length) < 0);
 					return expr_boolean(lt ^ invert);
 				}
 				if (lhs.type == EXPR_NUMBER && rhs.type == EXPR_NUMBER)
@@ -805,9 +798,7 @@ static struct expr compile_binary_expression(struct compiler* c, struct source_l
 				if (lhs.type == EXPR_BOOL && rhs.type == EXPR_BOOL)
 					return expr_boolean((lhs.val.boolean <= rhs.val.boolean) ^ invert);
 				if (lhs.type == EXPR_STRING && rhs.type == EXPR_STRING) {
-					bool lt = lhs.val.string.length <= rhs.val.string.length ||
-						(lhs.val.string.length == rhs.val.string.length &&
-							memcmp(lhs.val.string.chars, rhs.val.string.chars, lhs.val.string.length) <= 0);
+					bool lt = lhs.val.string.length <= rhs.val.string.length || (lhs.val.string.length == rhs.val.string.length && memcmp(lhs.val.string.chars, rhs.val.string.chars, lhs.val.string.length) <= 0);
 					return expr_boolean(lt ^ invert);
 				}
 				if (lhs.type == EXPR_NUMBER && rhs.type == EXPR_NUMBER)

@@ -16,19 +16,6 @@ static bool object_deref(struct object* object)
 	return --object->references == 0;
 }
 
-static void vm_value_destroy(struct vm* vm, value_t value)
-{
-	if (value_is_object(value)) {
-		struct object* object = value_get_object(value);
-		if (object_deref(object)) {
-			if (object_deref((struct object*)object->class))
-				kj_free_type(object->class, 1, &vm->allocator);
-			object->class->destructor(vm, object->class, object);
-			kj_free_type(object, 1, &vm->allocator);
-		}
-	}
-}
-
 static void vm_value_set_nil(struct vm* vm, value_t* value)
 {
 	vm_value_destroy(vm, *value);
@@ -356,4 +343,33 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 
 #undef RA
 #undef ARG
+}
+
+static void vm_value_destroy(struct vm* vm, value_t value)
+{
+	if (value_is_object(value)) {
+		struct object* object = value_get_object(value);
+		if (object_deref(object)) {
+			if (object_deref((struct object*)object->class))
+				kj_free_type(object->class, 1, &vm->allocator);
+			object->class->destructor(vm, object->class, object);
+			kj_free_type(object, 1, &vm->allocator);
+		}
+	}
+}
+
+kj_intern vm_test(struct vm* vm)
+{
+	struct table t;
+	table_init(&t, vm, TABLE_DEFAULT_CAPACITY);
+
+	for (int i = 0; i < 100; ++i) 		{
+		value_t k = value_number(i);
+		value_t v = value_number(i * 1000);
+		table_set(&t, vm, k, v);
+	}
+
+	value_t v = table_get(&t, value_number(44));
+
+	table_deinit(&t, vm);
 }

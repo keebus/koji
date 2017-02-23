@@ -8,7 +8,7 @@
 #include "kj_string.h"
 #include "kj_vm.h"
 
-kj_intern void string_destructor(struct vm* vm, struct class* class, struct object* object)
+static void string_destructor(struct vm* vm, struct class* class, struct object* object)
 {
 	/* nop */
 }

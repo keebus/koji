@@ -51,6 +51,7 @@ koji_state_t* koji_open(struct koji_allocator* allocator)
 
 	state->allocator = *allocator;
 	vm_init(&state->vm, *allocator);
+	vm_test(&state->vm);
 
 	return state;
 }
