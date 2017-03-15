@@ -23,6 +23,6 @@ const char* value_type_str(value_t value)
 	if (value_is_object(constant)) {
 		// assert value_get_object(constant)->class is string
 		struct string* string = (struct string*)value_get_object(constant);
-		alloc->alloc(string, sizeof(struct string) + string->size + 1, 0, alloc->userdata);
+		alloc->alloc(string, sizeof(struct string) + string->length + 1, 0, alloc->userdata);
 	}
 }
