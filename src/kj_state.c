@@ -133,7 +133,7 @@ KOJI_API void koji_push_stringf(koji_state_t* state, const char* format, ...)
 	va_list args;
 	va_start(args, format);
 	int size = vsnprintf(0, 0, format, args);
-	struct string* string = string_new(NULL, &state->allocator, size + 1);
+	struct string* string = string_new(&state->vm.class_string, &state->allocator, size + 1);
 	string->length = size;
 	vsnprintf(string->chars, size + 1, format, args);
 	*vm_push(&state->vm) = value_object(string);
@@ -146,7 +146,7 @@ KOJI_API const char* koji_string(koji_state_t* state, int offset)
 	if (!value_is_object(value))
 		return NULL;
 	struct string* string = (struct string*)value_get_object(value);
-	if (string->object.class != &state->vm.class_string);
+	if (string->object.class != &state->vm.class_string)
 		return NULL;
 	return string->chars;
 }
@@ -157,7 +157,7 @@ KOJI_API int koji_string_length(koji_state_t* state, int offset)
 	if (!value_is_object(value))
 		return -1;
 	struct string* string = (struct string*)value_get_object(value);
-	if (string->object.class != &state->vm.class_string);
+	if (string->object.class != &state->vm.class_string)
 		return -1;
 	return string->length;
 }
