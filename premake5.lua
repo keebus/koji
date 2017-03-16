@@ -7,7 +7,7 @@ solution "koji"
 	debugdir "bin"
 
 	configuration "Debug"
-		symbols "On"
+		flags "Symbols"
 	
 	configuration "Release"
 		optimize "Speed"

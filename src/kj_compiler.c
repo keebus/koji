@@ -17,43 +17,33 @@ typedef int location_t;
 
 /* A local variable is simply a named and reserved stack register offset. */
 struct local {
-	/**/
 	int        identifier_offset;
 	location_t location;
 };
 
-/*
- * A label is a dynamic array of the indices of the instructions that branch to it.
- */
+/* A label is a dynamic array of the indices of the instructions that branch to it. */
 struct label {
-	/* The array of branching instruction indexes in current prototype instruction array that branch
-	   to this label. */
-	int* instructions;
-
-	/* The number of branching instructions branching to this label. */
-	int  num_instructions;
-
-	/* The capacity of the [instructions] array (in number of elements). */
-	int  capacity;
+	int* instructions; /* The array of branching instruction indexes in current prototype instruction array that branch to this label. */
+	int  num_instructions; /* The number of branching instructions branching to this label. */
+	int  capacity; /* The capacity of the [instructions] array (in number of elements). */
 };
 
+/* Wraps state for a compilation run. */
 struct compiler {
-	struct lexer        lexer;
-	linear_allocator_t* temp_allocator;
-	char*               scope_identifiers;
-	int                 scope_identifiers_size;
-	struct local*       locals;
-	int                 num_locals;
-	location_t          temporary;
-	struct label        label_true;
-	struct label        label_false;
-	struct prototype*   proto;
-	struct class*       class_string;
+	struct lexer        lexer; /* the lexer used to scan tokens from input source */
+	linear_allocator_t* temp_allocator; /* temporary linear allocator cleared up when compilation ends */
+	char*               scope_identifiers; /* array of chars containing scope identifiers one after the other */
+	int                 scope_identifiers_size; /* number of chars in the the prev. array */
+	struct local*       locals; /* array of local variables */
+	int                 num_locals; /* number of local variables */
+	location_t          temporary; /* index of the next free register for locals and temporaries */
+	struct label        label_true; /* label of the first instruction after jumping to true in conditional expression compilation */
+	struct label        label_false; /* same as previous, but for false cases */
+	struct prototype*   proto; /* current prototype being compiled */
+	struct class*       class_string; /* string class */
 };
 
-/*
- * #documentation
- */
+/* #documentation */
 typedef enum {
 	EXPR_NIL,      /* a nil expression */
 	EXPR_BOOL,     /* a boolean expression */
@@ -65,21 +55,16 @@ typedef enum {
 	EXPR_LTE,      /* a less-than-equal logical expression */
 } expr_type_t;
 
-/*
- * #documentation
- */
+/* #documentation */
 static const char *EXPR_TYPE_TO_STRING[] = { "nil", "bool", "number", "string", "local", "bool", "bool", "bool" };
-/*
- * The value of a string expression, the string [data] and its length [len].
- */
+
+/* The value of a string expression, the string [data] and its length [len]. */
 struct expr_string {
 	char *chars;
 	int  length;
 };
 
-/*
- * #documentation
- */
+/* comparison expression between lhs and rhs */
 struct expr_comparison {
 	location_t lhs;
 	location_t rhs;
@@ -961,8 +946,10 @@ static void compile_logical_operation(struct compiler* c, const struct expr_stat
 /*
  * #documentation
  */
-static void close_expression(struct compiler* c, struct expr_state *es, struct expr expr, location_t target)
+static location_t close_expression(struct compiler* c, struct expr_state *es, struct expr expr, location_t target_hint, bool move_to_target_hint)
 {
+	location_t result_location = target_hint;
+
 	struct prototype* proto = c->proto;
 	int true_label_instr_count = es->true_branches_begin;
 	int false_label_instr_count = es->false_branches_begin;
@@ -983,27 +970,31 @@ static void close_expression(struct compiler* c, struct expr_state *es, struct e
 		 * compiled expression instance that will hold final instruction location and the instructions
 		 * that ultimately write to that location
 		 */
-		location_t location = compile_expr_to_location(c, expr, target).val.location;
+		result_location = compile_expr_to_location(c, expr, target_hint).val.location;
 
-		if (location != target) {
+		if (move_to_target_hint && result_location != target_hint)
+		{
 			/*
-			 * if from location is a temporary location (i.e. not a local variable) and we know from [from]
-			 * that one or more instructions are setting to this location, we can simply replace the A
-			 * operand of all those instructions to [to] and optimize out the 'move' instruction.
-			 */
-			if (location >= c->temporary) {
+			* if from location is a temporary location (i.e. not a local variable) and we know from [from]
+			* that one or more instructions are setting to this location, we can simply replace the A
+			* operand of all those instructions to [to] and optimize out the 'move' instruction.
+			*/
+			if (result_location >= c->temporary) {
 				/* first check whether last instruction targets old location, if so update it with the new
-				   desired location */
+					desired location */
 				instruction_t *instr = &c->proto->instructions[c->proto->num_instructions - 1];
-				if (opcode_has_target(decode_op(*instr)) && decode_A(*instr) == location) {
+				if (opcode_has_target(decode_op(*instr)) && decode_A(*instr) == result_location) {
 					/* target matches result expression target register? if so, replace it with [to] */
-					replace_A(instr, target);
+					replace_A(instr, target_hint);
 				}
 			}
 			else {
 				/* we could not optimize out the move instruction, emit it. */
-				emit(c, encode_ABx(OP_MOV, target, location));
+				emit(c, encode_ABx(OP_MOV, target_hint, result_location));
 			}
+
+			/* the expression is forced to be in target_hint, update location */
+			result_location = target_hint;
 		}
 
 		if (c->label_true.num_instructions <= true_label_instr_count && c->label_false.num_instructions <= false_label_instr_count) {
@@ -1025,7 +1016,7 @@ static void close_expression(struct compiler* c, struct expr_state *es, struct e
 		if (index > 0) {
 			instruction_t *instr = &proto->instructions[index - 1];
 			if (decode_op(*instr) == OP_TESTSET) {
-				replace_A(instr, target);
+				replace_A(instr, target_hint);
 			}
 			else {
 				set_value_to_false = true;
@@ -1041,7 +1032,7 @@ static void close_expression(struct compiler* c, struct expr_state *es, struct e
 	int load_false_instruction_index = 0;
 	if (set_value_to_false) {
 		load_false_instruction_index = proto->num_instructions;
-		emit(c, encode_ABC(OP_LOADBOOL, target, false, 0));
+		emit(c, encode_ABC(OP_LOADBOOL, target_hint, false, 0));
 	}
 
 	/*
@@ -1057,7 +1048,7 @@ static void close_expression(struct compiler* c, struct expr_state *es, struct e
 		if (index > 0) {
 			instruction_t *instr = &proto->instructions[index - 1];
 			if (decode_op(*instr) == OP_TESTSET) {
-				replace_A(instr, target);
+				replace_A(instr, target_hint);
 			}
 			else {
 				set_value_to_true = true;
@@ -1068,7 +1059,7 @@ static void close_expression(struct compiler* c, struct expr_state *es, struct e
 
 	/* emit the loadbool instruction to *true* if we need to */
 	if (set_value_to_true) {
-		emit(c, encode_ABC(OP_LOADBOOL, target, true, 0));
+		emit(c, encode_ABC(OP_LOADBOOL, target_hint, true, 0));
 	}
 
 	/*
@@ -1119,13 +1110,14 @@ done:
 	c->label_true.num_instructions = es->true_branches_begin;
 	c->label_false.num_instructions = es->false_branches_begin;
 	c->temporary = es->temporary;
+	return result_location;
 }
 
 /*------------------------------------------------------------------------------------------------*/
 /* parsing functions                                                                              */
 /*------------------------------------------------------------------------------------------------*/
 static struct expr parse_expression(struct compiler *, struct expr_state *);
-static void parse_expression_to(struct compiler* c, location_t target);
+static location_t parse_expression_to(struct compiler* c, location_t target_hint, bool move_to_target_hint);
 
 /*
  * #documentation
@@ -1154,7 +1146,7 @@ static struct expr parse_local_ref_or_function_call(struct compiler* c, struct e
 /*
  * Parses and returns a subexpression as in "(a + 2)".
  */
-static struct expr parse_subexpression(struct compiler* c, struct expr_state *es)
+static struct expr parse_subexpression(struct compiler* c, struct expr_state* es)
 {
 	lex(c); /* eat the '(' */
 
@@ -1173,12 +1165,74 @@ static struct expr parse_subexpression(struct compiler* c, struct expr_state *es
 	 */
 	switch (c->lexer.lookahead) {
 		case '+': case '-': case '*': case '/': case '(': case '&': case '|': case '[':
-			close_expression(c, &sub_es, expr, sub_es.temporary);
-			expr = expr_location(sub_es.temporary);
+			expr = expr_location(close_expression(c, &sub_es, expr, sub_es.temporary, false));
 	}
 
 	return expr;
 }
+//
+//static struct expr parse_table(struct compiler* c, struct expr_state* es)
+//{
+//	assert(peek(c, '{'));
+//	lex(c);
+//
+//	struct expr expr = expr_location(es->temporary);
+//	int old_temporary = use_temporary(c, &expr);
+//
+//	kc_emit(c, encode_ABx(OP_NEWTABLE, expr.val.location, 0));
+//
+//	if (peek(c, '}')) {
+//		int32_t index = 0;
+//		bool has_key = false;
+//
+//		do {
+//			/* parse key */
+//			struct expr key, value;
+//
+//			if (peek(c, tok_identifier)) {
+//				key = expr_new_string(c, c->lexer.lookahead_string_length);
+//				memcpy(key.val.string.chars, c->lexer.lookahead_string, c->lexer.lookahead_string_length + 1);
+//				lex(c);
+//				key = compile_expr_to_location(c, key, c->temporary);
+//				expect(c, ':');
+//				has_key = true;
+//			}
+//			else {
+//				struct source_location sl = c->lexer.source_location;
+//				bool square_bracket = kc_accept(c, '[');
+//				key = parse_expression(c, c->temporaries);
+//				if (square_bracket) kc_expect(c, ']');
+//
+//				if (kc_accept(c, ':')) {
+//					has_key = true;
+//				}
+//				else if (has_key) {
+//					compiler_error(c->lex->error_handler, sl, "cannot leave key undefined after table entry with explicit key.");
+//				}
+//			}
+//
+//			/* key might be occupying last temporary */
+//			int temps2 = kc_use_temporary(c, &key);
+//
+//			if (has_key)
+//			{
+//				/* parse value */
+//				value = kc_parse_expression_to_any_register(c, c->temporaries);
+//			}
+//			else
+//			{
+//				value = key;
+//				key = kc_expr_to_any_register(c, kc_expr_integer(index++), c->temporaries);
+//			}
+//
+//			c->temporaries = temps2;
+//			kc_emit(c, encode_ABC(KJ_OP_SET, expr.location, key.location, value.location));
+//
+//		} while (kc_accept(c, ','));
+//	}
+//	expect(c, '}');
+//	c->temporaries = old_temporary;
+//}
 
 /*
  * Parses and returns a primary expression, i.e. constants, unary expressions, subexpressions,
@@ -1220,6 +1274,10 @@ static struct expr parse_primary_expression(struct compiler* c, struct expr_stat
 		case tok_identifier:
 			expr = parse_local_ref_or_function_call(c, es);
 			break;
+
+		//case '{':
+		//	expr = parse_table(c, es);
+		//	break;
 
 		default: syntax_error_at(c, source_loc); return expr_nil();
 	}
@@ -1317,7 +1375,7 @@ static struct expr parse_expression(struct compiler* c, struct expr_state *es)
 				if (location_is_constant(lhs.val.location) || location_is_temporary(c, lhs.val.location)) {
 					goto error_lhs_not_assignable;
 				}
-				parse_expression_to(c, lhs.val.location);
+				parse_expression_to(c, lhs.val.location, true);
 				return lhs;
 
 			default:
@@ -1334,13 +1392,13 @@ error_lhs_not_assignable:
 
 /*
  * Parses and compiles a full expression. A full expression is a subexpression with a "cleared"
- * expression state (e.g. no existing branches, current temporary as target and positive flag set
+ * expression state (e.g. no exiting branches, current temporary as target and positive flag set
  * to true). After the subexpression is compiled, it resolves any existing branch to true or false
  * by emitting the appropriate test/testset/loadbool/jump/etc instructions.
  * The expression returned by this function is guaranteed to lie in some location, whether a local
  * or a constant.
  */
-static void parse_expression_to(struct compiler* c, location_t target)
+static location_t parse_expression_to(struct compiler* c, location_t target_hint, bool move_to_target_hint)
 {
 	/* save the current number of branching instructions so that we can the state as we found it
 	   upon return. Also backup the first free temporary to be restored before returning. */
@@ -1357,7 +1415,7 @@ static void parse_expression_to(struct compiler* c, location_t target)
 
 	/* immediately close the expression, i.e. make sure it is compiled to the 'target' location and
 	   all open branches are closed */
-	close_expression(c, &es, expr, target);
+	return close_expression(c, &es, expr, target_hint, move_to_target_hint);
 }
 
 /*
@@ -1377,7 +1435,7 @@ static void parse_variable_decl(struct compiler* c)
 		/* optionally, parse the initialization expression */
 		if (accept(c, '=')) {
 			/* parse the expression and make sure it lies in the current temporary */
-			parse_expression_to(c, c->temporary);
+			parse_expression_to(c, c->temporary, true);
 		}
 		else {
 			/* no initialization expression provided for this variable, initialize it to nil */
@@ -1477,7 +1535,7 @@ static void parse_debug_stmt(struct compiler* c)
 
 	if (!peek(c, ')')) {
 		do {
-			parse_expression_to(c, c->temporary);
+			parse_expression_to(c, c->temporary, true);
 			++c->temporary;
 		} while (accept(c, ','));
 	}
