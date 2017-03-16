@@ -290,7 +290,13 @@ kj_intern token_t lexer_scan(struct lexer* l)
 				switch (l->curr_char) {
 					case 'e':
 						lexer_push(l);
-						if (lexer_accept_str(l, "f")) l->lookahead = kw_def;
+						if (l->curr_char == 'f') {
+							lexer_push(l);
+							l->lookahead = kw_def;
+						}
+						else if (lexer_accept_str(l, "bug")) {
+							l->lookahead = kw_debug;
+						}
 						break;
 					case 'o':
 						lexer_push(l);

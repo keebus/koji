@@ -1,4 +1,4 @@
 
 var a = "hello!"
 var b = "world!"
-globals(a * 2)
+debug(a * 2)

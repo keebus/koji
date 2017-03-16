@@ -1472,7 +1472,7 @@ static void parse_debug_stmt(struct compiler* c)
 {
 	int oldtemps = c->temporary;
 
-	expect(c, kw_globals);
+	expect(c, kw_debug);
 	expect(c, '(');
 
 	if (!peek(c, ')')) {
@@ -1503,7 +1503,7 @@ static void parse_statement(struct compiler* c)
 			parse_if_stmt(c);
 			break;
 
-		case kw_globals:
+		case kw_debug:
 			parse_debug_stmt(c);
 			break;
 
