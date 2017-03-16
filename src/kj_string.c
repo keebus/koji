@@ -13,28 +13,48 @@ static void string_destructor(struct vm* vm, struct class* class, struct object*
 	/* nop */
 }
 
-static value_t string_operator(struct vm* vm, struct class* class, struct object* object, enum class_operator_kind op, value_t arg)
+static value_t string_operator_add(struct vm* vm, struct class* class, struct object* object, enum class_operator_kind op, value_t arg)
 {
 	struct string* lhs_string = (struct string*)object;
 	struct object* rhs_object = value_get_object(arg);
 	struct string* rhs_string = (struct string*)rhs_object;
 
-	switch (op) {
-		case CLASS_OPERATOR_ADD:
-			if (value_is_object(arg) && rhs_object->class == class) {
-				value_t result = value_new_string(class, &vm->allocator, lhs_string->length + rhs_string->length);
-				struct string* result_string = (struct string*)value_get_object(result);
-				memcpy(result_string->chars, lhs_string->chars, lhs_string->length);
-				memcpy(result_string->chars + lhs_string->length, rhs_string->chars, rhs_string->length);
-				return result;
-			}
-			goto error;
-
-		default:
-		error:
-			vm_throw_invalid_operator(vm, op, class, arg);
-			return value_nil();
+	if (value_is_object(arg) && rhs_object->class == class) {
+		value_t result = value_new_string(class, &vm->allocator, lhs_string->length + rhs_string->length);
+		struct string* result_string = (struct string*)value_get_object(result);
+		memcpy(result_string->chars, lhs_string->chars, lhs_string->length);
+		memcpy(result_string->chars + lhs_string->length, rhs_string->chars, rhs_string->length + 1);
+		return result;
 	}
+
+	vm_throw_invalid_operator(vm, class, object, op, arg);
+	return value_nil();
+}
+
+static value_t string_operator_mul(struct vm* vm, struct class* class, struct object* object, enum class_operator_kind op, value_t arg)
+{
+	struct string* lhs_string = (struct string*)object;
+
+	if (!value_is_number(arg)) {
+		vm_throw_invalid_operator(vm, class, object, op, arg);
+		return value_nil();
+	}
+
+	int32_t multiplier = (int32_t)arg.number;
+	int32_t strlength = lhs_string->length;
+
+	value_t result = value_new_string(class, &vm->allocator, strlength * multiplier);
+	struct string* result_string = (struct string*)value_get_object(result);
+
+	int32_t offset = 0;
+	for (int32_t i = 0; i < multiplier; ++i) {
+		memcpy(result_string->chars + offset, lhs_string->chars, strlength);
+		offset += strlength;
+	}
+
+	result_string->chars[result_string->length] = 0;
+
+	return result;
 }
 
 kj_intern struct string* string_new(struct class* string_class, struct koji_allocator* alloc, int length)
@@ -79,5 +99,10 @@ kj_intern void class_string_init(struct class* class_string, struct class* class
 	class_string->object.references = 1;
 	class_string->name = "string";
 	class_string->destructor = string_destructor;
-	class_string->operator = string_operator;
+	class_string->operator[CLASS_OPERATOR_UNM] = vm_throw_invalid_operator;
+	class_string->operator[CLASS_OPERATOR_ADD] = string_operator_add;
+	class_string->operator[CLASS_OPERATOR_SUB] = vm_throw_invalid_operator;
+	class_string->operator[CLASS_OPERATOR_MUL] = string_operator_mul;
+	class_string->operator[CLASS_OPERATOR_DIV] = vm_throw_invalid_operator;
+	class_string->operator[CLASS_OPERATOR_MOD] = vm_throw_invalid_operator;
 }

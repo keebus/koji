@@ -713,7 +713,7 @@ static struct expr compile_binary_expression(struct compiler* c, struct source_l
 				const int tot_length = lhs.val.string.length * (int)rhs.val.number;
 				struct expr e = expr_new_string(c, tot_length + 1);
 				for (int offset = 0; offset < tot_length; offset += lhs.val.string.length) {
-					memcpy(e.val.string.chars, lhs.val.string.chars + offset, lhs.val.string.length);
+					memcpy(e.val.string.chars + offset, lhs.val.string.chars, lhs.val.string.length);
 				}
 				e.val.string.chars[tot_length] = '\0';
 				return e;

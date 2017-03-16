@@ -8,8 +8,10 @@
 #include "kj_class.h"
 #include "kj_vm.h"
 
-kj_intern void vm_throw_invalid_operator(struct vm* vm, enum class_operator_kind op, struct class* class, value_t arg)
+kj_intern value_t vm_throw_invalid_operator(struct vm* vm, struct class* class, struct object* object, enum class_operator_kind op, value_t arg)
 {
+	(void)object;
+
 	static const char* k_operator_str[] = {
 		"-", "+", "-", "*", "/", "%"
 	};
@@ -32,6 +34,8 @@ kj_intern void vm_throw_invalid_operator(struct vm* vm, enum class_operator_kind
 		else {
 			arg_type_str = value_type_str(arg);
 		}
-		vm_throw(vm, "cannot apply binary operator '%'s between '%s' object value and '%s' value.", k_operator_str[op], class->name, arg_type_str);
+		vm_throw(vm, "cannot apply binary operator '%s' between a %s and a %s.", k_operator_str[op], class->name, arg_type_str);
 	}
+
+	return value_nil(); /* never executed*/
 }

@@ -51,7 +51,6 @@ koji_state_t* koji_open(struct koji_allocator* allocator)
 
 	state->allocator = *allocator;
 	vm_init(&state->vm, *allocator);
-	vm_test(&state->vm);
 
 	return state;
 }
@@ -122,10 +121,10 @@ KOJI_API koji_result_t koji_run(koji_state_t* state)
 
 KOJI_API void koji_push_string(koji_state_t* state, const char* chars, int length)
 {
-	struct string* string = string_new(NULL, &state->allocator, length + 1);
-	string->length = length;
-	memcpy(string, string->chars, length);
+	struct string* string = string_new(&state->vm.class_string, &state->allocator, length);
+	memcpy(string->chars, chars, length);
 	string->chars[length] = 0;
+	*vm_push(&state->vm) = value_object(string);
 }
 
 KOJI_API void koji_push_stringf(koji_state_t* state, const char* format, ...)
@@ -133,8 +132,7 @@ KOJI_API void koji_push_stringf(koji_state_t* state, const char* format, ...)
 	va_list args;
 	va_start(args, format);
 	int size = vsnprintf(0, 0, format, args);
-	struct string* string = string_new(&state->vm.class_string, &state->allocator, size + 1);
-	string->length = size;
+	struct string* string = string_new(&state->vm.class_string, &state->allocator, size);
 	vsnprintf(string->chars, size + 1, format, args);
 	*vm_push(&state->vm) = value_object(string);
 	va_end(args);

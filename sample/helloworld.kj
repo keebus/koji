@@ -1,4 +1,4 @@
 
-var a = 1
-var b = 3
-globals(a + 2 + b)
+var a = "hello!"
+var b = "world!"
+globals(a * 2)

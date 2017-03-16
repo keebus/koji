@@ -127,7 +127,7 @@ kj_intern void vm_push_frame(struct vm* vm, struct prototype *proto, int stack_b
 kj_intern void vm_throwv(struct vm* vm, const char *format, va_list args)
 {
 	/* push the error string on the stack */
-	*vm_push(vm) = value_new_stringfv(NULL, &vm->allocator, format, args);
+	*vm_push(vm) = value_new_stringfv(&vm->class_string, &vm->allocator, format, args);
 	longjmp(vm->error_handler, 1);
 }
 
@@ -234,7 +234,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					struct object *object = value_get_object(arg1);
 					struct class* class = object->class;
 					vm_value_destroy(vm, *ra);
-					*ra = class->operator(vm, class, object, CLASS_OPERATOR_UNM, arg1);
+					*ra = class->operator[CLASS_OPERATOR_UNM](vm, class, object, CLASS_OPERATOR_UNM, arg1);
 				}
 				else {
 					vm_throw(vm, "cannot apply unary minus operation to a %s value.", value_type_str(arg1));
@@ -254,7 +254,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					struct object *object = value_get_object(arg1);\
 					struct class* class = object->class;\
 					vm_value_destroy(vm, *ra);\
-					*ra = class->operator(vm, class, object, classop, arg2);\
+					*ra = class->operator[classop](vm, class, object, classop, arg2);\
 				}\
 				else {\
 					vm_throw(vm, "cannot apply binary operator " #name_ " between a %s and a %s.", value_type_str(arg1), value_type_str(arg2));\
@@ -356,20 +356,4 @@ static void vm_value_destroy(struct vm* vm, value_t value)
 			kj_free_type(object, 1, &vm->allocator);
 		}
 	}
-}
-
-kj_intern vm_test(struct vm* vm)
-{
-	struct table t;
-	table_init(&t, vm, TABLE_DEFAULT_CAPACITY);
-
-	for (int i = 0; i < 100; ++i) 		{
-		value_t k = value_number(i);
-		value_t v = value_number(i * 1000);
-		table_set(&t, vm, k, v);
-	}
-
-	value_t v = table_get(&t, value_number(44));
-
-	table_deinit(&t, vm);
 }

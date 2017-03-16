@@ -123,5 +123,3 @@ kj_intern void vm_popn(struct vm*, int n);
 kj_intern koji_result_t vm_resume(struct vm*);
 
 kj_intern void vm_value_destroy(struct vm*, value_t value);
-
-kj_intern vm_test(struct vm*);
