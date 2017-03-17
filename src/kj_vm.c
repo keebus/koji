@@ -190,6 +190,7 @@ kj_intern koji_result_t vm_resume(struct vm* vm)
 	struct vm_frame* frame;
 	instruction_t const* instructions;
 	value_t *ra, arg1, arg2;
+	int comp_result, newpc;
 
 new_frame: /* jumped to when a new frame is pushed onto the stack */
 	/* check that some frame is on the stack, otherwise no function can be called, simply return
@@ -242,37 +243,37 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 				break;
 
 				/* binary operators */
-#define BINARY_OPERATOR(case_, op_, name_, classop, NUMBER_MODIFIER)\
-			case case_:\
-				ra = RA;\
-				arg1 = *ARG(B);\
-				arg2 = *ARG(C);\
-				if (value_is_number(arg1) && value_is_number(arg2)) {\
-					vm_value_set_number(vm, ra, (koji_number_t)(NUMBER_MODIFIER(arg1.number) op_ NUMBER_MODIFIER(arg2.number)));\
-				}\
-				else if (value_is_object(arg1)) {\
-					struct object *object = value_get_object(arg1);\
-					struct class* class = object->class;\
-					vm_value_destroy(vm, *ra);\
-					*ra = class->operator[classop](vm, class, object, classop, arg2);\
-				}\
-				else {\
-					vm_throw(vm, "cannot apply binary operator " #name_ " between a %s and a %s.", value_type_str(arg1), value_type_str(arg2));\
-				}\
-				break;
+			#define BINARY_OPERATOR(case_, op_, name_, classop, NUMBER_MODIFIER)\
+				case case_:\
+					ra = RA;\
+					arg1 = *ARG(B);\
+					arg2 = *ARG(C);\
+					if (value_is_number(arg1) && value_is_number(arg2)) {\
+						vm_value_set_number(vm, ra, (koji_number_t)(NUMBER_MODIFIER(arg1.number) op_ NUMBER_MODIFIER(arg2.number)));\
+					}\
+					else if (value_is_object(arg1)) {\
+						struct object *object = value_get_object(arg1);\
+						struct class* class = object->class;\
+						vm_value_destroy(vm, *ra);\
+						*ra = class->operator[classop](vm, class, object, classop, arg2);\
+					}\
+					else {\
+						vm_throw(vm, "cannot apply binary operator " name_ " between a %s and a %s.", value_type_str(arg1), value_type_str(arg2));\
+					}\
+					break;
 
-#define PASSTHROUGH(x) x
-#define CAST_TO_INT(x) ((int64_t)x)
+			#define PASSTHROUGH(x) x
+			#define CAST_TO_INT(x) ((int64_t)x)
 
-			BINARY_OPERATOR(OP_ADD, +, add, CLASS_OPERATOR_ADD, PASSTHROUGH)
-			BINARY_OPERATOR(OP_SUB, -, sub, CLASS_OPERATOR_SUB, PASSTHROUGH)
-			BINARY_OPERATOR(OP_MUL, *, mul, CLASS_OPERATOR_MUL, PASSTHROUGH)
-			BINARY_OPERATOR(OP_DIV, / , div, CLASS_OPERATOR_DIV, PASSTHROUGH)
-			BINARY_OPERATOR(OP_MOD, %, mod, CLASS_OPERATOR_MOD, CAST_TO_INT)
+			BINARY_OPERATOR(OP_ADD, +, "add", CLASS_OPERATOR_ADD, PASSTHROUGH)
+			BINARY_OPERATOR(OP_SUB, -, "sub", CLASS_OPERATOR_SUB, PASSTHROUGH)
+			BINARY_OPERATOR(OP_MUL, *, "mul", CLASS_OPERATOR_MUL, PASSTHROUGH)
+			BINARY_OPERATOR(OP_DIV, / , "div", CLASS_OPERATOR_DIV, PASSTHROUGH)
+			BINARY_OPERATOR(OP_MOD, %, "mod", CLASS_OPERATOR_MOD, CAST_TO_INT)
 
-#undef PASSTHROUGH
-#undef CAST_TO_INT
-#undef BINARY_OPERATOR
+			#undef PASSTHROUGH
+			#undef CAST_TO_INT
+			#undef BINARY_OPERATOR
 
 			case OP_TESTSET: {
 				/* if arg B to bool matches the boolean value in C, make the jump otherwise skip it */
@@ -298,6 +299,34 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 			case OP_JUMP:
 				frame->pc += decode_Bx(instr);
 				break;
+				
+			#define COMPARISON_OPERATOR(case_, op_, classop)\
+				case case_:\
+					ra = RA;\
+					arg1 = *ARG(B);\
+					if (value_is_number(*ra) && value_is_number(arg1)) {\
+						comp_result = ra->number op_ arg1.number;\
+					}\
+					else if (value_is_object(arg1)) {\
+						struct object *object = value_get_object(*ra);\
+						struct class* class = object->class;\
+						comp_result = (bool)class->operator[classop](vm, class, object, classop, arg1).bits;\
+					}\
+					else {\
+						vm_throw(vm, "cannot apply comparison " #op_ " between a %s and a %s.", value_type_str(*ra), value_type_str(arg1));\
+					}\
+					newpc = frame->pc + 1;\
+					if (comp_result == decode_C(instr)) {\
+						newpc += decode_Bx(instructions[frame->pc]);\
+					}\
+					frame->pc = newpc;\
+					break;
+
+			COMPARISON_OPERATOR(OP_EQ, ==, CLASS_OPERATOR_MOD);
+			COMPARISON_OPERATOR(OP_LT, <, CLASS_OPERATOR_MOD);
+			COMPARISON_OPERATOR(OP_LTE, <=, CLASS_OPERATOR_MOD);
+
+			#undef COMPARISON_OPERATOR
 
 			case OP_RET: {
 				int i = 0;

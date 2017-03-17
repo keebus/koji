@@ -3,5 +3,5 @@ var a = "hello!"
 var b = "world!"
 var c = 2
 if (c + 1 > 0 && c < 10) {
-debug(a * 2)
+	debug(a * 2)
 }
