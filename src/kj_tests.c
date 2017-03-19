@@ -17,14 +17,14 @@ void test_table(koji_state_t* state)
    table_set(&t, &state->vm, value_number(10), value_number(118));
    table_set(&t, &state->vm, value_number(11), value_number(119));
 
-   value_t value = table_get(&t, value_number(10));
+   value_t value = table_get(&t, &state->vm, value_number(10));
    assert(value_is_number(value) && value.number == 118.0);
 
 	for (int i = 0; i < 100; ++i)
 		table_set(&t, &state->vm, value_number(i), value_number(i * 1000));
 
 	for (int i = 0; i < 100; ++i)
-		assert(table_get(&t, value_number(i)).number == i * 1000);
+		assert(table_get( &t, &state->vm, value_number(i)).number == i * 1000);
 
 	table_deinit(&t, &state->vm);
 }

@@ -946,7 +946,7 @@ static void compile_logical_operation(struct compiler* c, const struct expr_stat
 /*
  * #documentation
  */
-static location_t close_expression(struct compiler* c, struct expr_state *es, struct expr expr, location_t target_hint, bool move_to_target_hint)
+static struct expr close_expression(struct compiler* c, struct expr_state *es, struct expr expr, location_t target_hint, bool move_to_target_hint)
 {
 	location_t result_location = target_hint;
 
@@ -1110,14 +1110,14 @@ done:
 	c->label_true.num_instructions = es->true_branches_begin;
 	c->label_false.num_instructions = es->false_branches_begin;
 	c->temporary = es->temporary;
-	return result_location;
+	return expr_location(result_location);
 }
 
 /*------------------------------------------------------------------------------------------------*/
 /* parsing functions                                                                              */
 /*------------------------------------------------------------------------------------------------*/
 static struct expr parse_expression(struct compiler *, struct expr_state *);
-static location_t parse_expression_to(struct compiler* c, location_t target_hint, bool move_to_target_hint);
+static struct expr parse_expression_to(struct compiler* c, location_t target_hint, bool move_to_target_hint);
 
 /*
  * #documentation
@@ -1165,74 +1165,74 @@ static struct expr parse_subexpression(struct compiler* c, struct expr_state* es
 	 */
 	switch (c->lexer.lookahead) {
 		case '+': case '-': case '*': case '/': case '(': case '&': case '|': case '[':
-			expr = expr_location(close_expression(c, &sub_es, expr, sub_es.temporary, false));
+			expr = close_expression(c, &sub_es, expr, sub_es.temporary, false);
 	}
 
 	return expr;
 }
-//
-//static struct expr parse_table(struct compiler* c, struct expr_state* es)
-//{
-//	assert(peek(c, '{'));
-//	lex(c);
-//
-//	struct expr expr = expr_location(es->temporary);
-//	int old_temporary = use_temporary(c, &expr);
-//
-//	kc_emit(c, encode_ABx(OP_NEWTABLE, expr.val.location, 0));
-//
-//	if (peek(c, '}')) {
-//		int32_t index = 0;
-//		bool has_key = false;
-//
-//		do {
-//			/* parse key */
-//			struct expr key, value;
-//
-//			if (peek(c, tok_identifier)) {
-//				key = expr_new_string(c, c->lexer.lookahead_string_length);
-//				memcpy(key.val.string.chars, c->lexer.lookahead_string, c->lexer.lookahead_string_length + 1);
-//				lex(c);
-//				key = compile_expr_to_location(c, key, c->temporary);
-//				expect(c, ':');
-//				has_key = true;
-//			}
-//			else {
-//				struct source_location sl = c->lexer.source_location;
-//				bool square_bracket = kc_accept(c, '[');
-//				key = parse_expression(c, c->temporaries);
-//				if (square_bracket) kc_expect(c, ']');
-//
-//				if (kc_accept(c, ':')) {
-//					has_key = true;
-//				}
-//				else if (has_key) {
-//					compiler_error(c->lex->error_handler, sl, "cannot leave key undefined after table entry with explicit key.");
-//				}
-//			}
-//
-//			/* key might be occupying last temporary */
-//			int temps2 = kc_use_temporary(c, &key);
-//
-//			if (has_key)
-//			{
-//				/* parse value */
-//				value = kc_parse_expression_to_any_register(c, c->temporaries);
-//			}
-//			else
-//			{
-//				value = key;
-//				key = kc_expr_to_any_register(c, kc_expr_integer(index++), c->temporaries);
-//			}
-//
-//			c->temporaries = temps2;
-//			kc_emit(c, encode_ABC(KJ_OP_SET, expr.location, key.location, value.location));
-//
-//		} while (kc_accept(c, ','));
-//	}
-//	expect(c, '}');
-//	c->temporaries = old_temporary;
-//}
+
+static struct expr parse_table(struct compiler* c, struct expr_state* es)
+{
+	assert(peek(c, '{'));
+	lex(c);
+
+	struct expr expr = expr_location(es->temporary);
+	int old_temporary = use_temporary(c, &expr);
+
+	emit(c, encode_ABx(OP_NEWTABLE, expr.val.location, 0));
+
+	if (peek(c, '}')) {
+		int32_t index = 0;
+		bool has_key = false;
+
+		do {
+			/* parse key */
+			struct expr key, value;
+
+			if (peek(c, tok_identifier)) {
+				key = expr_new_string(c, c->lexer.lookahead_string_length);
+				memcpy(key.val.string.chars, c->lexer.lookahead_string, c->lexer.lookahead_string_length + 1);
+				lex(c);
+				key = compile_expr_to_location(c, key, c->temporary);
+				expect(c, ':');
+				has_key = true;
+			}
+			else {
+				struct source_location sl = c->lexer.source_location;
+				bool square_bracket = accept(c, '[');
+				key = parse_expression_to(c, c->temporary, false);
+				if (square_bracket) expect(c, ']');
+
+				if (accept(c, ':')) {
+					has_key = true;
+				}
+				else if (has_key) {
+					error(c->lexer.issue_handler, sl, "cannot leave key undefined after table entry with explicit key.");
+				}
+			}
+
+			/* key might be occupying last temporary */
+			int temps2 = use_temporary(c, &key);
+
+			if (has_key) {
+				/* parse value */
+				value = parse_expression_to(c, c->temporary, false);
+			}
+			else {
+				value = key;
+				key = compile_expr_to_location(c, expr_number(index++), c->temporary);
+			}
+
+			c->temporary = temps2;
+			emit(c, encode_ABC(OP_SET, expr.val.location, key.val.location, value.val.location));
+
+		} while (accept(c, ','));
+	}
+	expect(c, '}');
+	c->temporary = old_temporary;
+
+	return expr;
+}
 
 /*
  * Parses and returns a primary expression, i.e. constants, unary expressions, subexpressions,
@@ -1275,9 +1275,9 @@ static struct expr parse_primary_expression(struct compiler* c, struct expr_stat
 			expr = parse_local_ref_or_function_call(c, es);
 			break;
 
-		//case '{':
-		//	expr = parse_table(c, es);
-		//	break;
+		case '{':
+			expr = parse_table(c, es);
+			break;
 
 		default: syntax_error_at(c, source_loc); return expr_nil();
 	}
@@ -1398,7 +1398,7 @@ error_lhs_not_assignable:
  * The expression returned by this function is guaranteed to lie in some location, whether a local
  * or a constant.
  */
-static location_t parse_expression_to(struct compiler* c, location_t target_hint, bool move_to_target_hint)
+static struct expr parse_expression_to(struct compiler* c, location_t target_hint, bool move_to_target_hint)
 {
 	/* save the current number of branching instructions so that we can the state as we found it
 	   upon return. Also backup the first free temporary to be restored before returning. */

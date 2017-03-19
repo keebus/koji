@@ -76,10 +76,8 @@ kj_intern void vm_init(struct vm* vm, struct koji_allocator allocator)
 	vm->value_stack = kj_alloc_type(value_t, vm->value_stack_size, &vm->allocator);
 
 	/* init builtin classes */
-	vm->class_class.object.class = &vm->class_class;
 	vm->class_class.object.references = 1;
-	vm->class_class.name = "class";
-
+	class_init_default(&vm->class_class, &vm->class_class, "class");
 	class_string_init(&vm->class_string, &vm->class_class);
 }
 
@@ -235,7 +233,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					struct object *object = value_get_object(arg1);
 					struct class* class = object->class;
 					vm_value_destroy(vm, *ra);
-					*ra = class->operator[CLASS_OPERATOR_UNM](vm, class, object, CLASS_OPERATOR_UNM, arg1);
+					*ra = class->operator[CLASS_OPERATOR_UNM](vm, class, object, CLASS_OPERATOR_UNM, arg1).value;
 				}
 				else {
 					vm_throw(vm, "cannot apply unary minus operation to a %s value.", value_type_str(arg1));
@@ -243,7 +241,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 				break;
 
 				/* binary operators */
-			#define BINARY_OPERATOR(case_, op_, name_, classop, NUMBER_MODIFIER)\
+#define BINARY_OPERATOR(case_, op_, name_, classop, NUMBER_MODIFIER)\
 				case case_:\
 					ra = RA;\
 					arg1 = *ARG(B);\
@@ -255,39 +253,41 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 						struct object *object = value_get_object(arg1);\
 						struct class* class = object->class;\
 						vm_value_destroy(vm, *ra);\
-						*ra = class->operator[classop](vm, class, object, classop, arg2);\
+						*ra = class->operator[classop](vm, class, object, classop, arg2).value;\
 					}\
 					else {\
 						vm_throw(vm, "cannot apply binary operator " name_ " between a %s and a %s.", value_type_str(arg1), value_type_str(arg2));\
 					}\
 					break;
 
-			#define PASSTHROUGH(x) x
-			#define CAST_TO_INT(x) ((int64_t)x)
+#define PASSTHROUGH(x) x
+#define CAST_TO_INT(x) ((int64_t)x)
 
-			BINARY_OPERATOR(OP_ADD, +, "add", CLASS_OPERATOR_ADD, PASSTHROUGH)
-			BINARY_OPERATOR(OP_SUB, -, "sub", CLASS_OPERATOR_SUB, PASSTHROUGH)
-			BINARY_OPERATOR(OP_MUL, *, "mul", CLASS_OPERATOR_MUL, PASSTHROUGH)
-			BINARY_OPERATOR(OP_DIV, / , "div", CLASS_OPERATOR_DIV, PASSTHROUGH)
-			BINARY_OPERATOR(OP_MOD, %, "mod", CLASS_OPERATOR_MOD, CAST_TO_INT)
+				BINARY_OPERATOR(OP_ADD, +, "add", CLASS_OPERATOR_ADD, PASSTHROUGH)
+				BINARY_OPERATOR(OP_SUB, -, "sub", CLASS_OPERATOR_SUB, PASSTHROUGH)
+				BINARY_OPERATOR(OP_MUL, *, "mul", CLASS_OPERATOR_MUL, PASSTHROUGH)
+				BINARY_OPERATOR(OP_DIV, / , "div", CLASS_OPERATOR_DIV, PASSTHROUGH)
+				BINARY_OPERATOR(OP_MOD, %, "mod", CLASS_OPERATOR_MOD, CAST_TO_INT)
 
-			#undef PASSTHROUGH
-			#undef CAST_TO_INT
-			#undef BINARY_OPERATOR
+#undef PASSTHROUGH
+#undef CAST_TO_INT
+#undef BINARY_OPERATOR
 
-			case OP_TESTSET: {
-				/* if arg B to bool matches the boolean value in C, make the jump otherwise skip it */
-				int newpc = frame->pc + 1;
-				value_t const* arg = ARG(B);
-				if (value_to_boolean(*arg) == decode_C(instr)) {
-					vm_value_set(vm, RA, arg);
-					newpc += decode_Bx(instructions[frame->pc]);
+			case OP_TESTSET:
+				{
+					/* if arg B to bool matches the boolean value in C, make the jump otherwise skip it */
+					int newpc = frame->pc + 1;
+					value_t const* arg = ARG(B);
+					if (value_to_boolean(*arg) == decode_C(instr)) {
+						vm_value_set(vm, RA, arg);
+						newpc += decode_Bx(instructions[frame->pc]);
+					}
+					frame->pc = newpc;
+					break;
 				}
-				frame->pc = newpc;
-				break;
-			}
 
-			case OP_TEST: {
+			case OP_TEST:
+			{
 				int newpc = frame->pc + 1;
 				if (value_to_boolean(*RA) == decode_Bx(instr)) {
 					newpc += decode_Bx(instructions[frame->pc]);
@@ -299,8 +299,8 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 			case OP_JUMP:
 				frame->pc += decode_Bx(instr);
 				break;
-				
-			#define COMPARISON_OPERATOR(case_, op_, classop)\
+
+#define COMPARISON_OPERATOR(case_, op_)\
 				case case_:\
 					ra = RA;\
 					arg1 = *ARG(B);\
@@ -310,7 +310,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					else if (value_is_object(arg1)) {\
 						struct object *object = value_get_object(*ra);\
 						struct class* class = object->class;\
-						comp_result = (bool)class->operator[classop](vm, class, object, classop, arg1).bits;\
+						comp_result = (bool)class->operator[CLASS_OPERATOR_COMPARE](vm, class, object, CLASS_OPERATOR_COMPARE, arg1).int32 op_ 0;\
 					}\
 					else {\
 						vm_throw(vm, "cannot apply comparison " #op_ " between a %s and a %s.", value_type_str(*ra), value_type_str(arg1));\
@@ -322,19 +322,20 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					frame->pc = newpc;\
 					break;
 
-			COMPARISON_OPERATOR(OP_EQ, ==, CLASS_OPERATOR_MOD);
-			COMPARISON_OPERATOR(OP_LT, <, CLASS_OPERATOR_MOD);
-			COMPARISON_OPERATOR(OP_LTE, <=, CLASS_OPERATOR_MOD);
+				COMPARISON_OPERATOR(OP_EQ, ==);
+				COMPARISON_OPERATOR(OP_LT, <);
+				COMPARISON_OPERATOR(OP_LTE, <=);
 
-			#undef COMPARISON_OPERATOR
+#undef COMPARISON_OPERATOR
 
-			case OP_RET: {
+			case OP_RET:
+			{
 				int i = 0;
 
 				/* copy locals from starting from 0 from the current frame to the previous frame result locals */
 				for (int reg = decode_A(instr), to_reg = decode_Bx(instr); reg < to_reg; ++reg, ++i)
 					vm_value_set(vm, vm_register(vm, frame, i), vm_value(vm, frame, reg));
-				
+
 				/* set all other current locals to nil */
 				for (int end =/* frame->proto->num_arguments +*/ frame->proto->num_registers; i < end; ++i) {
 					value_t* value = vm_register(vm, frame, i);
@@ -384,5 +385,16 @@ static void vm_value_destroy(struct vm* vm, value_t value)
 			object->class->destructor(vm, object->class, object);
 			kj_free_type(object, 1, &vm->allocator);
 		}
+	}
+}
+
+kj_intern uint64_t vm_value_hash(struct vm* vm, value_t value)
+{
+	if (value_is_object(value)) {
+		struct object* object = value_get_object(value);
+		return object->class->operator[CLASS_OPERATOR_HASH](vm, object->class, object, CLASS_OPERATOR_HASH, value_nil()).uint64;
+	}
+	else {
+		return mix64(value.bits);
 	}
 }

@@ -20,4 +20,4 @@ struct table {
 kj_intern void table_init(struct table*, struct vm*, uint32_t capacity);
 kj_intern void table_deinit(struct table*, struct vm*);
 kj_intern void table_set(struct table*, struct vm*, value_t key, value_t value);
-kj_intern value_t table_get(struct table*, value_t key);
+kj_intern value_t table_get(struct table*, struct vm* vm, value_t key);

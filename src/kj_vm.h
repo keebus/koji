@@ -79,16 +79,16 @@ kj_intern void vm_deinit(struct vm*);
  * Creates a new activation frame based on given prototype and pushes onto the stack. After this,
  * calling vm_continue() will begin executing specified prototype.
  */
-kj_intern void vm_push_frame(struct vm*, struct prototype* proto, int stack_base);
+kj_intern void          vm_push_frame(struct vm*, struct prototype* proto, int stack_base);
+kj_intern void          vm_throwv(struct vm*, const char* format, va_list args);
+kj_intern value_t*      vm_top(struct vm*, int offset);
+kj_intern value_t*      vm_push(struct vm*);
+kj_intern value_t       vm_pop(struct vm*);
+kj_intern void          vm_popn(struct vm*, int n);
+kj_intern koji_result_t vm_resume(struct vm*);
+kj_intern void          vm_value_destroy(struct vm*, value_t value);
+kj_intern uint64_t      vm_value_hash(struct vm*, value_t value);
 
-/*
- * Write the #documentation.
- */
-kj_intern void vm_throwv(struct vm*, const char* format, va_list args);
-
-/*
- * Write the #documentation.
- */
 static inline void vm_throw(struct vm* vm, const char *format, ...)
 {
 	va_list args;
@@ -96,30 +96,3 @@ static inline void vm_throw(struct vm* vm, const char *format, ...)
 	vm_throwv(vm, format, args);
 	va_end(args);
 }
-
-/*
- * Write the #documentation.
- */
-kj_intern value_t* vm_top(struct vm*, int offset);
-
-/*
- * Write the #documentation.
- */
-kj_intern value_t* vm_push(struct vm*);
-
-/*
- * Write the #documentation.
- */
-kj_intern value_t vm_pop(struct vm*);
-
-/*
- * Write the #documentation.
- */
-kj_intern void vm_popn(struct vm*, int n);
-
-/*
- * Write the #documentation.
- */
-kj_intern koji_result_t vm_resume(struct vm*);
-
-kj_intern void vm_value_destroy(struct vm*, value_t value);

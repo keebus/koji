@@ -41,6 +41,10 @@
    #pragma warning(disable : 4221) /* cannot be initialized using address of automatic variable */
 #endif
 
+#ifdef _WIN64
+#	define KOJI_64
+#endif
+
 /*
  * Platform independent language extensions.
  */
@@ -221,3 +225,19 @@ kj_intern void array_free(void* parray, int* psize, int* pcapacity, struct koji_
  * Returns a typed pointer to the element pushed.
  */
 kj_intern void* _array_push(void* parray, int* psize, int* pcapacity, struct koji_allocator* alloc, int elem_size, int num_elements);
+
+/*
+ * Computes and returns the 64-bit hash of uint64 value [x]
+ */
+static inline uint64_t mix64(uint64_t x)
+{
+	x = (x ^ (x >> 30)) * (uint64_t)(0xbf58476d1ce4e5b9);
+	x = (x ^ (x >> 27)) * (uint64_t)(0x94d049bb133111eb);
+	x = x ^ (x >> 31);
+	return x;
+}
+
+/*
+ * Computes the 64-bit Murmur2 hash of [key] data of [len] bytes using specified [seed].
+ */
+kj_intern uint64_t murmur2(const void * key, int len, uint64_t seed);

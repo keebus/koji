@@ -144,4 +144,3 @@ kj_forceinline struct object* value_get_object(value_t value)
  * Destroys [constant] (bool, number or string) using specified [allocator].
  */
 kj_intern void constant_destroy(value_t constant, struct koji_allocator* allocator);
-
