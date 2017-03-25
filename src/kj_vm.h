@@ -35,34 +35,17 @@ enum vm_state {
 
 struct vm {
 	struct koji_allocator allocator;
-
-	/* whether the VM is in a valid state for execution (no error occurred) */
-	enum vm_state valid;
-
-	/* stack of activation frames, i.e. function calls */
-	struct vm_frame* frame_stack;
-
-	/* maximum elements capacity of the current frame stack allocation*/
-	int frame_stack_size;
-
-	/* frame pointer (== the actual number of frames in the stack) */
-	int frame_stack_ptr;
-
-	/* stack of local values (registers) */
-	value_t* value_stack;
-
-	/* maximum elements capacity of the current value stack allocation*/
-	int value_stack_size;
-
-	/* stack pointer */
-	int value_stack_ptr;
-
-	/* #documentation */
-	jmp_buf error_handler;
-
-	/* #documentation */
-	struct class class_class;
+	enum vm_state valid; /* whether the VM is in a valid state for execution (no error occurred) */
+	struct vm_frame* frame_stack; /* stack of activation frames, i.e. function calls */
+	int frame_stack_size; /* maximum elements capacity of the current frame stack allocation*/
+	int frame_stack_ptr; /* frame pointer (== the actual number of frames in the stack) */
+	value_t* value_stack; /* stack of local values (registers) */
+	int value_stack_size; /* maximum elements capacity of the current value stack allocation*/
+	int value_stack_ptr; /* stack pointer */
+	jmp_buf error_handler; /* #documentation */
+	struct class class_class; /* #documentation */
 	struct class class_string;
+	struct class class_table;
 };
 
 /*
@@ -86,10 +69,19 @@ kj_intern value_t*      vm_push(struct vm*);
 kj_intern value_t       vm_pop(struct vm*);
 kj_intern void          vm_popn(struct vm*, int n);
 kj_intern koji_result_t vm_resume(struct vm*);
-kj_intern void          vm_value_destroy(struct vm*, value_t value);
+kj_intern void          vm_value_set(struct vm* vm, value_t* dest, value_t src);
+kj_intern void          vm_object_destroy(struct vm*, struct class*, struct object*);
 kj_intern uint64_t      vm_value_hash(struct vm*, value_t value);
 
-static inline void vm_throw(struct vm* vm, const char *format, ...)
+inline void vm_value_destroy(struct vm* vm, value_t value)
+{
+	if (value_is_object(value)) {
+		struct object* object= value_get_object(value);
+		vm_object_destroy(vm, object->class, object);
+	}
+}
+
+inline void vm_throw(struct vm* vm, const char *format, ...)
 {
 	va_list args;
 	va_start(args, format);

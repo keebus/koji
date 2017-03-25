@@ -610,11 +610,6 @@ static struct expr compile_expr_to_location(struct compiler* c, struct expr e, i
 			emit(c, encode_ABx(OP_NEG, target_hint, e.val.location));
 			return expr_location(target_hint);
 
-			/*  case KC_EXPR_TYPE_ACCESSOR:
-				 emit(c, encode_ABC(OP_GET, target_hint, e.lhs, e.rhs));
-				 if (!e.positive) emit(c, encode_ABx(OP_NEG, target_hint, target_hint));
-				 return expr_location(target_hint);*/
-
 		case EXPR_EQ:
 		case EXPR_LT:
 		case EXPR_LTE:
@@ -1171,6 +1166,14 @@ static struct expr parse_subexpression(struct compiler* c, struct expr_state* es
 	return expr;
 }
 
+static struct expr scan_identifier(struct compiler* c)
+{
+	struct expr expr = expr_new_string(c, c->lexer.lookahead_string_length);
+	memcpy(expr.val.string.chars, c->lexer.lookahead_string, c->lexer.lookahead_string_length + 1);
+	lex(c);
+	return expr;
+}
+
 static struct expr parse_table(struct compiler* c, struct expr_state* es)
 {
 	assert(peek(c, '{'));
@@ -1181,7 +1184,7 @@ static struct expr parse_table(struct compiler* c, struct expr_state* es)
 
 	emit(c, encode_ABx(OP_NEWTABLE, expr.val.location, 0));
 
-	if (peek(c, '}')) {
+	if (!peek(c, '}')) {
 		int32_t index = 0;
 		bool has_key = false;
 
@@ -1190,10 +1193,7 @@ static struct expr parse_table(struct compiler* c, struct expr_state* es)
 			struct expr key, value;
 
 			if (peek(c, tok_identifier)) {
-				key = expr_new_string(c, c->lexer.lookahead_string_length);
-				memcpy(key.val.string.chars, c->lexer.lookahead_string, c->lexer.lookahead_string_length + 1);
-				lex(c);
-				key = compile_expr_to_location(c, key, c->temporary);
+				key = compile_expr_to_location(c, scan_identifier(c), c->temporary);
 				expect(c, ':');
 				has_key = true;
 			}
@@ -1280,6 +1280,37 @@ static struct expr parse_primary_expression(struct compiler* c, struct expr_stat
 			break;
 
 		default: syntax_error_at(c, source_loc); return expr_nil();
+	}
+
+	/* parse accessors and function calls */
+	for (;;) {
+		bool dot_accessor = false;
+
+		switch (c->lexer.lookahead)
+		{
+			case '.': {
+				lex(c);
+				compile_expr_to_location(c, expr, c->temporary);
+				int temps = use_temporary(c, &expr);
+
+				/* now parse the key identifier and compile it to a register */
+				check(c, tok_identifier);
+				struct expr key = compile_expr_to_location(c, scan_identifier(c), c->temporary);
+
+				c->temporary = temps;
+
+				emit(c, encode_ABC(OP_GET, c->temporary, expr.val.location, key.val.location));
+
+				expr = expr_location(c->temporary);
+
+				dot_accessor = true;
+
+				continue; // skips the "dot_accessor = false" statement after the switch
+			}
+
+			default:
+				return expr;
+		}
 	}
 
 	return expr;

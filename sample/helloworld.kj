@@ -1,5 +1,9 @@
 
-var a = "hello!"
-var b = "z!"
+var a = "hello"
+var b = "world"
 
-debug(a <= "hello!")
+var d = {
+	hello: "world"
+}
+
+debug(d.hello)

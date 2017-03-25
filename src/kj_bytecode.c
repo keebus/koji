@@ -31,8 +31,8 @@ static const enum op_format OP_FORMATS[] = {
    OP_FORMAT_A_B_C, /* OP_TESTSET */
    OP_FORMAT_UNKNOWN, /* OP_CLOSURE */
    OP_FORMAT_UNKNOWN, /* OP_GLOBALS */
-   OP_FORMAT_UNKNOWN, /* OP_NEWTABLE */
-   OP_FORMAT_UNKNOWN, /* OP_GET */
+   OP_FORMAT_A_BX, /* OP_NEWTABLE */
+   OP_FORMAT_A_B_C, /* OP_GET */
    OP_FORMAT_UNKNOWN, /* OP_THIS */
    OP_FORMAT_A_BX, /* OP_TEST */
    OP_FORMAT_BX_OFFSET, /* OP_JUMP */
@@ -42,7 +42,7 @@ static const enum op_format OP_FORMATS[] = {
    OP_FORMAT_UNKNOWN, /* OP_SCALL */
    OP_FORMAT_UNKNOWN, /* OP_CALL */
    OP_FORMAT_UNKNOWN, /* OP_MCALL */
-   OP_FORMAT_UNKNOWN, /* OP_SET */
+   OP_FORMAT_A_B_C, /* OP_SET */
    OP_FORMAT_UNKNOWN, /* OP_RET */
    OP_FORMAT_A_BX, /* OP_DEBUG */
 };
@@ -53,13 +53,13 @@ kj_intern void prototype_release(struct prototype *proto, struct koji_allocator 
 		assert(proto->references == 0);
 		kj_free_type(proto->instructions, array_seq_capacity(proto->num_instructions), allocator);
 
-		///* delete all child prototypes that reach reference to zero */
+		/* delete all child prototypes that reach reference to zero */
 		for (int i = 0; i < proto->num_prototypes; ++i) {
 			prototype_release(proto->prototypes[i], allocator);
 		}
 		kj_free_type(proto->prototypes, array_seq_capacity(proto->num_prototypes), allocator);
 
-		///* destroy constant values */
+		/* destroy constant values */
 		for (int i = 0; i < proto->num_constants; ++i) {
 			constant_destroy(proto->constants[i], allocator);
 		}

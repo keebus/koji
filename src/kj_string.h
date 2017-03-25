@@ -19,11 +19,8 @@ struct string {
 };
 
 kj_intern struct string* string_new(struct class* string_class, struct koji_allocator* alloc, int length);
+kj_intern value_t        value_new_string(struct class* string_class, struct koji_allocator* alloc, int length);
+kj_intern value_t        value_new_stringfv(struct class* string_class, struct koji_allocator* alloc, const char *format, va_list args);
+kj_intern value_t        value_new_stringf(struct class* string_class, struct koji_allocator* alloc, const char *format, ...);
+kj_intern void           class_string_init(struct class* class_string, struct class* class_class);
 
-kj_intern value_t value_new_string(struct class* string_class, struct koji_allocator* alloc, int length);
-
-kj_intern value_t value_new_stringfv(struct class* string_class, struct koji_allocator* alloc, const char *format, va_list args);
-
-kj_intern value_t value_new_stringf(struct class* string_class, struct koji_allocator* alloc, const char *format, ...);
-
-kj_intern void class_string_init(struct class* class_string, struct class* class_class);
