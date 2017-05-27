@@ -15,7 +15,7 @@ int main(int argc, char** argv)
 		return 0;
 	}		
 
-	koji_state_t* state = koji_open(0);
+	koji_state_t *state = koji_open(0);
 
 	if (koji_load_file(state, argv[1]))
 		goto error;

@@ -12,18 +12,22 @@ solution "koji"
 	configuration "Release"
 		optimize "Speed"
 
-	project "koji"
+	configuration "vs*"
+		defines "_CRT_SECURE_NO_WARNINGS"
+
+	project "libkoji"
+		targetname "koji"
 		kind "StaticLib"
-		files { "src/**.*", "./**.kj" }
-		removefiles { "src/kj_main.c", "src/kj_tests.c" }
+		files { "src/**.*" }
+		removefiles { "src/kmain.c", "src/ktests.c" }
+
+	project "kojitests"
+		kind "ConsoleApp"
+		files { "src/ktests.c" }
+		links "libkoji"
 
 	project "kojic"
 		kind "ConsoleApp"
-		files { "src/kj_main.c", "./**.kj" }
+		files { "src/kmain.c", "./**.kj" }
 		debugargs "../sample/helloworld.kj"
-		links "koji"
-
-	project "tests"
-		kind "ConsoleApp"
-		files { "src/kj_tests.c" }
-		links "koji"
+		links "libkoji"
