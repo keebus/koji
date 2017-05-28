@@ -121,7 +121,7 @@ koji_result_t koji_run(koji_state_t *state)
 }
 
 KOJI_API void
-koji_push_string(koji_state_t *state, const char *chars, int len)
+koji_push_string(koji_state_t *state, const char *chars, int32_t len)
 {
 	struct string *str = string_new(&state->vm.cls_string, &state->alloc, len);
 	memcpy(&str->chars, chars, len);
@@ -134,7 +134,7 @@ koji_push_stringf(koji_state_t *state, const char *format, ...)
 {
 	va_list args;
 	va_start(args, format);
-	int size = vsnprintf(0, 0, format, args);
+	int32_t size = vsnprintf(0, 0, format, args);
 	struct string *str = string_new(&state->vm.cls_string, &state->alloc, size);
 	vsnprintf((&str->chars), size + 1, format, args);
 	*vm_push(&state->vm) = value_obj(str);
@@ -142,7 +142,7 @@ koji_push_stringf(koji_state_t *state, const char *format, ...)
 }
 
 KOJI_API const char *
-koji_string(koji_state_t *state, int offset)
+koji_string(koji_state_t *state, int32_t offset)
 {
 	union value value = *vm_top(&state->vm, offset);
 	if (!value_isobj(value))
@@ -153,8 +153,8 @@ koji_string(koji_state_t *state, int offset)
 	return &str->chars;
 }
 
-KOJI_API int
-koji_string_length(koji_state_t *state, int offset)
+KOJI_API int32_t
+koji_string_length(koji_state_t *state, int32_t offset)
 {
 	union value value = *vm_top(&state->vm, offset);
 	if (!value_isobj(value))
@@ -166,7 +166,7 @@ koji_string_length(koji_state_t *state, int offset)
 }
 
 KOJI_API void
-koji_pop(koji_state_t *state, int n)
+koji_pop(koji_state_t *state, int32_t n)
 {
 	vm_popn(&state->vm, n);
 }

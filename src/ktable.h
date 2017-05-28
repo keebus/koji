@@ -18,8 +18,8 @@
  * a hash map.
  */
 struct table {
-	i32 size;   /* number of elements in the table */
-	i32 capacity;   /* capacity of the key-value array */
+	int32_t size;   /* number of elements in the table */
+	int32_t capacity;   /* capacity of the key-value array */
 	struct table_pair *pairs; /* key-value pairs */
 };
 
@@ -37,7 +37,7 @@ struct object_table
  * with length [capacity].
  */
 kintern void
-table_init(struct table*, struct koji_allocator *alloc, i32 capacity);
+table_init(struct table*, struct koji_allocator *alloc, int32_t capacity);
 
 /*
  * Deinitializes specified table, destroying every key and value in it and
@@ -63,7 +63,7 @@ table_get(struct table*, struct vm *vm, union value key);
  */
 kintern union value
 value_new_table(struct class *cls_table, struct koji_allocator *alloc,
-   int capacity);
+   int32_t capacity);
 
 /*
  * Initializes the table class.

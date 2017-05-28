@@ -15,7 +15,7 @@
   * Value representing an enumerated token value (e.g. kw_while) or a valid
   * sequence of characters (e.g. '>=').
   */
-typedef int token_t;
+typedef int32_t token_t;
 
 #define TOKENS(_)\
 	_(tok_eos, "end-of-stream")\
@@ -26,7 +26,7 @@ typedef int token_t;
 	_(kw_def, "def")\
 	_(kw_do, "do")\
 	_(kw_else, "else")\
-	_(kw_false, "kfalse")\
+	_(kw_false, "false")\
 	_(kw_for, "for")\
 	_(kw_globals, "globals")\
 	_(kw_if, "if")\
@@ -34,7 +34,7 @@ typedef int token_t;
 	_(kw_nil, "nil")\
 	_(kw_return, "return")\
 	_(kw_this, "this")\
-	_(kw_true, "ktrue")\
+	_(kw_true, "true")\
 	_(kw_var, "var")\
 	_(kw_while, "while")\
 
@@ -59,16 +59,16 @@ enum {
  */
 struct lex {
    token_t tok; /* the type of the next token in the stream (lookahead) */
-   int curr; /* the next character in the stream */
+   int32_t curr; /* the next character in the stream */
    struct koji_allocator alloc; /* used to allocate the lookahead str */
    struct issue_handler *issue_handler; /* Used to report scanning issues */
    struct koji_source *source; /* input stream  */
    struct sourceloc sourceloc; /* loc in the input source code */
    char *tokstr; /* lookahead str */
    koji_number_t toknum; /* numerical value of tok if it's a `tok_number` */
-   i32 tokstrlen; /* lookahead str length without the null byte */
-   i32 tokstrbuflen; /* the lookahead str buffer capacity in bytes */
-   kbool newline; /* least one new-line was scanned before this token */
+   int32_t tokstrlen; /* lookahead str length without the null byte */
+   int32_t tokstrbuflen; /* the lookahead str buffer capacity in bytes */
+   bool newline; /* least one new-line was scanned before this token */
 };
 
 struct lex_info {
@@ -95,7 +95,7 @@ lex_deinit(struct lex *l);
  * result in [buf] of size [bufsize].
  */
 kintern const char *
-lex_tok_pretty_str(token_t tok, char *buf, int bufsize);
+lex_tok_pretty_str(token_t tok, char *buf, int32_t bufsize);
 
 /*
  * Returns a readable str for current lookahead (e.g. it returns

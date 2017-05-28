@@ -11,10 +11,16 @@
 
 #include "koji.h"
 
-#pragma warning(push, 0)
+#include <stdint.h>
+#include <stdbool.h>
 #include <assert.h>
 #include <stdarg.h>
-#pragma warning(pop)
+
+/* add compiler specific warning ignores */
+#if defined(__GNUC__) || defined(__clang__)
+   #pragma GCC diagnostic ignored "-Wmultichar"
+   /* #pragma GCC diagnostic ignored "-Wmissing-field-initializers" */
+#endif
 
 #ifndef kintern
 #define kintern
@@ -27,35 +33,9 @@
 /*
  * Platform independent language extensions.
  */
-#ifdef _MSC_VER
 
-#define kbool _Bool
 #define kalignof(T) __alignof(T)
-#define kalloca(sz) _alloca(sz)
-#define kinline __forceinline
-
-typedef __int32 i8;
-typedef __int32 i16;
-typedef __int32 i32;
-typedef __int64 i64;
-
-typedef unsigned __int32 u8;
-typedef unsigned __int32 u16;
-typedef unsigned __int32 u32;
-typedef unsigned __int64 u64;
-
-#else
-
-#define kbool unsigned char
-#define kalignof(T) __alignof(T)
-#define kalloca
-#define kinline static __attribute__((inline))
-
-#endif
-
-/* define boole constants */
-#define ktrue ((kbool)1)
-#define kfalse ((kbool)0)
+#define kalloca _alloca
 
 /*
  * Convenience macros that unwrap to koji alloc malloc/realloc/free call.
@@ -76,8 +56,8 @@ typedef unsigned __int64 u64;
 #define kfree(ptr, count, allocp)\
 	((allocp)->free(ptr, (sizeof *ptr) * count, (allocp)->user))
 
-inline i32 min_i32(i32 a, i32 b) { return a < b ? a : b; }
-inline i32 max_i32(i32 a, i32 b) { return a > b ? a : b; }
+static int32_t min_i32(int32_t a, int32_t b) { return a < b ? a : b; }
+static int32_t max_i32(int32_t a, int32_t b) { return a > b ? a : b; }
 
 /*
  * If enabled, it returns the default allocator using malloc, otherwise NULL.
@@ -107,7 +87,7 @@ typedef struct linear_alloc_page linear_alloc_t;
  * LINEAR_ALLOC_PAGE_MIN_SIZE). Use [alloc] for page allocations.
  */
 kintern linear_alloc_t *
-linear_alloc_create(struct koji_allocator *alloc, i32 size);
+linear_alloc_create(struct koji_allocator *alloc, int32_t size);
 
 /*
  * Destroys the linear alloc [talloc] which was created with specified [alloc]
@@ -128,13 +108,13 @@ linear_alloc_reset(linear_alloc_t **talloc, struct koji_allocator *alloc);
  */
 kintern void*
 linear_alloc_alloc(linear_alloc_t **talloc, struct koji_allocator *alloc,
-   i32 size, i32 align);
+   int32_t size, int32_t align);
 
 
 /*
  * A sequentially growing array is a simple array that is allowed to grow
  * dynamically one or more elements at a time. Initialize your array with
- * something like 'i32 *my_ints = NULL' and 'uint num_ints = 0'. Then call
+ * something like 'int32_t *my_ints = NULL' and 'uint num_ints = 0'. Then call
  * seqarray_push() to increase the size of the array by one. This function does
  * not actually reallocate the array every time but allocates to the smallest
  * power of two elements large enough to contain the current num of
@@ -163,70 +143,70 @@ linear_alloc_alloc(linear_alloc_t **talloc, struct koji_allocator *alloc,
  * greater than max(16, count). Only use array_seq_push on returned array.
  */
 kintern void *
-array_seq_new(struct koji_allocator *alloc, i32 elemsize, i32 count);
+array_seq_new(struct koji_allocator *alloc, int32_t elemsize, int32_t count);
 
 /*
  * Low-level function to grow a sequentially growable array. Used by higher
  * level functions [seqary_push] and [seqary_push_n], use those.
  */
 kintern void *
-array_seq_push_ex(void *arrayp, i32 *size, struct koji_allocator *alloc,
-   i32 elemsize, i32 count);
+array_seq_push_ex(void *arrayp, int32_t *size, struct koji_allocator *alloc,
+   int32_t elemsize, int32_t count);
 
 /*
  * Frees sequential array arrayp with specified [size] num of elements
  * and [elemsize] element size.
  */
 kintern void
-array_seq_free(void *arrayp, i32 *size, struct koji_allocator *alloc,
-   i32 elemsize);
+array_seq_free(void *arrayp, int32_t *size, struct koji_allocator *alloc,
+   int32_t elemsize);
 
 /*
  * Returns the capacity (least greater power of two) of sequentially pushed
  * array of specified [size].
  */
-kintern i32
-array_seq_len(i32 size);
+kintern int32_t
+array_seq_len(int32_t size);
 
 /*
  * Destroys the buffer contained in the array_t pointed by [array_].
  */
-kintern kbool
-array_reserve(void *array, i32 *size, i32 *len,
-   struct koji_allocator *alloc, i32 elemsize, i32 newlen);
+kintern bool
+array_reserve(void *array, int32_t *size, int32_t *len,
+   struct koji_allocator *alloc, int32_t elemsize, int32_t newlen);
 
 /*
  * (internal) Resizes [array_] to contain its current size plus [num_elements].
  * Returns a pointer to the first of new elements.
  */
-kintern kbool
-array_resize(void *array, i32 *size, i32 *len, struct koji_allocator *alloc,
-   i32 elemsize, i32 newsize);
+kintern bool
+array_resize(void *array, int32_t *size, int32_t *len,
+   struct koji_allocator *alloc, int32_t elemsize, int32_t newsize);
 
 /*
  * Pushes [n] elements of specified [type] in array pointed by [parray] defined
  * using [array_type()]. Returns a typed pointer to the first element pushed.
  */
 kintern void
-array_free(void *array, i32 *size, i32 *len, struct koji_allocator *alloc,
-   i32 elemsize);
+array_free(void *array, int32_t *size, int32_t *len,
+   struct koji_allocator *alloc, int32_t elemsize);
 
 /*
  * Pushes one element of specified [type] in array pointed by [parray] defined
  * using [array_type()]. Returns a typed pointer to the element pushed.
  */
 kintern void *
-_array_push(void *array, i32 *size, i32 *len, struct koji_allocator *alloc,
-   i32 elemsize, i32 count);
+_array_push(void *array, int32_t *size, int32_t *len,
+   struct koji_allocator *alloc, int32_t elemsize, int32_t count);
 
 /*
  * Computes and returns the 64-bit hash of uint64 value [x]
  */
-static inline
-u64 mix64(u64 x)
+static
+uint64_t mix64(uint64_t x)
 {
-   x = (x ^ (x >> 30)) * (u64)(0xbf58476d1ce4e5b9);
-   x = (x ^ (x >> 27)) * (u64)(0x94d049bb133111eb);
+   x = (x ^ (x >> 30)) * (uint64_t)(0xbf58476d1ce4e5b9);
+   x = (x ^ (x >> 27)) * (uint64_t)(0x94d049bb133111eb);
    x = x ^ (x >> 31);
    return x;
 }
@@ -235,5 +215,5 @@ u64 mix64(u64 x)
  * Computes the 64-bit Murmur2 hash of [key] data of [len] bytes using
  * specified [seed].
  */
-kintern u64
-murmur2(const void * key, i32 len, u64 seed);
+kintern uint64_t
+murmur2(const void * key, int32_t len, uint64_t seed);

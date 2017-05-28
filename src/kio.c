@@ -13,13 +13,13 @@
 #include <stdio.h>
 #pragma warning(pop)
 
-static int
+static int32_t
 source_file_read(FILE *file)
 {
    return fgetc(file);
 }
 
-static int
+static int32_t
 source_string_read(const char **str)
 {
    if (*str == 0)
@@ -27,7 +27,7 @@ source_string_read(const char **str)
    return *(*str)++;
 }
 
-static int
+static int32_t
 source_mem_read(struct source_membuf *mb)
 {
    if (mb->curr >= mb->end)
@@ -35,16 +35,16 @@ source_mem_read(struct source_membuf *mb)
    return *mb->curr++;
 }
 
-kintern kbool
+kintern bool
 source_file_open(struct koji_source *src, const char *filename)
 {
    FILE *file = fopen(filename, "r");
    if (!file)
-      return kfalse;
+      return false;
    src->name = filename;
    src->fn = (koji_source_read_t)source_file_read;
    src->user = file;
-   return ktrue;
+   return true;
 }
 
 kintern void

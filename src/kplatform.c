@@ -16,14 +16,14 @@
 #include <malloc.h>
 
 static void *
-default_alloc_alloc(int size, void *user)
+default_alloc_alloc(int32_t size, void *user)
 {
    (void)user;
    return malloc(size);
 }
 
 static void *
-default_alloc_realloc(void *ptr, int oldsize, int newsize, void *user)
+default_alloc_realloc(void *ptr, int32_t oldsize, int32_t newsize, void *user)
 {
    (void)oldsize;
    (void)user;
@@ -31,7 +31,7 @@ default_alloc_realloc(void *ptr, int oldsize, int newsize, void *user)
 }
 
 static void
-default_alloc_free(void *ptr, int size, void *user)
+default_alloc_free(void *ptr, int32_t size, void *user)
 {
    (void)user;
    (void)size;
@@ -64,20 +64,20 @@ default_alloc(void)
  /* linear alloc */
 struct linear_alloc_page {
 	char *cursor;
-	i32 size;
+	int32_t size;
 	struct linear_alloc_page *next;
 	char data;
 };
 
 static char *
-align(char *ptr, i32 align)
+align(char *ptr, int32_t align)
 {
 	const uintptr_t align_minus_one = align - 1;
 	return (char*)(((uintptr_t)ptr + align_minus_one) & ~align_minus_one);
 }
 
 kintern linear_alloc_t *
-linear_alloc_create(struct koji_allocator *alloc, i32 size)
+linear_alloc_create(struct koji_allocator *alloc, int32_t size)
 {
 	size = max_i32(size, LINEAR_ALLOC_PAGE_MIN_SIZE);
 
@@ -111,7 +111,7 @@ linear_alloc_reset(linear_alloc_t **lalloc, struct koji_allocator *alloc)
 
 kintern void *
 linear_alloc_alloc(linear_alloc_t **lalloc, struct koji_allocator *alloc,
-   i32 size, i32 alignm)
+   int32_t size, int32_t alignm)
 {
 	char *ptr = align((*lalloc)->cursor, alignm);
 	if (ptr >= &(*lalloc)->data + (*lalloc)->size) {
@@ -128,24 +128,24 @@ linear_alloc_alloc(linear_alloc_t **lalloc, struct koji_allocator *alloc,
 /* array */
 
 kintern void *
-array_seq_new(struct koji_allocator *alloc, i32 elemsize, i32 count)
+array_seq_new(struct koji_allocator *alloc, int32_t elemsize, int32_t count)
 {
-   i32 len = array_seq_len(max_i32(16, count));
+   int32_t len = array_seq_len(max_i32(16, count));
    return alloc->alloc(len * elemsize, alloc->user);
 }
 
 kintern void *
-array_seq_push_ex(void *arrayp_, i32 *size, struct koji_allocator *alloc,
-   i32 elemsize, i32 count)
+array_seq_push_ex(void *arrayp_, int32_t *size, struct koji_allocator *alloc,
+   int32_t elemsize, int32_t count)
 {
 	assert(count > 0);
 
 	void **arrayp = (void**)arrayp_;
-	const i32 oldsize = *size;
-	const i32 newsize = *size + count;
+	const int32_t oldsize = *size;
+	const int32_t newsize = *size + count;
 
-	i32 currlen = array_seq_len(*size);
-	i32 newlen = max_i32(16, array_seq_len(newsize));
+	int32_t currlen = array_seq_len(*size);
+	int32_t newlen = max_i32(16, array_seq_len(newsize));
 
 	if (currlen < newlen) {
 		*arrayp = alloc->alloc(newlen * elemsize, alloc->user);
@@ -157,8 +157,8 @@ array_seq_push_ex(void *arrayp_, i32 *size, struct koji_allocator *alloc,
 }
 
 kintern void
-array_seq_free(void *arrayp, i32 *size, struct koji_allocator *alloc,
-   i32 elemsize)
+array_seq_free(void *arrayp, int32_t *size, struct koji_allocator *alloc,
+   int32_t elemsize)
 {
    alloc->free(*(void**)arrayp, array_seq_len(*size * elemsize),
       alloc->user);
@@ -166,8 +166,8 @@ array_seq_free(void *arrayp, i32 *size, struct koji_allocator *alloc,
    *size = 0;
 }
 
-kintern i32
-array_seq_len(i32 size)
+kintern int32_t
+array_seq_len(int32_t size)
 {
    size--;
    size |= size >> 1;
@@ -179,9 +179,9 @@ array_seq_len(i32 size)
    return size;
 }
 
-kintern kbool
-array_reserve(void *arrayp, i32 *size, i32 *len, struct koji_allocator *alloc,
-   i32 elemsize, i32 newlen)
+kintern bool
+array_reserve(void *arrayp, int32_t *size, int32_t *len, struct koji_allocator *alloc,
+   int32_t elemsize, int32_t newlen)
 {
 	void **array = (void**)arrayp;
 
@@ -194,29 +194,29 @@ array_reserve(void *arrayp, i32 *size, i32 *len, struct koji_allocator *alloc,
 		/* Allocate new buffer and copy old values over */
 		*array = alloc->realloc(*array, *len * elemsize, newlen * elemsize,
                               alloc);
-		if (!*array) return kfalse;
+		if (!*array) return false;
 
 		*len = newlen;
 
 		assert(*array != NULL);
 	}
 
-	return ktrue;
+	return true;
 }
 
-kintern kbool
-array_resize(void *arrayp, i32 *size, i32 *len,
-   struct koji_allocator *alloc, i32 elemsize, i32 newsize)
+kintern bool
+array_resize(void *arrayp, int32_t *size, int32_t *len,
+   struct koji_allocator *alloc, int32_t elemsize, int32_t newsize)
 {
 	if (!array_reserve(arrayp, size, len, alloc, elemsize, newsize))
-		return kfalse;
+		return false;
 	*size = newsize;
-	return ktrue;
+	return true;
 }
 
 kintern void
-array_free(void *arrayp, i32 *size, i32 *len, struct koji_allocator *alloc,
-   i32 elemsize)
+array_free(void *arrayp, int32_t *size, int32_t *len,
+   struct koji_allocator *alloc, int32_t elemsize)
 {
 	void **array = (void**)arrayp;
 	alloc->free (*array, *len * elemsize, alloc->user);
@@ -226,32 +226,32 @@ array_free(void *arrayp, i32 *size, i32 *len, struct koji_allocator *alloc,
 }
 
 kintern void *
-_array_push(void *arrayp, i32 *size, i32 *len, struct koji_allocator *alloc,
-   i32 elemsize, i32 count)
+_array_push(void *arrayp, int32_t *size, int32_t *len,
+   struct koji_allocator *alloc, int32_t elemsize, int32_t count)
 {
 	void **array = (void**)arrayp;
-	i32 prev_size = *size;
+	int32_t prev_size = *size;
 	if (!array_resize(arrayp, size, len, alloc, elemsize, *size + count))
 		return NULL;
 	return ((char*)*array) + prev_size * elemsize;
 }
 
-kintern u64
-murmur2(const void *key, i32 len, u64 seed)
+kintern uint64_t
+murmur2(const void *key, int32_t len, uint64_t seed)
 {
 #ifdef KOJI_64 /* implementation for 64-bit cpus*/
 
-	const u64 m = BIG_CONSTANT(0xc6a4a7935bd1e995);
-	const i32 r = 47;
+	const uint64_t m = 0xc6a4a7935bd1e995ULL;
+	const int32_t r = 47;
 
-	u64 h = seed ^ (len * m);
+	uint64_t h = seed ^ (len * m);
 
-	const u64 * data = (const u64 *)key;
-	const u64 * end = data + (len / 8);
+	const uint64_t * data = (const uint64_t *)key;
+	const uint64_t * end = data + (len / 8);
 
 	while (data != end)
 	{
-		u64 k = *data++;
+		uint64_t k = *data++;
 
 		k *= m;
 		k ^= k >> r;
@@ -265,13 +265,13 @@ murmur2(const void *key, i32 len, u64 seed)
 
 	switch (len & 7)
 	{
-		case 7: h ^= (u64)(data2[6]) << 48;
-		case 6: h ^= (u64)(data2[5]) << 40;
-		case 5: h ^= (u64)(data2[4]) << 32;
-		case 4: h ^= (u64)(data2[3]) << 24;
-		case 3: h ^= (u64)(data2[2]) << 16;
-		case 2: h ^= (u64)(data2[1]) << 8;
-		case 1: h ^= (u64)(data2[0]);
+		case 7: h ^= (uint64_t)(data2[6]) << 48;
+		case 6: h ^= (uint64_t)(data2[5]) << 40;
+		case 5: h ^= (uint64_t)(data2[4]) << 32;
+		case 4: h ^= (uint64_t)(data2[3]) << 24;
+		case 3: h ^= (uint64_t)(data2[2]) << 16;
+		case 2: h ^= (uint64_t)(data2[1]) << 8;
+		case 1: h ^= (uint64_t)(data2[0]);
 			h *= m;
 	};
 
@@ -283,22 +283,22 @@ murmur2(const void *key, i32 len, u64 seed)
 
 #else /* implementation for 32-bit cpus */
 
-	const u32 m = 0x5bd1e995;
-	const i32 r = 24;
+	const uint32_t m = 0x5bd1e995;
+	const int32_t r = 24;
 
-	u32 h1 = (u32)(seed) ^ len;
-	u32 h2 = (u32)(seed >> 32);
+	uint32_t h1 = (uint32_t)(seed) ^ len;
+	uint32_t h2 = (uint32_t)(seed >> 32);
 
-	const u32 * data = (const u32 *)key;
+	const uint32_t * data = (const uint32_t *)key;
 
 	while (len >= 8)
 	{
-		u32 k1 = *data++;
+		uint32_t k1 = *data++;
 		k1 *= m; k1 ^= k1 >> r; k1 *= m;
 		h1 *= m; h1 ^= k1;
 		len -= 4;
 
-		u32 k2 = *data++;
+		uint32_t k2 = *data++;
 		k2 *= m; k2 ^= k2 >> r; k2 *= m;
 		h2 *= m; h2 ^= k2;
 		len -= 4;
@@ -306,7 +306,7 @@ murmur2(const void *key, i32 len, u64 seed)
 
 	if (len >= 4)
 	{
-		u32 k1 = *data++;
+		uint32_t k1 = *data++;
 		k1 *= m; k1 ^= k1 >> r; k1 *= m;
 		h1 *= m; h1 ^= k1;
 		len -= 4;
@@ -325,7 +325,7 @@ murmur2(const void *key, i32 len, u64 seed)
 	h1 ^= h2 >> 17; h1 *= m;
 	h2 ^= h1 >> 19; h2 *= m;
 
-	u64 h = h1;
+	uint64_t h = h1;
 
 	h = (h << 32) | h2;
 

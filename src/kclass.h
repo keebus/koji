@@ -11,6 +11,8 @@
 
 #include "kvalue.h"
 
+struct vm;
+
 /*
  * Supported class operator enum.
  */
@@ -36,8 +38,8 @@ enum class_op_kind {
  */
 union class_op_result {
 	union value value; /* class operator value */
-	u64 hash;          /* hash value returned by the hash op */
-	i32 compare;       /* comparison value returned by the compare op [-1, +1]*/
+	uint64_t hash;          /* hash value returned by the hash op */
+	int32_t compare;       /* comparison value returned by the compare op [-1, +1]*/
 };
 
 /*

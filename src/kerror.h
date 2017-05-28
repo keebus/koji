@@ -21,8 +21,8 @@
   */
 struct sourceloc {
    const char *filename;
-   int line;
-   int column;
+   int32_t line;
+   int32_t column;
 };
 
 /*

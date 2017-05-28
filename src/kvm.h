@@ -16,13 +16,15 @@
 #include <setjmp.h>
 #include <stdarg.h>
 
+struct prototype;
+
 /*
  * Contains all the necessary information to run a script function (closure).
  */
 struct vm_frame {
 	struct prototype *proto; /* function prototype this frame is executing */
-	i32 pc;        /* program counter (current instruction index) */
-	i32 stackbase; /* frame stack base, i.e. the index of the first value in
+	int32_t pc;        /* program counter (current instruction index) */
+	int32_t stackbase; /* frame stack base, i.e. the index of the first value in
                      the stack for this frame invocation */
 };
 
@@ -41,11 +43,11 @@ struct vm {
 	struct koji_allocator alloc; /* memory allocator */
 	enum vm_state valid; /* whether the VM is in a valid state for execution */
 	struct vm_frame *framestack; /* stack of activation frames */
-	int framesp; /* frame stack pointer */
-   int frameslen; /* maximum elements capacity of the frame stack */
+	int32_t framesp; /* frame stack pointer */
+   int32_t frameslen; /* maximum elements capacity of the frame stack */
 	union value *valuestack; /* stack of local values (registers) */
-   int valuesp; /* stack pointer */
-	int valueslen; /* maximum elements capacity of the current value stack */
+   int32_t valuesp; /* stack pointer */
+	int32_t valueslen; /* maximum elements capacity of the current value stack */
 	jmp_buf errorjmpbuf; /* #documentation */
 	struct class cls_builtin; /* #documentation */
 	struct class cls_string;
@@ -70,12 +72,12 @@ vm_deinit(struct vm*);
  * prototype.
  */
 kintern void
-vm_push_frame(struct vm*, struct prototype *proto, int stack_base);
+vm_push_frame(struct vm*, struct prototype *proto, int32_t stack_base);
 
 kintern void
 vm_throwv(struct vm*, const char *format, va_list args);
 
-inline void
+static void
 vm_throw(struct vm *vm, const char *format, ...)
 {
    va_list args;
@@ -85,7 +87,7 @@ vm_throw(struct vm *vm, const char *format, ...)
 }
 
 kintern union value*
-vm_top(struct vm*, int offset);
+vm_top(struct vm*, int32_t offset);
 
 kintern union value*
 vm_push(struct vm*);
@@ -94,7 +96,7 @@ kintern union value
 vm_pop(struct vm*);
 
 kintern void
-vm_popn(struct vm*, int n);
+vm_popn(struct vm*, int32_t n);
 
 kintern koji_result_t
 vm_resume(struct vm*);
@@ -105,10 +107,10 @@ vm_value_set(struct vm *vm, union value *dest, union value src);
 kintern void
 vm_object_unref(struct vm*, struct object*);
 
-kintern u64
+kintern uint64_t
 vm_value_hash(struct vm*, union value val);
 
-inline void
+static void
 vm_value_destroy(struct vm *vm, union value val)
 {
 	if (value_isobj(val)) {

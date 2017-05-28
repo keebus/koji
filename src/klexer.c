@@ -18,7 +18,7 @@
 /*
  * Skips the current character and return the next one in the stream.
  */
-static int
+static int32_t
 lex_skip(struct lex *l)
 {
 	if (l->curr == '\n') {
@@ -33,7 +33,7 @@ lex_skip(struct lex *l)
 /*
  * Pushes the current character to the token str and returns the next one.
  */
-static int
+static int32_t
 lex_push(struct lex *l)
 {
 	if (l->tokstrlen + 2 > l->tokstrbuflen) {
@@ -62,7 +62,7 @@ lex_tokstr_clear(struct lex *l)
  * Tries to read a whole str [str] from stream and returns whether all
  * str was read.
  */
-static int
+static int32_t
 lex_accept_str(struct lex *l, const char *str)
 {
 	while (l->curr == *str) {
@@ -75,21 +75,21 @@ lex_accept_str(struct lex *l, const char *str)
 /*
  * Accepts a character [ch] from the stream and returns if it was accepted.
  */
-static int
+static int32_t
 lex_accept_char(struct lex *l, char ch)
 {
 	if (l->curr == ch) {
 		lex_push(l);
-		return ktrue;
+		return true;
 	}
-	return kfalse;
+	return false;
 }
 
 /*
  * Returns whether the next char is a valid name char.
  */
-static kbool
-lex_is_id_char(int ch, kbool first_char)
+static bool
+lex_is_id_char(int32_t ch, bool first_char)
 {
 	return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
       (ch == '_') || (!first_char && ch >= '0' && ch <= '9');
@@ -101,12 +101,12 @@ lex_is_id_char(int ch, kbool first_char)
  * some name was read and returns it.
  */
 static token_t
-lex_scan_id(struct lex *l, kbool first_char)
+lex_scan_id(struct lex *l, bool first_char)
 {
 	while (lex_is_id_char(l->curr, first_char)) {
 		lex_push(l);
 		l->tok = tok_identifier;
-		first_char = kfalse;
+		first_char = false;
 	}
 	return l->tok;
 }
@@ -138,7 +138,7 @@ lex_deinit(struct lex *l)
 }
 
 kintern const char *
-lex_tok_pretty_str(token_t tok, char *buffer, int buffer_size)
+lex_tok_pretty_str(token_t tok, char *buffer, int32_t buffer_size)
 {
 #define TOKEN_CASE(enum_, str) case enum_ : return str;
 	switch (tok) {
@@ -163,13 +163,13 @@ lex_scan(struct lex *l)
 	lex_tokstr_clear(l);
 
 	for (;;) {
-		kbool decimal = kfalse;
+		bool decimal = false;
 		switch (l->curr) {
 			case KOJI_EOF:
 				return tok_eos;
 
 			case '\n':
-				l->newline = ktrue;
+				l->newline = true;
 
 			case ' ':
 			case '\r':
@@ -194,7 +194,7 @@ lex_scan(struct lex *l)
 			case '"':
 			case '\'':
 			{
-				int delimiter = l->curr;
+				int32_t delimiter = l->curr;
 				lex_skip(l);
 				while (l->curr != KOJI_EOF && l->curr != delimiter) {
 					lex_push(l);
@@ -210,7 +210,7 @@ lex_scan(struct lex *l)
 
 			{
 			case '.':
-				decimal = ktrue;
+				decimal = true;
 				lex_push(l);
 				if (l->curr < '0' || l->curr > '9')
 					return l->tok = '.';
@@ -232,7 +232,7 @@ lex_scan(struct lex *l)
 
 					if (l->curr == '.') {
 						lex_push(l);
-						decimal = ktrue;
+						decimal = true;
 					}
 				}
 
@@ -242,7 +242,7 @@ lex_scan(struct lex *l)
                   lex_push(l);
 				}
 				else if (l->curr == 'e') {
-					decimal = ktrue;
+					decimal = true;
 					lex_push(l);
 					while (l->curr >= '0' && l->curr <= '9')
                   lex_push(l);
@@ -330,14 +330,14 @@ lex_scan(struct lex *l)
 						l->tok = kw_do;
 						break;
 				}
-				return l->tok = lex_scan_id(l, kfalse);
+				return l->tok = lex_scan_id(l, false);
 
 			case 'e':
 				lex_push(l);
 				l->tok = tok_identifier;
 				if (lex_accept_str(l, "lse"))
                l->tok = kw_else;
-				return l->tok = lex_scan_id(l, kfalse);
+				return l->tok = lex_scan_id(l, false);
 
 			case 'f':
 				lex_push(l);
@@ -354,14 +354,14 @@ lex_scan(struct lex *l)
                      l->tok = kw_for;
 						break;
 				}
-				return l->tok = lex_scan_id(l, kfalse);
+				return l->tok = lex_scan_id(l, false);
 
 			case 'g':
 				lex_push(l);
 				l->tok = tok_identifier;
 				if (lex_accept_str(l, "lobals"))
                l->tok = kw_globals;
-				return l->tok = lex_scan_id(l, kfalse);
+				return l->tok = lex_scan_id(l, false);
 
 			case 'i':
 				lex_push(l);
@@ -376,21 +376,21 @@ lex_scan(struct lex *l)
 						l->tok = kw_in;
 						break;
 				}
-				return l->tok = lex_scan_id(l, kfalse);
+				return l->tok = lex_scan_id(l, false);
 
 			case 'n':
 				lex_push(l);
 				l->tok = tok_identifier;
 				if (lex_accept_char(l, 'i') && lex_accept_char(l, 'l'))
                l->tok = kw_nil;
-				return l->tok = lex_scan_id(l, kfalse);
+				return l->tok = lex_scan_id(l, false);
 
 			case 'r':
 				lex_push(l);
 				l->tok = tok_identifier;
 				if (lex_accept_str(l, "eturn"))
                l->tok = kw_return;
-				return l->tok = lex_scan_id(l, kfalse);
+				return l->tok = lex_scan_id(l, false);
 
 			case 't':
 				lex_push(l);
@@ -407,24 +407,24 @@ lex_scan(struct lex *l)
                      l->tok = kw_true;
 						break;
 				}
-				return l->tok = lex_scan_id(l, kfalse);
+				return l->tok = lex_scan_id(l, false);
 
 			case 'v':
 				lex_push(l);
 				l->tok = tok_identifier;
 				if (lex_accept_str(l, "ar"))
                l->tok = kw_var;
-				return l->tok = lex_scan_id(l, kfalse);
+				return l->tok = lex_scan_id(l, false);
 
 			case 'w':
 				lex_push(l);
 				l->tok = tok_identifier;
 				if (lex_accept_str(l, "hile"))
                l->tok = kw_while;
-				return l->tok = lex_scan_id(l, kfalse);
+				return l->tok = lex_scan_id(l, false);
 
 			default:
-				lex_scan_id(l, ktrue);
+				lex_scan_id(l, true);
 				if (l->tok != tok_identifier) {
 					error(l->issue_handler, l->sourceloc,
                   "unexpected character '%c' found.", l->curr);

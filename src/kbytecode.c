@@ -7,7 +7,6 @@
  * the MIT license. See koji.h for further licensing information.
  */
 
-
 #include "kbytecode.h"
 #include "kvalue.h"
 #include "kstring.h"
@@ -66,19 +65,17 @@ kintern void
 prototype_release(struct prototype *proto, struct koji_allocator *alloc)
 {
    if (--proto->refs == 0) {
-      i32 i, n;
-
       assert(proto->refs == 0);
       kfree(proto->instrs, array_seq_len(proto->ninstrs), alloc);
 
       /* delete all child protos that reach reference to zero */
-      for (i = 0, n = (i32)proto->nprotos; i < n; ++i)
+      for (int32_t i = 0, n = (int32_t)proto->nprotos; i < n; ++i)
          prototype_release(proto->protos[i], alloc);
 
       kfree(proto->protos, array_seq_len(proto->nprotos), alloc);
 
       /* destroy constant values */
-      for (i = 0, n = proto->nconsts; i < n; ++i)
+      for (int32_t i = 0, n = proto->nconsts; i < n; ++i)
          const_destroy(proto->consts[i], alloc);
 
       kfree(proto->consts, array_seq_len(proto->nconsts), alloc);
@@ -87,14 +84,12 @@ prototype_release(struct prototype *proto, struct koji_allocator *alloc)
 }
 
 kintern void
-prototype_dump(struct prototype const *proto, i32 level)
+prototype_dump(struct prototype const *proto, int32_t level)
 {
-   i32 i, j, n;
-
    /* build a spacing str */
-   i32 margin_length = level * 3;
+   int32_t margin_length = level * 3;
    char *margin = kalloca(margin_length + 1);
-   for (i = 0, n = margin_length; i < n; ++i)
+   for (int32_t i = 0, n = margin_length; i < n; ++i)
       margin[i] = ' ';
    margin[margin_length] = '\0';
 
@@ -103,20 +98,20 @@ prototype_dump(struct prototype const *proto, i32 level)
           margin, proto->name,
           margin, proto->ninstrs, proto->nconsts, proto->nlocals, 0);
 
-   for (i = 0; i < proto->ninstrs; ++i) {
+   for (int32_t i = 0; i < proto->ninstrs; ++i) {
       instr_t instr = proto->instrs[i];
       enum opcode op = decode_op(instr);
-      i32 regA = decode_A(instr);
-      i32 regB = decode_B(instr);
-      i32 regC = decode_C(instr);
-      i32 regBx = decode_Bx(instr);
-      i32 constant_reg = 0;
-      i32 offset = 0xffffffff;
+      int32_t regA = decode_A(instr);
+      int32_t regB = decode_B(instr);
+      int32_t regC = decode_C(instr);
+      int32_t regBx = decode_Bx(instr);
+      int32_t constant_reg = 0;
+      int32_t offset = 0xffffffff;
 
       printf("%d) %s", i + 1, OP_STRINGS[op]);
 
       /* tabbing */
-      for (j = 0, n = 10 - (i32)strlen(OP_STRINGS[op]); j < n; ++j)
+      for (int32_t j = 0, n = 10 - (int32_t)strlen(OP_STRINGS[op]); j < n; ++j)
          printf(" ");
 
       switch (OP_FORMATS[op]) {

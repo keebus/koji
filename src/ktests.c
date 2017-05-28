@@ -47,16 +47,16 @@ test_table(koji_state_t *state)
    union value value = table_get(&t, &state->vm, value_num(10));
    assert(value_isnum(value) && value.num == 118.0);
 
-	for (int i = 0; i < 100; ++i)
+	for (int32_t i = 0; i < 100; ++i)
 		table_set(&t, &state->vm, value_num(i), value_num(i * 1000));
 
-	for (int i = 0; i < 100; ++i)
+	for (int32_t i = 0; i < 100; ++i)
 		assert(table_get( &t, &state->vm, value_num(i)).num == i * 1000);
 
 	table_deinit(&t, &state->vm);
 }
 
-int main()
+int32_t main()
 {
    koji_state_t *state = koji_open(NULL);
 

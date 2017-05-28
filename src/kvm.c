@@ -22,7 +22,7 @@ vm_value_set_nil(struct vm *vm, union value *val)
 }
 
 static void
-vm_value_set_boolean(struct vm *vm, union value *val, kbool b)
+vm_value_set_boolean(struct vm *vm, union value *val, bool b)
 {
 	vm_value_destroy(vm, *val);
 	*val = value_bool(b);
@@ -36,25 +36,25 @@ vm_value_set_number(struct vm *vm, union value *val, koji_number_t num)
 }
 
 static union value *
-vm_register(struct vm *vm, struct vm_frame *frame, int loc)
+vm_register(struct vm *vm, struct vm_frame *frame, int32_t loc)
 {
-	assert(frame->stackbase + loc < (int)vm->valueslen);
+	assert(frame->stackbase + loc < (int32_t)vm->valueslen);
 	return vm->valuestack + frame->stackbase + loc;
 }
 
 static union value
-vm_value(struct vm *vm, struct vm_frame *frame, int loc)
+vm_value(struct vm *vm, struct vm_frame *frame, int32_t loc)
 {
 	return *(loc >= 0
 		? vm_register(vm, frame, loc)
-		: (assert(-loc - 1 < (int)frame->proto->nconsts),
+		: (assert(-loc - 1 < (int32_t)frame->proto->nconsts),
          frame->proto->consts - (loc + 1)));
 }
 
 kintern void
 vm_init(struct vm *vm, struct koji_allocator *alloc)
 {
-	vm->valid = ktrue;
+	vm->valid = true;
 	vm->alloc = *alloc;
 
 	/* init frame stack */
@@ -76,7 +76,7 @@ vm_init(struct vm *vm, struct koji_allocator *alloc)
 kintern void
 vm_deinit(struct vm *vm)
 {
-   int i;
+   int32_t i;
 
 	/* destroy all values on the stack */
 	for (i = 0; i < vm->valuesp; ++i) {
@@ -96,20 +96,20 @@ vm_deinit(struct vm *vm)
 }
 
 kintern void
-vm_push_frame(struct vm *vm, struct prototype *proto, int stackbase)
+vm_push_frame(struct vm *vm, struct prototype *proto, int32_t stackbase)
 {
-   int i, n;
+   int32_t i, n;
 
 	/* bump up the num of prototype references as it is now referenced by the
 	 * new frame */
 	++proto->refs;
 
 	/* bump up the frame stack pointer */
-	const int frame_ptr = vm->framesp++;
+	const int32_t frame_ptr = vm->framesp++;
 
 	/* resize the array if needed */
 	if (vm->framesp > vm->frameslen) {
-		int newframeslen = vm->frameslen * 2;
+		int32_t newframeslen = vm->frameslen * 2;
 		vm->framestack = krealloc(vm->framestack, vm->frameslen, newframeslen,
          &vm->alloc);
 		vm->frameslen = newframeslen;
@@ -135,9 +135,9 @@ vm_throwv(struct vm *vm, const char *format, va_list args)
 }
 
 kintern union value *
-vm_top(struct vm *vm, int offset)
+vm_top(struct vm *vm, int32_t offset)
 {
-	int index = vm->valuesp + offset;
+	int32_t index = vm->valuesp + offset;
 	assert(index < vm->valuesp && "offset out of stack bounds.");
 	return vm->valuestack + index;
 }
@@ -145,12 +145,12 @@ vm_top(struct vm *vm, int offset)
 kintern union value *
 vm_push(struct vm *vm)
 {
-	const int valuesp = vm->valuesp++;
+	const int32_t valuesp = vm->valuesp++;
 	
    /* do we need to reallocate the value stack because it is not large
 	 * enough? */
 	if (vm->valuesp > vm->valueslen) {
-		int newvalueslen = vm->valueslen * 2;
+		int32_t newvalueslen = vm->valueslen * 2;
 		vm->valuestack = krealloc(vm->valuestack, vm->valueslen, newvalueslen,
          &vm->alloc);
 		vm->valueslen = newvalueslen;
@@ -170,9 +170,9 @@ vm_pop(struct vm *vm)
 }
 
 kintern void
-vm_popn(struct vm *vm, int n)
+vm_popn(struct vm *vm, int32_t n)
 {
-   int i;
+   int32_t i;
 	for (i = 0; i < n; ++i) {
 		union value *value = vm_top(vm, -1);
 		vm_value_destroy(vm, *value);
@@ -212,7 +212,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 	instrs = frame->proto->instrs;
 
 	for (;;) {
-      i32 compare, newpc, reg, to_reg;
+      int32_t compare, newpc, reg, to_reg;
       union value *ra, arg1, arg2;
 		instr_t instr = instrs[frame->pc++];
 
@@ -225,7 +225,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 				break;
 
 			case OP_LOADBOOL:
-				vm_value_set_boolean(vm, RA, (kbool)decode_B(instr));
+				vm_value_set_boolean(vm, RA, (bool)decode_B(instr));
 				frame->pc += decode_C(instr);
 				break;
 
@@ -280,7 +280,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					break;
 
 #define PASSTHROUGH(x) x
-#define CAST_TO_INT(x) ((i64)x)
+#define CAST_TO_INT(x) ((int64_t)x)
 
 				BINARY_OPERATOR(OP_ADD, +, "add", CLASS_OP_ADD, PASSTHROUGH)
 				BINARY_OPERATOR(OP_SUB, -, "sub", CLASS_OP_SUB, PASSTHROUGH)
@@ -293,7 +293,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 #undef BINARY_OPERATOR
 
 			case OP_TESTSET:
-				/* if arg B to kbool matches the boole value in C, make the jump
+				/* if arg B to bool matches the boole value in C, make the jump
                otherwise skip it */
 				newpc = frame->pc + 1;
 				union value const arg = ARG(B);
@@ -329,7 +329,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 				if (value_isobj(*ra)) {
 					struct object *obj = value_getobj(*ra);
 					obj->class->operator[CLASS_OP_SET](vm, obj, CLASS_OP_SET, arg1,
-                  arg2).value;
+                  arg2);
 				}
 				else {
 					vm_throw(vm, "primitive type %s does not support `set` "
@@ -358,8 +358,8 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					}\
 					else if (value_isobj(arg1)) {\
 						struct object *obj = value_getobj(*ra);\
-						compare = (kbool)obj->class->operator[CLASS_OP_COMPARE](vm,\
-                     obj, CLASS_OP_COMPARE, arg1, value_nil()).compare op_ 0;\
+						compare = (obj->class->operator[CLASS_OP_COMPARE](vm,\
+                     obj, CLASS_OP_COMPARE, arg1, value_nil()).compare op_ 0);\
 					}\
 					else {\
 						vm_throw(vm, "cannot apply comparison " #op_\
@@ -414,7 +414,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					if (value_isnil(*r))
                   printf("nil");
 					else if (value_isbool(*r))
-                  printf("%s", value_getbool(*r) ? "ktrue" : "kfalse");
+                  printf("%s", value_getbool(*r) ? "true" : "false");
 					else if (value_isnum(*r))
                   printf("%f", r->num);
 					else if (value_getobj(*r)->class == &vm->cls_string)
@@ -464,7 +464,7 @@ entry:
    }
 }
 
-kintern u64
+kintern uint64_t
 vm_value_hash(struct vm *vm, union value val)
 {
 	if (value_isobj(val)) {

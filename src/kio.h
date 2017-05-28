@@ -20,7 +20,7 @@ struct source_membuf {
  * Opens a file input stream at specified [filename] and returns if file open
  * was successful.
  */
-kintern kbool
+kintern bool
 source_file_open(struct koji_source *src, const char *filename);
 
 /*

@@ -18,7 +18,7 @@
 enum opcode {
   /* operations that write into R(A) */
    OP_LOADNIL,  /* loadnil A, Bx;    ; R(A), ..., R(Bx) = nil */
-   OP_LOADBOOL, /* loadbool A, B, C  ; R(A) = kbool(B) then jump by C */
+   OP_LOADBOOL, /* loadbool A, B, C  ; R(A) = bool(B) then jump by C */
    OP_MOV,      /* mov A, Bx         ; R(A) = R(Bx) */
    OP_NEG,      /* neg A, Bx         ; R(A) = not R(Bx) */
    OP_UNM,      /* unm A, Bx         ; R(A) = -R(Bx) */
@@ -28,7 +28,7 @@ enum opcode {
    OP_DIV,      /* div A, B, C       ; R(A) = R(B) / R(C) */
    OP_MOD,      /* mod A, B, C       ; R(A) = R(B) % R(C) */
    OP_POW,      /* pow A, B, C       ; R(A) = pow(R(B), R(C)) */
-   OP_TESTSET,  /* testset A, B, C   ; if R(B) == (kbool)C then
+   OP_TESTSET,  /* testset A, B, C   ; if R(B) == (bool)C then
                                           R(A) = R(B) else jump 1 */
    OP_CLOSURE,  /* closure A, Bx     ; R(A) = closure for prototype Bx */
    OP_GLOBALS,  /* globals A         ; get the global table into register A */
@@ -37,13 +37,13 @@ enum opcode {
    OP_THIS,     /* this A            ; R(A) = this */
 
    /* operations that do not write into R(A) */
-   OP_TEST,     /* test A, Bx        ; if (kbool)R(A) != (kbool)B then jump 1 */
+   OP_TEST,     /* test A, Bx        ; if (bool)R(A) != (bool)B then jump 1 */
    OP_JUMP,     /* jump Bx           ; jump by Bx instructions */
-   OP_EQ,       /* eq A, B, C        ; if (R(A) == R(B)) == (kbool)C
+   OP_EQ,       /* eq A, B, C        ; if (R(A) == R(B)) == (bool)C
                                           then nothing else jump 1 */
-   OP_LT,       /* lt A, B, C        ; if (R(A) < R(B)) == (kbool)C
+   OP_LT,       /* lt A, B, C        ; if (R(A) < R(B)) == (bool)C
                                           then nothing else jump 1 */
-   OP_LTE,      /* lte A, B, C       ; if (R(A) <= R(B)) == (kbool)C
+   OP_LTE,      /* lte A, B, C       ; if (R(A) <= R(B)) == (bool)C
                                           then nothing else jump 1 */
    OP_SCALL,    /* scall A, B, C     ; call static function at K[B] with C
                                           arguments starting from R(A) */
@@ -65,18 +65,18 @@ static const char *OP_STRINGS[] = {
 };
 
 /* Type of a single instruction, always a 32bit long */
-typedef u32 instr_t;
+typedef uint32_t instr_t;
 
 /* Maximum value a 8-bit register (A, B or C) can hold (positive or negative)*/
-static const int MAX_ABC_VALUE = 255;
+static const int32_t MAX_ABC_VALUE = 255;
 
 /* Maximum value Bx can hold (positive or negative) */
-static const int MAX_BX_VALUE = 131071;
+static const int32_t MAX_BX_VALUE = 131071;
 
 /*
  * Returns whether opcode @op involves writing into register A.
  */
-kinline kbool
+static bool
 opcode_has_target(enum opcode op)
 {
    return op <= OP_THIS;
@@ -85,8 +85,8 @@ opcode_has_target(enum opcode op)
 /*
  * Encodes an instruction with arguments A and Bx.
  */
-kinline instr_t
-encode_ABx(enum opcode op, i32 A, i32 Bx)
+static instr_t
+encode_ABx(enum opcode op, int32_t A, int32_t Bx)
 {
    assert(A >= 0);
    assert((Bx < 0 ? -Bx : Bx) <= MAX_BX_VALUE);
@@ -96,8 +96,8 @@ encode_ABx(enum opcode op, i32 A, i32 Bx)
 /*
  * Encodes and returns an instruction with arguments A, B and C.
  */
-kinline instr_t
-encode_ABC(enum opcode op, i32 A, i32 B, i32 C)
+static instr_t
+encode_ABC(enum opcode op, int32_t A, int32_t B, int32_t C)
 {
    assert(A >= 0);
    return (C << 23) | (B & 0x1ff) << 14 | (A & 0xff) << 6 | op;
@@ -106,7 +106,7 @@ encode_ABC(enum opcode op, i32 A, i32 B, i32 C)
 /*
  * Decodes an instruction opcode.
  */
-kinline enum opcode
+static enum opcode
 decode_op(instr_t i)
 {
    return i & 0x3f;
@@ -115,7 +115,7 @@ decode_op(instr_t i)
 /*
  * Decodes an instruction argument A.
  */
-kinline i32
+static int32_t
 decode_A(instr_t i)
 {
    return (i >> 6) & 0xff;
@@ -124,35 +124,35 @@ decode_A(instr_t i)
 /*
  * Decodes an instructions argument B.
  */
-kinline i32
+static int32_t
 decode_B(instr_t i)
 {
-   return ((i32)i << 9) >> 23;
+   return ((int32_t)i << 9) >> 23;
 }
 
 /*
  * Decodes an instruction argument C.
  */
-kinline i32
+static int32_t
 decode_C(instr_t i)
 {
-   return (i32)i >> 23;
+   return (int32_t)i >> 23;
 }
 
 /*
  * Decodes an instruction argument Bx.
  */
-kinline i32
+static int32_t
 decode_Bx(instr_t i)
 {
-   return (i32)i >> 14;
+   return (int32_t)i >> 14;
 }
 
 /*
  * Sets instruction argument A.
  */
-kinline void
-replace_A(instr_t *i, i32 A)
+static void
+replace_A(instr_t *i, int32_t A)
 {
    assert(A >= 0);
    *i = (*i & 0xFFFFC03F) | (A << 6);
@@ -161,8 +161,8 @@ replace_A(instr_t *i, i32 A)
 /*
  * Sets instruction argument Bx.
  */
-kinline void
-replace_Bx(instr_t *i, i32 Bx)
+static void
+replace_Bx(instr_t *i, int32_t Bx)
 {
    *i = (*i & 0x3FFF) | (Bx << 14);
 }
@@ -170,8 +170,8 @@ replace_Bx(instr_t *i, i32 Bx)
 /*
  * Set instruction argument C.
  */
-kinline void
-replace_C(instr_t *i, i32 C)
+static void
+replace_C(instr_t *i, int32_t C)
 {
    *i = (*i & 0x7FFFFF) | (C << 23);
 }
@@ -181,12 +181,12 @@ replace_C(instr_t *i, i32 C)
 /*
  */
 struct prototype {
-   i32 refs;
-   i32 ninstrs;
-   u16 nargs;
-   u16 nlocals;
-   u16 nconsts;
-   u16 nprotos;
+   int32_t refs;
+   int32_t ninstrs;
+   uint16_t nargs;
+   uint16_t nlocals;
+   uint16_t nconsts;
+   uint16_t nprotos;
    instr_t *instrs;
    union value *consts;
    struct prototype **protos;
@@ -203,4 +203,4 @@ prototype_release(struct prototype *proto, struct koji_allocator *alloc);
  * bytecode disassembly, constants for [proto] as well inner prototypes.
  */
 kintern void
-prototype_dump(struct prototype const *proto, i32 level);
+prototype_dump(struct prototype const *proto, int32_t level);

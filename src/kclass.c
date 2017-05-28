@@ -36,10 +36,10 @@ class_op_invalid(struct vm *vm, struct object *obj,
 		const char *arg_type_str;
 		if (value_isobj(arg1)) {
 			struct object *argobj = value_getobj(arg1);
-			int buflen = 64;
+			int32_t buflen = 64;
 			arg_type_str = kalloca(buflen);
 			
-         int total_len = snprintf((char*)arg_type_str, buflen, "'%s' object",
+         int32_t total_len = snprintf((char*)arg_type_str, buflen, "'%s' object",
             argobj->class->name);
 			
          if (total_len > buflen) {
@@ -67,7 +67,7 @@ class_op_compare_default(struct vm *vm, struct object *obj,
                                          other value type */
 	/* if rhs is also an object, then compare the addresses */
 	if (value_isobj(arg1)) {
-		res.compare = (i32)(obj - argobj);
+		res.compare = (int32_t)(obj - argobj);
 	}
 
 	return res;
@@ -78,7 +78,7 @@ class_op_hash_default(struct vm *vm, struct object *obj, enum class_op_kind op,
    union value arg1, union value arg2)
 {
    union class_op_result res;
-   res.hash = (u64)obj;
+   res.hash = (uint64_t)obj;
 	return res;
 }
 

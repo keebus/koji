@@ -10,10 +10,7 @@
 
 #include "kerror.h"
 
-#pragma warning(push, 0)
 #include <stdio.h>
-#include <malloc.h>
-#pragma warning(pop)
 
 kintern void
 reportv(struct issue_handler *e, struct sourceloc sloc, const char *format,
@@ -21,11 +18,11 @@ reportv(struct issue_handler *e, struct sourceloc sloc, const char *format,
 {
    static const char *header_fmt = "at '%s' (%d:%d): ";
 
-   int header_len = snprintf(NULL, 0, header_fmt, sloc.filename, sloc.line,
+   int32_t header_len = snprintf(NULL, 0, header_fmt, sloc.filename, sloc.line,
       sloc.column);
 
-   int body_len = vsnprintf(NULL, 0, format, args);
-   char *message = alloca(header_len + body_len + 1);
+   int32_t body_len = vsnprintf(NULL, 0, format, args);
+   char *message = kalloca(header_len + body_len + 1);
 
    snprintf(message, header_len + 1, header_fmt, sloc.filename, sloc.line,
       sloc.column);

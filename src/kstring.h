@@ -17,7 +17,7 @@
  */
 struct string {
    struct object object; /* the object base */
-   i32 len; /* str length excluding null byte */
+   int32_t len; /* str length excluding null byte */
    char chars; /* str chars */
 };
 
@@ -26,7 +26,7 @@ struct string {
  * [cls_string] is a pointer to the `str` class.
  */
 kintern struct string *
-string_new(struct class *cls_string, struct koji_allocator *, i32 len);
+string_new(struct class *cls_string, struct koji_allocator *, int32_t len);
 
 /*
  * Frees string using specified allocator. This function will decrement string
@@ -40,7 +40,7 @@ string_free(struct string *, struct koji_allocator *);
  * Allocates a str like [string_new] and returns an object value with it.
  */
 kintern union value
-value_new_string(struct class *cls_string, struct koji_allocator *, i32 len);
+value_new_string(struct class *cls_string, struct koji_allocator *, int32_t len);
 
 /*
  * Allocates a str like [string_new] and returns an object value with it.

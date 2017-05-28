@@ -11,10 +11,6 @@
 
 #include "kplatform.h"
 
-#pragma warning(push, 0)
-#include <assert.h>
-#pragma warning(pop)
-
 /*
  * A value represents a generic data type. A value can be nil, have a primitive
  * value type like a num or or be a reference to an object. Koji implements
@@ -25,7 +21,7 @@
  */
 union value {
    double num;
-   u64 bits;
+   uint64_t bits;
 };
 
 /*
@@ -33,25 +29,19 @@ union value {
  * object belongs to.
  */
 struct object {
-   int            refs;
+   int32_t            refs;
    struct class*  class;
 };
 
-#define BITS_NAN_MASK      ((u64)(0x7ff4000000000000))
-#define BITS_TAG_MASK      ((u64)(0xffff000000000000))
+#define BITS_NAN_MASK      ((uint64_t)(0x7ff4000000000000))
+#define BITS_TAG_MASK      ((uint64_t)(0xffff000000000000))
 #define BITS_TAG_PAYLOAD   ~BITS_TAG_MASK
-#define BITS_TAG_BOOLEAN   ((u64)(0x7ffc000000000000))
-#define BITS_TAG_OBJECT    ((u64)(0xfffc000000000000))
-
-/*
- * Returns a str with the type of [value].
- */
-kintern const char *
-value_type_str(union value val);
+#define BITS_TAG_BOOLEAN   ((uint64_t)(0x7ffc000000000000))
+#define BITS_TAG_OBJECT    ((uint64_t)(0xfffc000000000000))
 
 /*
  */
-kinline union value
+static union value
 value_nil(void)
 {
    union value v;
@@ -61,7 +51,7 @@ value_nil(void)
 
 /*
  */
-kinline union value
+static union value
 value_num(koji_number_t n)
 {
    union value v;
@@ -71,8 +61,8 @@ value_num(koji_number_t n)
 
 /*
  */
-kinline union value
-value_bool(kbool b)
+static union value
+value_bool(bool b)
 {
    union value v;
    v.bits = BITS_TAG_BOOLEAN | b;
@@ -81,19 +71,19 @@ value_bool(kbool b)
 
 /*
  */
-kinline union value
+static union value
 value_obj(void const *obj)
 {
    union value v;
-   assert(((u64)obj & BITS_TAG_MASK) == 0 &&
+   assert(((uint64_t)obj & BITS_TAG_MASK) == 0 &&
           "Pointer with some bit higher than 48th set.");
-    v.bits = BITS_TAG_OBJECT | (u64)obj;
+    v.bits = BITS_TAG_OBJECT | (uint64_t)obj;
    return v;
 }
 
 /*
  */
-kinline kbool
+static bool
 value_isnil(union value val)
 {
    return val.bits == BITS_NAN_MASK;
@@ -101,7 +91,7 @@ value_isnil(union value val)
 
 /*
  */
-kinline kbool
+static bool
 value_isbool(union value val)
 {
    return (val.bits & BITS_TAG_MASK) == BITS_TAG_BOOLEAN;
@@ -109,7 +99,7 @@ value_isbool(union value val)
 
 /*
  */
-kinline kbool
+static bool
 value_isnum(union value val)
 {
    return (val.bits & BITS_NAN_MASK) != BITS_NAN_MASK;
@@ -117,7 +107,7 @@ value_isnum(union value val)
 
 /*
  */
-kinline kbool
+static bool
 value_isobj(union value val)
 {
    return (val.bits & BITS_TAG_MASK) == BITS_TAG_OBJECT;
@@ -125,27 +115,27 @@ value_isobj(union value val)
 
 /*
  */
-kinline kbool
+static bool
 value_getbool(union value val)
 {
    assert(value_isbool(val));
-   return (val.bits & (u64)1);
+   return (val.bits & (uint64_t)1);
 }
 
 /*
  */
-kinline kbool
+static bool
 value_tobool(union value val)
 {
    if (value_isbool(val)) return value_getbool(val);
    else if (value_isnum(val)) return val.num != 0;
-   else if (value_isnil(val)) return kfalse;
-   return ktrue;
+   else if (value_isnil(val)) return false;
+   return true;
 }
 
 /*
  */
-kinline struct object *
+static struct object *
 value_getobj(union value val)
 {
    assert(value_isobj(val));
@@ -153,3 +143,9 @@ value_getobj(union value val)
 }
 
 #define value_getobjv(val) ((void *)value_getobj(val))
+
+/*
+ * Returns a str with the type of [value].
+ */
+kintern const char *
+value_type_str(union value val);

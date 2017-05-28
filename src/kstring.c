@@ -10,13 +10,11 @@
 #include "kstring.h"
 #include "kvm.h"
 
-#pragma warning(push, 0)
-#  include <string.h>
-#  include <stdio.h>
-#pragma warning(pop)
+#include <string.h>
+#include <stdio.h>
 
 kintern struct string *
-string_new(struct class *cls_string, struct koji_allocator *alloc, i32 len)
+string_new(struct class *cls_string, struct koji_allocator *alloc, int32_t len)
 {
 	struct string *str = alloc->alloc(sizeof(struct string) + len, alloc->user);
 	++cls_string->object.refs;
@@ -35,7 +33,7 @@ string_free(struct string *str, struct koji_allocator *alloc)
 
 kintern union value
 value_new_string(struct class *cls_string, struct koji_allocator *alloc,
-   i32 len)
+   int32_t len)
 {
 	struct string *str = string_new(cls_string, alloc, len);
 	if (!str) return value_nil();
@@ -46,7 +44,7 @@ kintern union value
 value_new_stringfv(struct class *cls_string, struct koji_allocator *alloc,
    const char *format, va_list args)
 {
-	i32 len = vsnprintf(NULL, 0, format, args);
+	int32_t len = vsnprintf(NULL, 0, format, args);
 	struct string *str = string_new(cls_string, alloc, len);
 	if (!str) value_nil();
 	vsnprintf(&str->chars, len + 1, format, args);
@@ -100,8 +98,6 @@ string_op_mul(struct vm* vm, struct object *obj, enum class_op_kind op,
 {
    struct class *cls = obj->class;
 	struct string *lstr = (struct string *)obj;
-   struct string *res_str;
-   i32 mult, str_len, offset, i;
    union class_op_result res;
 
 	if (!value_isnum(arg1)) {
@@ -110,13 +106,13 @@ string_op_mul(struct vm* vm, struct object *obj, enum class_op_kind op,
 		return res;
 	}
 
-	mult = (i32)arg1.num;
-	str_len = lstr->len;
+	int32_t mult = (int32_t)arg1.num;
+	int32_t str_len = lstr->len;
 	res.value = value_new_string(cls, &vm->alloc, str_len * mult);
-	res_str = value_getobjv(res.value);
+	struct string *res_str = value_getobjv(res.value);
 
-	offset = 0;
-	for (i = 0; i < mult; ++i) {
+	int32_t offset = 0;
+	for (int32_t i = 0; i < mult; ++i) {
 		memcpy(&res_str->chars + offset, &lstr->chars, str_len);
 		offset += str_len;
 	}
@@ -159,8 +155,9 @@ string_op_get(struct vm* vm, struct object *obj, enum class_op_kind op,
    union value arg1, union value arg2)
 {
 	struct string *lstr = (struct string *)obj;
+
    union class_op_result res;
-   res.value = value_num((&lstr->chars)[(u32)arg1.num]);
+   res.value = value_num((&lstr->chars)[(uint32_t)arg1.num]);
 	return res;
 }
 
@@ -169,7 +166,11 @@ string_op_set(struct vm* vm, struct object *object, enum class_op_kind op,
    union value arg1, union value arg2)
 {
 	struct string *lstr = (struct string *)object;
-	(&lstr->chars)[(u32)arg1.num] = (char)arg2.num;
+	char ch = (&lstr->chars)[(uint32_t)arg1.num] = (char)arg2.num;
+
+   union class_op_result res;
+   res.value = value_num(ch);
+	return res;
 }
 
 kintern void

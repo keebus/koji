@@ -25,12 +25,12 @@
 #ifndef KOJI_H_
 #define KOJI_H_
 
-#define KOJI_API
+#define KOJI_API 
 
 typedef enum {
    KOJI_OK = 0,
    KOJI_OUT_OF_MEMORY = -1,
-   KOJI_ERROR = -2,
+   KOJI_ERROR = -2
 } koji_result_t;
 
 struct koji_allocator {
@@ -106,4 +106,4 @@ koji_string_length(koji_state_t *, int offset);
 KOJI_API void
 koji_pop(koji_state_t *, int n);
 
-#endif // KOJI_H_
+#endif /* KOJI_H_ */
