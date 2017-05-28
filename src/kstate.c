@@ -33,7 +33,7 @@ handle_issue(struct sourceloc sloc, const char *message, void *user)
 {
 	(void)sloc;
 	struct koji_state *state = user;
-	koji_push_string(state, message, strlen(message));
+	koji_push_string(state, message, (int32_t)strlen(message));
 }
 
 
@@ -77,9 +77,6 @@ koji_load(koji_state_t *state, struct koji_source *source)
 	/* some error occurred and the prototype could not be compiled, report the
 	 * error. */
 	if (!proto) return KOJI_ERROR;
-
-	/* #todo temporary */
-	prototype_dump(proto, 0);
 
 	/* reset the num of references as the ref count will be increased when the
 	 * prototype is referenced by a the new frame */
@@ -125,7 +122,7 @@ koji_push_string(koji_state_t *state, const char *chars, int32_t len)
 {
 	struct string *str = string_new(&state->vm.cls_string, &state->alloc, len);
 	memcpy(&str->chars, chars, len);
-	(&str->chars)[len] = 0;
+	str->chars[len] = 0;
 	*vm_push(&state->vm) = value_obj(str);
 }
 
@@ -136,7 +133,7 @@ koji_push_stringf(koji_state_t *state, const char *format, ...)
 	va_start(args, format);
 	int32_t size = vsnprintf(0, 0, format, args);
 	struct string *str = string_new(&state->vm.cls_string, &state->alloc, size);
-	vsnprintf((&str->chars), size + 1, format, args);
+	vsnprintf(str->chars, size + 1, format, args);
 	*vm_push(&state->vm) = value_obj(str);
 	va_end(args);
 }
@@ -150,7 +147,7 @@ koji_string(koji_state_t *state, int32_t offset)
 	struct string *str = value_getobjv(value);
 	if (str->object.class != &state->vm.cls_string)
 		return NULL;
-	return &str->chars;
+	return str->chars;
 }
 
 KOJI_API int32_t

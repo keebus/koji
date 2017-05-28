@@ -54,7 +54,7 @@ vm_value(struct vm *vm, struct vm_frame *frame, int32_t loc)
 kintern void
 vm_init(struct vm *vm, struct koji_allocator *alloc)
 {
-	vm->valid = true;
+	vm->validstate = true;
 	vm->alloc = *alloc;
 
 	/* init frame stack */
@@ -194,11 +194,13 @@ vm_resume(struct vm *vm)
 
 	/* set the error handler so that if any runtime error occurs, we can cleanly
 	 * return KOJI_ERROR from this function */
-	if (setjmp(vm->errorjmpbuf))
+   if (setjmp(vm->errorjmpbuf)) {
+      vm->validstate = VM_STATE_INVALID;
 		return KOJI_ERROR;
+   }
 
 	/* check state is valid, otherwise throw an error */
-	if (!vm->valid)
+	if (vm->validstate == VM_STATE_INVALID)
 		vm_throw(vm, "cannot resume invalid state.");
 
 new_frame: /* jumped to when a new frame is pushed onto the stack */
@@ -356,33 +358,35 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					if (value_isnum(*ra) && value_isnum(arg1)) {\
 						compare = ra->num op_ arg1.num;\
 					}\
-					else if (value_isobj(arg1)) {\
+					else if (value_isobj(*ra)) {\
 						struct object *obj = value_getobj(*ra);\
 						compare = (obj->class->operator[CLASS_OP_COMPARE](vm,\
                      obj, CLASS_OP_COMPARE, arg1, value_nil()).compare op_ 0);\
 					}\
 					else {\
-						vm_throw(vm, "cannot apply comparison " #op_\
-                     " between a %s and a %s.", value_type_str(*ra),\
-                     value_type_str(arg1));\
+						compare = ra->bits op_ arg1.bits;\
 					}\
-					newpc = frame->pc + 1;\
-					if (compare == decode_C(instr)) {\
-						newpc += decode_Bx(instrs[frame->pc]);\
-					}\
-					frame->pc = newpc;\
-					break;
+					goto compare_done;
 
 				COMPARISON_OPERATOR(OP_EQ, ==);
 				COMPARISON_OPERATOR(OP_LT, <);
 				COMPARISON_OPERATOR(OP_LTE, <=);
+
+         compare_done:
+            	newpc = frame->pc + 1;
+					if (compare == decode_C(instr)) {
+						newpc += decode_Bx(instrs[frame->pc]);
+					}
+					frame->pc = newpc;
+               break;
 
 #undef COMPARISON_OPERATOR
 
 			case OP_RET:
          {
             union value *dest = vm_register(vm, frame, 0);
-            union value* dest_end = dest + /* frame->proto->num_arguments +*/ frame->proto->nlocals;
+            union value* dest_end = dest + /* frame->proto->num_arguments +*/
+               frame->proto->nlocals;
             union value* src = vm_register(vm, frame, decode_A(instr));
             union value* src_end = src + decode_Bx(instr);
 
@@ -408,6 +412,17 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 				goto new_frame;
          }
 
+         case OP_THROW:
+         {
+            arg1 = ARG(Bx);
+            struct string *str = value_getobjv(arg1);
+            if (value_isobj(arg1) && str->object.class == &vm->cls_string)
+               vm_throw(vm, str->chars);
+            else
+               vm_throw(vm, "throw argument must be a string.");
+            break;
+         }
+            
 			case OP_DEBUG:
 				printf("debug: ");
 				for (union value *r = RA, *e = r + decode_Bx(instr); r < e; ++r) {

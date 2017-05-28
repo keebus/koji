@@ -626,7 +626,7 @@ const_fetch_str(struct compiler *c, const char *chars, int32_t len)
       if (string->object.class != c->cls_string)
          continue;
 
-      if (string->len == len && memcmp(&string->chars, chars, len) == 0)
+      if (string->len == len && memcmp(string->chars, chars, len) == 0)
          return i;
    }
 
@@ -637,8 +637,8 @@ const_fetch_str(struct compiler *c, const char *chars, int32_t len)
 
    /* create a new string */
    struct string *string = string_new(c->cls_string, &c->lex.alloc, len);
-   memcpy(&string->chars, chars, len + 1);
-   assert((&string->chars)[len] == 0);
+   memcpy(string->chars, chars, len + 1);
+   assert(string->chars[len] == 0);
 
    /* make the constant value */
    *cnst = value_obj(string);
@@ -1428,7 +1428,7 @@ parse_primary_expr(struct compiler *c, struct expr_state *es)
 
       case tok_string:
          expr = expr_newstr(c, c->lex.tokstrlen);
-         memcpy(expr.val.str.chars, c->lex.tokstr, c->lex.tokstrlen);
+         memcpy(expr.val.str.chars, c->lex.tokstr, c->lex.tokstrlen + 1);
          lex(c);
          break;
 
@@ -1722,7 +1722,7 @@ parse_cond(struct compiler *c, bool testval)
  * Parses and compiles an if statement.
  */
 static void
-parse_stmtif(struct compiler *c)
+parse_stmt_if(struct compiler *c)
 {
    struct prototype *proto = c->proto;
    int32_t label_true_begin = c->label_true.ninstrs;
@@ -1751,7 +1751,7 @@ parse_stmtif(struct compiler *c)
       label_bind_here(c, &c->label_true, label_true_begin);
 
       if (peek(c, kw_if))
-         parse_stmtif(c);
+         parse_stmt_if(c);
       else
          parse_block(c);
 
@@ -1763,6 +1763,14 @@ parse_stmtif(struct compiler *c)
       /* just bind the exit branch */
       label_bind_here(c, &c->label_true, label_true_begin);
    }
+}
+
+static void
+parse_stmt_throw(struct compiler *c)
+{
+   expect(c, kw_throw);
+   struct expr expr = parse_exprto(c, c->temp, false);
+   emit(c, encode_ABx(OP_THROW, 0, expr.val.loc));
 }
 
 /* TEMPORARY */
@@ -1801,11 +1809,16 @@ parse_stmt(struct compiler *c)
          break;
 
       case kw_if: /* if statement */
-         parse_stmtif(c);
+         parse_stmt_if(c);
          break;
 
       case kw_debug:
          parse_stmtdebug(c);
+         break;
+
+      case kw_throw:
+         parse_stmt_throw(c);
+         expect_endofstmt(c);
          break;
 
       default: /* expression */
@@ -1867,21 +1880,11 @@ compile(struct compile_info *info)
 {
    struct compiler comp = { 0 };
    struct lex_info lex_info;
-   struct prototype *mainproto;
-
-   /* create the source-file main prototype we will compile into */
-   mainproto = kalloc(struct prototype, 1, &info->alloc);
-   if (!mainproto) {
-      return NULL;
-   }
-
-   memset(mainproto, 0, sizeof *mainproto);
-   mainproto->refs = 1;
-   mainproto->name = "@main";
 
    /* redirect the error handler jum\p buffer here so that we can cleanup the
       state. */
-   if (setjmp(info->issue_handler.error_jmpbuf)) goto error;
+   if (setjmp(info->issue_handler.error_jmpbuf))
+      goto error;
 
    /* initialize the lex */
    lex_info.alloc = info->alloc;
@@ -1890,24 +1893,30 @@ compile(struct compile_info *info)
    lex_init(&comp.lex, &lex_info);
 
    /* finish setting up compiler state */
-   comp.tempalloc = linear_alloc_create(
-      &info->alloc, LINEAR_ALLOC_PAGE_MIN_SIZE);
-   comp.scopeidssize = 256;
-   comp.scopeids = array_seq_new(&info->alloc, sizeof(char), comp.scopeidssize);
-   comp.proto = NULL;
+   comp.tempalloc = linear_alloc_create(&info->alloc, LINEAR_ALLOC_PAGE_MIN_SIZE);
+   comp.scopeids = array_seq_new(&info->alloc, sizeof(char));
+   comp.scopeidssize = 0;
+   comp.locals = array_seq_new(&info->alloc, sizeof(struct local));
+   comp.nlocals = 0;
    comp.cls_string = info->cls_string;
 
+   /* create the source-file main prototype we will compile into */
+   comp.proto = prototype_new("@main", (int32_t)strlen("@main"), &info->alloc);
+
    /* kick off compilation! */
+   parse_module(&comp);
 
    goto cleanup;
 
 error:
-   prototype_release(mainproto, &info->alloc);
-   mainproto = NULL;
+   prototype_release(comp.proto, &info->alloc);
+   comp.proto = NULL;
 
 cleanup:
+   kfree(comp.locals, array_seq_len(comp.nlocals), &info->alloc);
    kfree(comp.scopeids, array_seq_len(comp.scopeidssize), &info->alloc);
    linear_alloc_destroy(comp.tempalloc, &info->alloc);
    lex_deinit(&comp.lex);
-   return 0;
+
+   return comp.proto;
 }

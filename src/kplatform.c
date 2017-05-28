@@ -128,10 +128,9 @@ linear_alloc_alloc(linear_alloc_t **lalloc, struct koji_allocator *alloc,
 /* array */
 
 kintern void *
-array_seq_new(struct koji_allocator *alloc, int32_t elemsize, int32_t count)
+array_seq_new(struct koji_allocator *alloc, int32_t elemsize)
 {
-   int32_t len = array_seq_len(max_i32(16, count));
-   return alloc->alloc(len * elemsize, alloc->user);
+   return alloc->alloc(array_seq_len(0) * elemsize, alloc->user);
 }
 
 kintern void *
@@ -145,7 +144,7 @@ array_seq_push_ex(void *arrayp_, int32_t *size, struct koji_allocator *alloc,
 	const int32_t newsize = *size + count;
 
 	int32_t currlen = array_seq_len(*size);
-	int32_t newlen = max_i32(16, array_seq_len(newsize));
+	int32_t newlen =  array_seq_len(newsize);
 
 	if (currlen < newlen) {
 		*arrayp = alloc->alloc(newlen * elemsize, alloc->user);
@@ -176,7 +175,7 @@ array_seq_len(int32_t size)
    size |= size >> 8;
    size |= size >> 16;
    size++;
-   return size;
+   return max_i32(16, size);
 }
 
 kintern bool

@@ -306,8 +306,23 @@ lex_scan(struct lex *l)
 					while (l->curr != '\n' && l->curr != -1)
                   lex_skip(l);
 					break;
-				}
-				/* #todo add block comment  */
+            }
+            else if (l->curr == '*') {
+               lex_tokstr_clear(l);
+               do {
+                  lex_skip(l);
+                  while (l->curr != '*' && l->curr != -1)
+                     lex_skip(l);
+                  if (l->curr == -1) {
+                     error(l->issue_handler, l->sourceloc,
+                        "end-of-stream found while scanning comment block.");
+                     return 0; /* unreachable */
+                  }
+                  lex_skip(l);
+               } while (l->curr != '/');
+               lex_skip(l);
+					break;
+            }
 				return l->tok = '/';
 
 				/* keywords  */
@@ -398,11 +413,17 @@ lex_scan(struct lex *l)
 				switch (l->curr) {
 					case 'h':
 						lex_push(l);
-						if (lex_accept_str(l, "is"))
+                  if (l->curr == 'r') {
+                     lex_push(l);
+                     if (lex_accept_str(l, "ow")) {
+                        l->tok = kw_throw;
+                     }
+                  }
+						else if (lex_accept_str(l, "is"))
                      l->tok = kw_this;
 						break;
 					case 'r':
-						lex_push(l);
+						lex_push(l);                  
 						if (lex_accept_str(l, "ue"))
                      l->tok = kw_true;
 						break;

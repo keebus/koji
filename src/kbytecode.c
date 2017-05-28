@@ -18,6 +18,7 @@ enum op_format {
 	OP_FORMAT_UNKNOWN,
 	OP_FORMAT_BX_OFFSET,
 	OP_FORMAT_A_BX,
+   OP_FORMAT_A_B,
 	OP_FORMAT_A_B_C,
 };
 
@@ -48,7 +49,8 @@ static const enum op_format OP_FORMATS[] = {
    OP_FORMAT_UNKNOWN, /* OP_CALL */
    OP_FORMAT_UNKNOWN, /* OP_MCALL */
    OP_FORMAT_A_B_C, /* OP_SET */
-   OP_FORMAT_UNKNOWN, /* OP_RET */
+   OP_FORMAT_A_B,  /* OP_RET */
+   OP_FORMAT_A_BX, /* OP_THROW */
    OP_FORMAT_A_BX, /* OP_DEBUG */
 };
 
@@ -59,6 +61,19 @@ const_destroy(union value c, struct koji_allocator *alloc)
       /* the only allowed objects as constants are strings */
       string_free(value_getobjv(c), alloc);
 	}
+}
+
+kintern struct prototype *
+prototype_new(const char *name, int namelen, struct koji_allocator *alloc)
+{
+   struct prototype *proto =
+      alloc->alloc(sizeof(struct prototype) + namelen + 1, &alloc->alloc);
+   *proto = (struct prototype) { 1 };
+   proto->namelen = namelen;
+   memcpy(proto->name, name, namelen + 1);
+   proto->consts = array_seq_new(alloc, sizeof(union value));
+   proto->instrs = array_seq_new(alloc, sizeof(instr_t));
+   return proto;
 }
 
 kintern void
@@ -84,7 +99,7 @@ prototype_release(struct prototype *proto, struct koji_allocator *alloc)
 }
 
 kintern void
-prototype_dump(struct prototype const *proto, int32_t level)
+prototype_dump(struct prototype const *proto, int level)
 {
    /* build a spacing str */
    int32_t margin_length = level * 3;
@@ -123,6 +138,10 @@ prototype_dump(struct prototype const *proto, int32_t level)
          case OP_FORMAT_A_BX:
             printf("%d, %d", regA, regBx);
             constant_reg = regBx;
+            break;
+
+         case OP_FORMAT_A_B:
+            printf("%d, %d", regA, regB);
             break;
 
          case OP_FORMAT_A_B_C:

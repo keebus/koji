@@ -53,7 +53,7 @@ enum opcode {
                                           R(B) with C arguments from R(A) on */
    OP_SET,      /* set A, B, C       ; R(A)[R(B)] = R(C) */
    OP_RET,      /* ret A, B          ; return values R(A), ..., R(B)*/
-
+   OP_THROW,    /* throw A           ; throws an error with R(A) msg string */
    OP_DEBUG,    /* debug A, Bx       ; (temp) prints Bx registers from R(A) */
 };
 
@@ -61,7 +61,8 @@ static const char *OP_STRINGS[] = {
     "loadnil",  "loadb", "mov",  "neg",   "unm",     "add",     "sub",
     "mul",      "div",   "mod",  "pow",   "testset", "closure", "globals",
     "newtable", "get",   "this", "test",  "jump",    "eq",      "lt",
-    "lte",      "scall", "call", "mcall", "set",     "ret",     "debug",
+    "lte",      "scall", "call", "mcall", "set",     "ret",     "throw",
+    "debug",
 };
 
 /* Type of a single instruction, always a 32bit long */
@@ -187,11 +188,17 @@ struct prototype {
    uint16_t nlocals;
    uint16_t nconsts;
    uint16_t nprotos;
+   uint16_t namelen;
    instr_t *instrs;
    union value *consts;
    struct prototype **protos;
-   const char *name;
+   char name[]; /* _first char_ of the prototype name */
 };
+
+/*
+ */
+kintern struct prototype *
+prototype_new(const char *name, int namelen, struct koji_allocator *alloc);
 
 /*
  */
@@ -203,4 +210,4 @@ prototype_release(struct prototype *proto, struct koji_allocator *alloc);
  * bytecode disassembly, constants for [proto] as well inner prototypes.
  */
 kintern void
-prototype_dump(struct prototype const *proto, int32_t level);
+prototype_dump(struct prototype const *proto, int level);

@@ -1,9 +1,0 @@
-
-var a = "hello"
-var b = "world"
-
-var d = {
-	hello: "world"
-}
-
-debug(d.hello)

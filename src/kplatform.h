@@ -22,7 +22,9 @@
    /* #pragma GCC diagnostic ignored "-Wmissing-field-initializers" */
 #endif
 
-#ifndef kintern
+#ifdef KOJI_AMALGAMATE
+#define kintern static
+#else
 #define kintern
 #endif
 
@@ -139,11 +141,11 @@ linear_alloc_alloc(linear_alloc_t **talloc, struct koji_allocator *alloc,
 	((type *)_array_push(arraypp, sizep, lenp, allocp, sizeof(type), n))
 
 /*
- * Allocates a new sequential array with length the smallest power of two
- * greater than max(16, count). Only use array_seq_push on returned array.
+ * Allocates a new sequential array with length 16.
+ * Only use array_seq_push on returned array.
  */
 kintern void *
-array_seq_new(struct koji_allocator *alloc, int32_t elemsize, int32_t count);
+array_seq_new(struct koji_allocator *alloc, int32_t elemsize);
 
 /*
  * Low-level function to grow a sequentially growable array. Used by higher

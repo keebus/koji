@@ -18,7 +18,7 @@
 struct string {
    struct object object; /* the object base */
    int32_t len; /* str length excluding null byte */
-   char chars; /* str chars */
+   char chars[]; /* str chars */
 };
 
 /*

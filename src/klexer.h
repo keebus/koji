@@ -34,6 +34,7 @@ typedef int32_t token_t;
 	_(kw_nil, "nil")\
 	_(kw_return, "return")\
 	_(kw_this, "this")\
+   _(kw_throw, "throw")\
 	_(kw_true, "true")\
 	_(kw_var, "var")\
 	_(kw_while, "while")\

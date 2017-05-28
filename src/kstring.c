@@ -16,7 +16,8 @@
 kintern struct string *
 string_new(struct class *cls_string, struct koji_allocator *alloc, int32_t len)
 {
-	struct string *str = alloc->alloc(sizeof(struct string) + len, alloc->user);
+	struct string *str =
+      alloc->alloc(sizeof(struct string) + len + 1, alloc->user);
 	++cls_string->object.refs;
 	str->object.refs = 1;
 	str->object.class = cls_string;
@@ -28,7 +29,7 @@ kintern void
 string_free(struct string *str, struct koji_allocator *alloc)
 {
    assert(str->object.class->object.refs > 1);
-   alloc->free(str, sizeof(*str) + str->len, alloc->user);
+   alloc->free(str, sizeof(*str) + str->len + 1, alloc->user);
 }
 
 kintern union value
@@ -47,7 +48,7 @@ value_new_stringfv(struct class *cls_string, struct koji_allocator *alloc,
 	int32_t len = vsnprintf(NULL, 0, format, args);
 	struct string *str = string_new(cls_string, alloc, len);
 	if (!str) value_nil();
-	vsnprintf(&str->chars, len + 1, format, args);
+	vsnprintf(str->chars, len + 1, format, args);
 	return value_obj(str);
 }
 
@@ -76,7 +77,7 @@ string_op_add(struct vm* vm, struct object *obj, enum class_op_kind op,
    union value arg1, union value arg2)
 {
    struct class *cls = obj->class;
-	struct string *lstr = (struct string *)obj;  /* lhs str */
+	struct string *lstr = (struct string *)obj; /* lhs str */
 	struct string *rstr = value_getobjv(arg1); /* rhs str */
    union class_op_result res;
 
@@ -84,8 +85,8 @@ string_op_add(struct vm* vm, struct object *obj, enum class_op_kind op,
       struct string *res_str;
 		res.value = value_new_string(cls, &vm->alloc, lstr->len + rstr->len);
       res_str = value_getobjv(res.value);
-		memcpy(&res_str->chars, &lstr->chars, lstr->len);
-		memcpy(&res_str->chars + lstr->len, &rstr->chars, rstr->len + 1);
+		memcpy(res_str->chars, &lstr->chars, lstr->len);
+		memcpy(res_str->chars + lstr->len, &rstr->chars, rstr->len + 1);
 		return res;
 	}
 
@@ -113,11 +114,11 @@ string_op_mul(struct vm* vm, struct object *obj, enum class_op_kind op,
 
 	int32_t offset = 0;
 	for (int32_t i = 0; i < mult; ++i) {
-		memcpy(&res_str->chars + offset, &lstr->chars, str_len);
+		memcpy(res_str->chars + offset, &lstr->chars, str_len);
 		offset += str_len;
 	}
 
-	(&res_str->chars)[res_str->len] = 0;
+	res_str->chars[res_str->len] = 0;
 	return res;
 }
 
@@ -157,7 +158,7 @@ string_op_get(struct vm* vm, struct object *obj, enum class_op_kind op,
 	struct string *lstr = (struct string *)obj;
 
    union class_op_result res;
-   res.value = value_num((&lstr->chars)[(uint32_t)arg1.num]);
+   res.value = value_num(lstr->chars[(uint32_t)arg1.num]);
 	return res;
 }
 
@@ -166,7 +167,7 @@ string_op_set(struct vm* vm, struct object *object, enum class_op_kind op,
    union value arg1, union value arg2)
 {
 	struct string *lstr = (struct string *)object;
-	char ch = (&lstr->chars)[(uint32_t)arg1.num] = (char)arg2.num;
+	char ch = lstr->chars[(uint32_t)arg1.num] = (char)arg2.num;
 
    union class_op_result res;
    res.value = value_num(ch);

@@ -23,13 +23,12 @@ solution "koji"
 
 	project "kojitests"
 		kind "ConsoleApp"
-		files { "src/ktests.c" }
+		files { "src/ktests.c", "tests/**.kj" }
 		links "libkoji"
 
 	project "kojic"
 		kind "ConsoleApp"
 		files { "src/kmain.c", "./**.kj" }
-		debugargs "../sample/helloworld.kj"
 		links "libkoji"
 
 newaction {
@@ -63,7 +62,7 @@ newaction {
 		end
 
 		for k,v in pairs(os.matchfiles("src/*.c")) do
-			if v ~= "src/kmain.c" and v ~= "src/ktests.c" then
+			if v ~= "src/kmain.c"  then
 				kojic = kojic .. io.open(v):read("*all")
 			end
 		end
@@ -75,7 +74,7 @@ newaction {
 		local file = io.open("koji.c", "w")
 		file:write(io.open("src/koji.h"):read("*all"))		
 		file:write("\n\n\n/*** PUBLIC INTERFACE END ***/\n\n")
-		file:write("#define kintern static /* make koji internal fns priate to koji.c */")
+		file:write("#define KOJI_AMALGAMATE /* make koji internal fns priate to koji.c */")
 		file:write(kojic)
 
 		print("Embedded file koji.c generated.")

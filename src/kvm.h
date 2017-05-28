@@ -41,7 +41,7 @@ enum vm_state {
  */
 struct vm {
 	struct koji_allocator alloc; /* memory allocator */
-	enum vm_state valid; /* whether the VM is in a valid state for execution */
+	enum vm_state validstate; /* whether the VM is in a valid state for exec. */
 	struct vm_frame *framestack; /* stack of activation frames */
 	int32_t framesp; /* frame stack pointer */
    int32_t frameslen; /* maximum elements capacity of the frame stack */

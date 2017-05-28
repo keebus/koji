@@ -11,13 +11,17 @@
 #include "kvm.h"
 #include "ktable.h"
 #include "kstring.h"
-#include <assert.h>
-#include <string.h>
+#include "kbytecode.h"
 
+#include <string.h>
+#include <stdio.h>
+
+#ifndef KOJI_AMALGAMATE
 struct koji_state {
 	struct koji_allocator alloc;
 	struct vm vm;
 };
+#endif
 
 static void
 test_string(koji_state_t *state)
@@ -30,7 +34,7 @@ test_string(koji_state_t *state)
    assert(str->object.class == &state->vm.cls_string);
    assert(str->object.refs == 1);
    assert(str->len == 12);
-   assert(strcmp(&str->chars, "hello world!") == 0);
+   assert(strcmp(str->chars, "hello world!") == 0);
 
    vm_value_destroy(&state->vm, val);
 }
@@ -56,6 +60,30 @@ test_table(koji_state_t *state)
 	table_deinit(&t, &state->vm);
 }
 
+static bool
+run_simple_test(const char *filename)
+{
+   koji_state_t *state = koji_open(NULL);
+   koji_result_t res;
+
+   res = koji_load_file(state, filename);
+   if (res) {
+      printf("Compile error: %s\n", koji_string(state, -1));
+      return false;
+   }
+
+   prototype_dump(state->vm.framestack[0].proto, 0);
+
+   res = koji_run(state);
+   if (res) {
+      printf("Runtime error: %s\n", koji_string(state, -1));
+      return false;
+   }
+
+   koji_close(state);
+   return true;
+}
+
 int32_t main()
 {
    koji_state_t *state = koji_open(NULL);
@@ -64,4 +92,20 @@ int32_t main()
    test_table(state);
 
    koji_close(state);
+
+#define DIR "../tests/"
+   static const char *simple_tests[] = {
+      DIR "empty.kj",
+      DIR "numbers.kj",
+      DIR "booleans.kj",
+      NULL
+   };
+
+   for (const char **filename = simple_tests; *filename; ++filename) {
+      printf("\nRunning simple test '%s'\n", *filename);
+      if (run_simple_test(*filename))
+         printf("Success\n");
+   }
+
+   printf("\n");
 }
