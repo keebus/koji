@@ -631,17 +631,16 @@ const_fetch_str(struct compiler *c, const char *chars, int32_t len)
    }
 
    /* cnst not found, push the new cnst to the array */
-   cnst = array_seq_push(&proto->consts, &nconsts, &c->lex.alloc,
-      union value, 1);
+   cnst = array_seq_push(
+      &proto->consts, &nconsts, &c->lex.alloc, union value, 1);
    proto->nconsts = (uint16_t)nconsts;
 
    /* create a new string */
-   struct string *string = string_new(c->cls_string, &c->lex.alloc, len);
+   *cnst = value_new_string(c->cls_string, &c->lex.alloc, len);
+
+   struct string *string = value_getobjv(*cnst);
    memcpy(string->chars, chars, len + 1);
    assert(string->chars[len] == 0);
-
-   /* make the constant value */
-   *cnst = value_obj(string);
 
    /* return the index of the pushed cnst */
    return (int32_t)(cnst - proto->consts);

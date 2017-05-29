@@ -15,21 +15,21 @@
 #include <stdio.h> /* temp */
 
 static void
-vm_value_set_nil(struct vm *vm, union value *val)
+vm_value_setnil(struct vm *vm, union value *val)
 {
 	vm_value_destroy(vm, *val);
 	*val = value_nil();
 }
 
 static void
-vm_value_set_boolean(struct vm *vm, union value *val, bool b)
+vm_value_setbool(struct vm *vm, union value *val, bool b)
 {
 	vm_value_destroy(vm, *val);
 	*val = value_bool(b);
 }
 
 static void
-vm_value_set_number(struct vm *vm, union value *val, koji_number_t num)
+vm_value_setnum(struct vm *vm, union value *val, koji_number_t num)
 {
 	vm_value_destroy(vm, *val);
 	*val = value_num(num);
@@ -223,11 +223,11 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
             reg = decode_A(instr);
             to_reg = reg + decode_Bx(instr);
 				for (; reg < to_reg; ++reg)
-					vm_value_set_nil(vm, vm_register(vm, frame, reg));
+					vm_value_setnil(vm, vm_register(vm, frame, reg));
 				break;
 
 			case OP_LOADBOOL:
-				vm_value_set_boolean(vm, RA, (bool)decode_B(instr));
+				vm_value_setbool(vm, RA, (bool)decode_B(instr));
 				frame->pc += decode_C(instr);
 				break;
 
@@ -238,14 +238,14 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 			case OP_NEG:
 				ra = RA;
 				arg1 = ARG(Bx);
-				vm_value_set_boolean(vm, ra, !value_tobool(ARG(Bx)));
+				vm_value_setbool(vm, ra, !value_tobool(ARG(Bx)));
 				break;
 
 			case OP_UNM:
 				ra = RA;
 				arg1 = ARG(Bx);
 				if (value_isnum(arg1)) {
-					vm_value_set_number(vm, ra, -arg1.num);
+					vm_value_setnum(vm, ra, -arg1.num);
 				}
 				else if (value_isobj(arg1)) {
 					struct object *obj = value_getobj(arg1);
@@ -268,7 +268,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					if (value_isnum(arg1) && value_isnum(arg2)) {\
                   koji_number_t num = (koji_number_t)(\
                      NUMBER_MODIFIER(arg1.num) op_ NUMBER_MODIFIER(arg2.num));\
-						vm_value_set_number(vm, ra, num);\
+						vm_value_setnum(vm, ra, num);\
 					}\
 					else if (value_isobj(arg1)) {\
 						struct object *obj = value_getobj(arg1);\
@@ -437,7 +437,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					else
 						printf("<object:%p>", value_getobj(*r));
 					printf(", ");
-					vm_value_set_nil(vm, RA);
+					vm_value_setnil(vm, RA);
 				}
 				printf("\n");
 

@@ -16,29 +16,27 @@
 kintern struct string *
 string_new(struct class *cls_string, struct koji_allocator *alloc, int32_t len)
 {
-	struct string *str =
+	struct string *s =
       alloc->alloc(sizeof(struct string) + len + 1, alloc->user);
-	++cls_string->object.refs;
-	str->object.refs = 1;
-	str->object.class = cls_string;
-	str->len = len;
-	return str;
+	s->object.refs = 1;
+	s->object.class = cls_string;
+	s->len = len;
+	return s;
 }
 
 kintern void
-string_free(struct string *str, struct koji_allocator *alloc)
+string_free(struct string *s, struct koji_allocator *alloc)
 {
-   assert(str->object.class->object.refs > 1);
-   alloc->free(str, sizeof(*str) + str->len + 1, alloc->user);
+   alloc->free(s, sizeof(*s) + s->len + 1, alloc->user);
 }
 
 kintern union value
 value_new_string(struct class *cls_string, struct koji_allocator *alloc,
    int32_t len)
 {
-	struct string *str = string_new(cls_string, alloc, len);
-	if (!str) return value_nil();
-	return value_obj(str);
+	struct string *s = string_new(cls_string, alloc, len);
+	++cls_string->object.refs;
+	return value_obj(s);
 }
 
 kintern union value
@@ -46,10 +44,9 @@ value_new_stringfv(struct class *cls_string, struct koji_allocator *alloc,
    const char *format, va_list args)
 {
 	int32_t len = vsnprintf(NULL, 0, format, args);
-	struct string *str = string_new(cls_string, alloc, len);
-	if (!str) value_nil();
-	vsnprintf(str->chars, len + 1, format, args);
-	return value_obj(str);
+	union value s = value_new_string(cls_string, alloc, len);
+	vsnprintf(((struct string*)value_getobj(s))->chars, len + 1, format, args);
+	return s;
 }
 
 kintern union value
