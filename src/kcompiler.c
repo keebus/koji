@@ -19,10 +19,32 @@
  /* A register value. */
 typedef int32_t loc_t;
 
-/* A local variable is simply a named and reserved stack register offset. */
+/*
+ * The scratch buffer is used by the compiler temporary, linear objects
+ * needed for compilation bookkeeping such as the locals in a prototype.
+ * This is a simple stack allocator within single pages linked together.
+ */
+struct scratch_page {
+   struct scratch_page *next; /* pointer to the next page */
+   char *end; /* end of the buffer */
+   char buffer[]; /* begin of the buffer */
+};
+
+/*
+ * Marks a byte position [cur] marking the next free byte within [page] scratch
+ * page. Used to record the current state of the compiler scratch allocator
+ * to be restored later when latest temporary allocations are no longer needed.
+ */
+struct scratch_pos {
+   struct scratch_page *page; /* current page with free space */
+   char *pos; /* first free byte within the page */
+};
+
+/* A local variable is simply a named location on the VM local value stack. */
 struct local {
-   int32_t idoffset;
-   loc_t loc;
+   struct local *next; /* points to the next local */
+   loc_t loc; /* location of this local */
+   char id[]; /* local identifier */
 };
 
 /*
@@ -38,10 +60,11 @@ struct label {
 /* Wraps state for a compilation run. */
 struct compiler {
    struct lex lex; /* the lexer used to scan tokens from input source */
-   char *scopeids; /* array of chars for scope identifiers in sequence */
-   int32_t scopeidssize; /* num of chars in [scopeids] */
+   struct scratch_page *scratchhead; /* first page in the scratch buffers */
+   struct scratch_page *scratchtail; /* last page in the scratch buffer chain*/
+   struct scratch_pos scratchpos; /* scratch buffer cursor */
    struct local *locals; /* array of local variables */
-   int32_t nlocals; /* num of local variables */
+   int32_t nlocals;
    loc_t temp; /* index of the next free register for locals */
    struct label label_true; /* label jumped to from instrs evaluating to true*/
    struct label label_false; /* same as previous, but to false */
@@ -161,6 +184,96 @@ struct expr_state {
    int32_t false_branch_idx; /* index to the first branch to false  */
    bool negated; /* whether this expr is negated */
 };
+
+/* scratch buffer */
+#define SCRATCH_BUFFER_PAGE_SIZE 4096
+
+static char *
+align(char *ptr, int32_t align)
+{
+	const uintptr_t align_minus_one = align - 1;
+	return (char*)(((uintptr_t)ptr + align_minus_one) & ~align_minus_one);
+}
+
+static int32_t
+scratch_size(struct scratch_page *p)
+{
+   return (int32_t)(p->end - p->buffer);
+}
+
+static struct scratch_page *
+scratch_page_new(struct compiler *c, int32_t size)
+{
+   int32_t pagesz = max_i32(SCRATCH_BUFFER_PAGE_SIZE,
+      sizeof(struct scratch_page) + size);      
+
+   struct scratch_page *page = c->lex.alloc.alloc(pagesz, c->lex.alloc.user);
+   page->next = c->scratchpos.page->next;
+   page->end = (char*)page + pagesz;
+         
+   c->scratchpos.page = page;
+   c->scratchpos.pos = page->buffer;
+
+   c->scratchpos.page->next = page;
+
+   return page;
+}
+
+static void
+scratch_init(struct compiler *c)
+{
+   struct scratch_page *page = c->lex.alloc.alloc(SCRATCH_BUFFER_PAGE_SIZE,
+      c->lex.alloc.user);
+   page->next = NULL;
+   page->end = (char*)page + SCRATCH_BUFFER_PAGE_SIZE;
+
+   c->scratchpos.page = page;
+   c->scratchpos.pos = page->buffer;
+
+   c->scratchhead = c->scratchtail = page;
+}
+
+static void
+scratch_deinit(struct compiler *c)
+{
+   struct scratch_page *page = c->scratchhead;
+   while (page) {
+      struct scratch_page *next = page->next;
+      c->lex.alloc.free(page, (int)(page->end - (char*)page), c->lex.alloc.user);
+      page = next;
+   }
+}
+
+
+static void *
+scratch_alloc(struct compiler *c, int32_t size, int32_t alignm)
+{
+   struct scratch_pos *spos = &c->scratchpos;
+   char *ptr = align(spos->pos, alignm);
+   if (ptr + size >= spos->page->end) {
+      if (spos->page->next) {
+         if (scratch_size(spos->page) >= size) {
+            /* next page has enough space to hold allocation */
+            spos->page = spos->page->next;
+            spos->pos = spos->page->buffer;
+         }
+         else {
+            /* next page does not hold enough space for allocation; push new
+               page between the two */
+            scratch_page_new(c, size);
+         }
+      }
+      else {
+          /* put to the end */
+         struct scratch_page *page = scratch_page_new(c, size);
+         c->scratchtail->next = page;
+         c->scratchtail = page;
+      }
+      return scratch_alloc(c, size, alignm);
+   }
+   spos->pos = ptr + size;
+   return ptr;
+}
 
 /*
  * Returns whether [l] is a constant location.
@@ -528,33 +641,29 @@ emit(struct compiler *c, instr_t instr)
 }
 
 /*
- * Pushes an identifier string pointed by [id] of specified length [idlen]
- * into the current scope identifier list withing compiler [c], then returns
- * the offset within [c->scope_identifiers] of pushed identifier string.
+ * Defines a new local variable in current prototype with identifier [id].
+ * Returned new local must be pushed through [local_push()].
  */
-static int32_t
-scope_pushid(struct compiler *c, const char *id, int32_t idlen)
+static struct local*
+local_alloc(struct compiler *c, char *id, int32_t idlen)
 {
-   ++idlen; /* include null byte */
-   char *idchars = array_seq_push(&c->scopeids, &c->scopeidssize,
-      &c->lex.alloc, char, idlen);
-   memcpy(idchars, id, idlen);
-   /* compute and return the offset of the newly pushed identifier */
-   return (int32_t)(idchars - c->scopeids);
+   struct local *local = scratch_alloc(c, sizeof(struct local) + idlen + 1,
+      kalignof(struct local));
+   memcpy(local->id, id, idlen + 1);
+   return local;
 }
 
 /*
- * Defines a new local variable in current prototype with an identifier
- * starting at [idoffset] preiously pushed through [scope_pushid()].
+ * Pushes a previously allocated local through [local_alloc] after setting its
+ * location to the current free temporary and bumps this up.
  */
 static void
-scope_local_push(struct compiler *c, int32_t idoffset)
+local_push(struct compiler *c, struct local *local)
 {
-   struct local *local = array_seq_push(&c->locals, &c->nlocals, &c->lex.alloc,
-      struct local, 1);
-   local->idoffset = idoffset;
-   local->loc = c->temp;
-   ++c->temp;
+   local->loc = c->temp++;
+   local->next = c->locals;
+   c->locals = local;
+   ++c->nlocals;
 }
 
 /*
@@ -562,12 +671,11 @@ scope_local_push(struct compiler *c, int32_t idoffset)
  * iterating over its parents until. If none could be found it returns NULL.
  */
 static struct local *
-scope_local_fetch(struct compiler *c, const char *id)
+local_fetch(struct compiler *c, const char *id)
 {
-   for (int32_t i = c->nlocals - 1; i >= 0; --i) {
-      const char *localid = c->scopeids + c->locals[i].idoffset;
-      if (strcmp(localid, id) == 0)
-         return c->locals + i;
+   for (struct local *local = c->locals; local; local = local->next) {
+      if (strcmp(local->id, id) == 0)
+         return local;
    }
    return NULL;
 }
@@ -1232,7 +1340,7 @@ parse_localref_or_call(struct compiler *c, struct expr_state *es)
    lex(c);
 
    /* identifier refers to local variable? */
-   if ((local = scope_local_fetch(c, id))) {
+   if ((local = local_fetch(c, id))) {
       return expr_loc(local->loc);
    }
 
@@ -1604,7 +1712,7 @@ parse_vardecl(struct compiler *c)
       /* read the variable identifier and push it to the scope identifier
          list */
       check(c, tok_identifier);
-      int32_t idoffset = scope_pushid(c, c->lex.tokstr, c->lex.tokstrlen);
+      struct local *local = local_alloc(c, c->lex.tokstr, c->lex.tokstrlen);
       lex(c);
 
       /* optionally, parse the initialization expression */
@@ -1620,7 +1728,7 @@ parse_vardecl(struct compiler *c)
       }
 
       /* define the local variable */
-      scope_local_push(c, idoffset);
+      local_push(c, local);
 
    } while (accept(c, ','));
 }
@@ -1792,7 +1900,15 @@ static void
 parse_block(struct compiler *c)
 {
    expect(c, '{');
+
+   /* remember scratch cursor before we parse the block */
+   struct scratch_pos backsp = c->scratchpos;
+
    parse_stmts(c);
+
+   /* pop temporary scope allocations from the scratch buffer */
+   c->scratchpos = backsp;
+
    expect(c, '}');
 }
 
@@ -1835,10 +1951,7 @@ compile(struct compile_info *info)
    lex_init(&comp.lex, &lex_info);
 
    /* finish setting up compiler state */
-   comp.scopeids = array_seq_new(&info->alloc, sizeof(char));
-   comp.scopeidssize = 0;
-   comp.locals = array_seq_new(&info->alloc, sizeof(struct local));
-   comp.nlocals = 0;
+   scratch_init(&comp);
    comp.cls_string = info->cls_string;
 
    /* create the source-file main prototype we will compile into */
@@ -1854,8 +1967,7 @@ error:
    comp.proto = NULL;
 
 cleanup:
-   kfree(comp.locals, array_seq_len(comp.nlocals), &info->alloc);
-   kfree(comp.scopeids, array_seq_len(comp.scopeidssize), &info->alloc);
+   scratch_deinit(&comp);
    lex_deinit(&comp.lex);
 
    return comp.proto;

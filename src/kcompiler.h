@@ -20,6 +20,8 @@ struct compile_info {
 	struct koji_allocator alloc; /* the memory allocator to use */
 	struct koji_source *source; /* the source stream */
 	struct issue_handler issue_handler; /* used to report compilation issues */
+   uint8_t *scratchbeg; /* beginning of the scratch memory buffer */
+   uint8_t *scratchend; /* end of the scratch memory buffer */
 	struct class *cls_string; /* pointer to the str class */
 };
 

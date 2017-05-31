@@ -69,51 +69,6 @@ kintern struct koji_allocator *
 default_alloc(void);
 
 /*
- * A linear alloc provides a way to allocate memory linearly (thus quickly) and
- * then clearing it up later on when all allocations are not needed. Use it to
- * freely allocate scratch memory that is soon going to be freed altogether.
- */
-
-/*
- * The minimum size of a linear alloc page in bytes.
- */
-#define LINEAR_ALLOC_PAGE_MIN_SIZE 1024
-
-/*
- * A linear alloc structure. Clients are not required to use any
- */
-typedef struct linear_alloc_page linear_alloc_t;
-
-/*
- * Creates a new linear alloc of specified size (which will be maxed with
- * LINEAR_ALLOC_PAGE_MIN_SIZE). Use [alloc] for page allocations.
- */
-kintern linear_alloc_t *
-linear_alloc_create(struct koji_allocator *alloc, int32_t size);
-
-/*
- * Destroys the linear alloc [talloc] which was created with specified [alloc]
- */
-kintern void
-linear_alloc_destroy(linear_alloc_t *lalloc, struct koji_allocator *alloc);
-
-/*
- * Resets all current pages of specified linear alloc [talloc]. All pages after
- * the first one are deallocated.
- */
-kintern void
-linear_alloc_reset(linear_alloc_t **talloc, struct koji_allocator *alloc);
-
-/*
- * Allocates a chunk of memory of given [size] and [alignment] from specified
- * linear alloc [talloc] using [alloc] if a new page needs to be allocate.
- */
-kintern void*
-linear_alloc_alloc(linear_alloc_t **talloc, struct koji_allocator *alloc,
-   int32_t size, int32_t align);
-
-
-/*
  * A sequentially growing array is a simple array that is allowed to grow
  * dynamically one or more elements at a time. Initialize your array with
  * something like 'int32_t *my_ints = NULL' and 'uint num_ints = 0'. Then call
