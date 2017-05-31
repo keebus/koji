@@ -332,13 +332,8 @@ lex_scan(struct lex *l)
 				switch (l->curr) {
 					case 'e':
 						lex_push(l);
-						if (l->curr == 'f') {
-							lex_push(l);
-							l->tok = kw_def;
-						}
-						else if (lex_accept_str(l, "bug")) {
+						if (lex_accept_str(l, "bug"))
 							l->tok = kw_debug;
-						}
 						break;
 					case 'o':
 						lex_push(l);
@@ -367,6 +362,11 @@ lex_scan(struct lex *l)
 						lex_push(l);
 						if (lex_accept_str(l, "r"))
                      l->tok = kw_for;
+						break;
+               case 'u':
+						lex_push(l);
+						if (lex_accept_str(l, "nc"))
+                     l->tok = kw_func;
 						break;
 				}
 				return l->tok = lex_scan_id(l, false);

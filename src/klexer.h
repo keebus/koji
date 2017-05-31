@@ -23,10 +23,10 @@ typedef int32_t token_t;
 	_(tok_string, "string")\
 	_(tok_identifier, "identifier")\
 	_(kw_debug, "debug")\
-	_(kw_def, "def")\
 	_(kw_do, "do")\
 	_(kw_else, "else")\
 	_(kw_false, "false")\
+	_(kw_func, "func")\
 	_(kw_for, "for")\
 	_(kw_globals, "globals")\
 	_(kw_if, "if")\

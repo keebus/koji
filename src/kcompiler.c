@@ -38,7 +38,6 @@ struct label {
 /* Wraps state for a compilation run. */
 struct compiler {
    struct lex lex; /* the lexer used to scan tokens from input source */
-   linear_alloc_t *tempalloc; /* temporary linear alloc */
    char *scopeids; /* array of chars for scope identifiers in sequence */
    int32_t scopeidssize; /* num of chars in [scopeids] */
    struct local *locals; /* array of local variables */
@@ -57,7 +56,6 @@ enum expr_type {
    EXPR_NIL,      /* a nil expression */
    EXPR_BOOL,     /* a boole expression */
    EXPR_NUMBER,   /* a numerical expression */
-   EXPR_STRING,   /* a str expression */
    EXPR_LOCATION, /* a loc expression */
    EXPR_EQ,       /* a equals logical expression */
    EXPR_LT,       /* a less-than logical expression */
@@ -69,14 +67,6 @@ enum expr_type {
  */
 static const char *EXPR_TYPE_TO_STRING[] = {
    "nil", "bool", "number", "string", "local", "bool", "bool", "bool"
-};
-
-/*
- * The value of a str expression, the str [chars] and its length [len].
- */
-struct expr_string {
-   char *chars;
-   int32_t  len;
 };
 
 /* comparison expression between lhs and rhs */
@@ -91,7 +81,7 @@ struct expr_compare {
 union expr_value {
    bool boole;
    koji_number_t num;
-   struct expr_string str;
+   struct string *str;
    loc_t loc;
    struct expr_compare comp;
 };
@@ -245,22 +235,6 @@ expr_loc(loc_t value)
 }
 
 /*
- * Makes and returns a string expr of specified [len] allocating in the
- * compiler temp allocator.
- */
-static struct expr
-expr_newstr(struct compiler *c, int32_t len)
-{
-   struct expr e;
-   e.type = EXPR_STRING;
-   e.positive = true;
-   e.val.str.len = len;
-   e.val.str.chars = linear_alloc_alloc(&c->tempalloc, &c->lex.alloc,
-      len + 1, 1);
-   return e;
-}
-
-/*
  * Makes and returns a comparison expr of specified [type] between [lhsloc]
  * and [lhsloc] against test value [testval].
  */
@@ -282,7 +256,7 @@ exprcompare(enum expr_type type, bool testval, int32_t lhsloc, int32_t rhsloc)
 static bool
 expr_isconst(enum expr_type type)
 {
-   return type <= EXPR_STRING;
+   return type <= EXPR_NUMBER;
 }
 
 /*
@@ -324,7 +298,6 @@ expr_negate(struct expr e)
    switch (e.type) {
       case EXPR_NIL:    return expr_bool(true);
       case EXPR_BOOL:   return expr_bool(!e.val.boole);
-      case EXPR_STRING: return expr_bool(false);
       case EXPR_NUMBER: return expr_bool(!expr_tobool(e));
       default:
          e.positive = !e.positive;
@@ -536,6 +509,25 @@ use_temp(struct compiler *c, struct expr const *e)
 }
 
 /*
+ * Pushes instruction [i] to current prototype instructions.
+ */
+static void
+emit(struct compiler *c, instr_t instr)
+{
+   struct prototype *proto = c->proto;
+   enum opcode op = decode_op(instr);
+
+   /* if instruction has target, update the current prototype total number of
+      used registers */
+   if (opcode_has_target(op))
+      proto->nlocals =
+      (uint16_t)max_i32((int32_t)proto->nlocals, decode_A(instr) + 1);
+
+   *array_seq_push(&proto->instrs, &proto->ninstrs, &c->lex.alloc, instr_t, 1)
+      = instr;
+}
+
+/*
  * Pushes an identifier string pointed by [id] of specified length [idlen]
  * into the current scope identifier list withing compiler [c], then returns
  * the offset within [c->scope_identifiers] of pushed identifier string.
@@ -581,18 +573,43 @@ scope_local_fetch(struct compiler *c, const char *id)
 }
 
 /*
+ * Converts a constant index [constidx] into a location expression to the
+ * constant. This might be a _direct_ index (e.g. -3) if [constidx] is small
+ * enough, otherwise to a temporary into which the constant is moved with a
+ * move instruction.
+ */
+static struct expr
+expr_const(struct compiler *c, loc_t target_hint, int32_t constidx)
+{
+   loc_t loc = -(int32_t)constidx - 1;
+   if (constidx <= MAX_ABC_VALUE) {
+      /* cnst is small enough to be used as direct index */
+      return expr_loc(loc);
+   }
+   else {
+      /* cnst too large, load it into a temporary register */
+      emit(c, encode_ABx(OP_MOV, target_hint, loc));
+      return expr_loc(target_hint);
+   }
+}
+
+/*
  * Fetches or defines if not found a real cnst [num] and returns its index.
  */
-static int32_t
-const_fetch_num(struct compiler *c, koji_number_t num)
+static struct expr
+const_fetch_num(struct compiler *c, loc_t target_hint, koji_number_t num)
 {
    struct prototype *proto = c->proto;
    int32_t nconsts = proto->nconsts;
    union value value = value_num(num);
+   int32_t constidx;
 
-   for (int32_t i = 0; i < nconsts; ++i)
-      if (proto->consts[i].bits == value.bits)
-         return i; /* constant already existent */
+   for (int32_t i = 0; i < nconsts; ++i) {
+      if (proto->consts[i].bits == value.bits) {
+         constidx = i; /* constant already existent */
+         goto done;
+      }
+   }
 
    /* constant not found, add it */
    union value *cnst =
@@ -600,19 +617,25 @@ const_fetch_num(struct compiler *c, koji_number_t num)
 
    proto->nconsts = (uint16_t)nconsts;
    *cnst = value;
-   return (int32_t)(cnst - proto->consts);
+   
+   constidx = (int32_t)(cnst - proto->consts);
+
+done:
+   return expr_const(c, target_hint, constidx);
 }
 
 /*
  * Fetches or defines if not found a string cnst [str] and returns its
  * constant index.
  */
-static int32_t
-const_fetch_str(struct compiler *c, const char *chars, int32_t len)
+static struct expr
+const_fetch_str(struct compiler *c, loc_t target_hint, const char *chars,
+   int32_t len)
 {
    struct prototype *proto = c->proto;
    int32_t nconsts = proto->nconsts;
    union value *cnst;
+   int32_t constidx;
 
    for (int32_t i = 0; i < nconsts; ++i) {
       cnst = proto->consts + i;
@@ -626,8 +649,10 @@ const_fetch_str(struct compiler *c, const char *chars, int32_t len)
       if (string->object.class != c->cls_string)
          continue;
 
-      if (string->len == len && memcmp(string->chars, chars, len) == 0)
-         return i;
+      if (string->len == len && memcmp(string->chars, chars, len) == 0) {
+         constidx = i;
+         goto done;
+      }
    }
 
    /* cnst not found, push the new cnst to the array */
@@ -642,27 +667,11 @@ const_fetch_str(struct compiler *c, const char *chars, int32_t len)
    memcpy(string->chars, chars, len + 1);
    assert(string->chars[len] == 0);
 
+   constidx = (int32_t)(cnst - proto->consts);
+
    /* return the index of the pushed cnst */
-   return (int32_t)(cnst - proto->consts);
-}
-
-/*
- * Pushes instruction [i] to current prototype instructions.
- */
-static void
-emit(struct compiler *c, instr_t instr)
-{
-   struct prototype *proto = c->proto;
-   enum opcode op = decode_op(instr);
-
-   /* if instruction has target, update the current prototype total number of
-      used registers */
-   if (opcode_has_target(op))
-      proto->nlocals =
-      (uint16_t)max_i32((int32_t)proto->nlocals, decode_A(instr) + 1);
-
-   *array_seq_push(&proto->instrs, &proto->ninstrs, &c->lex.alloc, instr_t, 1)
-      = instr;
+done:
+   return expr_const(c, target_hint, constidx);
 }
 
 /*
@@ -676,9 +685,6 @@ emit(struct compiler *c, instr_t instr)
 static struct expr
 expr_compile(struct compiler *c, struct expr e, int32_t target_hint)
 {
-   int32_t constidx;
-   int32_t loc;
-
    switch (e.type) {
       case EXPR_NIL:
          emit(c, encode_ABx(OP_LOADNIL, target_hint, target_hint));
@@ -689,24 +695,7 @@ expr_compile(struct compiler *c, struct expr e, int32_t target_hint)
          return expr_loc(target_hint);
 
       case EXPR_NUMBER:
-         constidx = const_fetch_num(c, e.val.num);
-         goto make_const;
-
-      case EXPR_STRING:
-         constidx = const_fetch_str(c, e.val.str.chars, e.val.str.len);
-         goto make_const;
-
-      make_const:
-         loc = -(int32_t)constidx - 1;
-         if (constidx <= MAX_ABC_VALUE) {
-            /* cnst is small enough to be used as direct index */
-            return expr_loc(loc);
-         }
-         else {
-            /* cnst too large, load it into a temporary register */
-            emit(c, encode_ABx(OP_MOV, target_hint, loc));
-            return expr_loc(target_hint);
-         }
+         return const_fetch_num(c, target_hint, e.val.num);
 
       case EXPR_LOCATION:
          if (e.positive) return e;
@@ -765,7 +754,6 @@ expr_compile_binary(struct compiler *c, struct sourceloc op_sloc,
 {
 #define DEFAULT_ARITH_INVALID_OPS_CHECKS()\
    if (lhs.type <= EXPR_BOOL   || rhs.type <= EXPR_BOOL)    goto error;\
-   if (lhs.type == EXPR_STRING || lhs.type == EXPR_STRING)  goto error;\
 
 #define DEFAULT_ARITH_BINOP(opchar)\
    DEFAULT_ARITH_INVALID_OPS_CHECKS();\
@@ -779,45 +767,19 @@ expr_compile_binary(struct compiler *c, struct sourceloc op_sloc,
    /* make a binary operator between our lhs and the rhs; */
    switch (op) {
       case BINOP_ADD:
-         /* string concatenation */
-         if (lhs.type == EXPR_STRING && rhs.type == EXPR_STRING) {
-            struct expr e = expr_newstr(c, lval.str.len + rval.str.len);
-            memcpy(e.val.str.chars, lval.str.chars, lval.str.len);
-            memcpy(e.val.str.chars + lval.str.len, rval.str.chars,
-               rval.str.len + 1);
-            return e;
-         }
          /* skip the DEFAULT_ARITH_BINOP as it throws an error if any operand
             is a string, but no error should be thrown if we're adding a string
             to a location as we don't know what type the value at that location
             will have at runtime */
-         else if ((lhs.type == EXPR_STRING && rhs.type == EXPR_LOCATION) ||
-            (rhs.type == EXPR_STRING && lhs.type == EXPR_LOCATION)) {
+         if (lhs.type == EXPR_LOCATION || rhs.type == EXPR_LOCATION)
             break;
-         }
          DEFAULT_ARITH_BINOP(+);
          break;
 
       case BINOP_MUL:
-         /* string multiplication by a number, concatenate the string n times
-            with itself */
-         if (lhs.type == EXPR_STRING && rhs.type == EXPR_NUMBER) {
-            const int32_t totlen = lval.str.len * (int32_t)rval.num;
-            struct expr e = expr_newstr(c, totlen + 1);
-            int32_t offset;
-            for (offset = 0; offset < totlen; offset += lval.str.len) {
-               memcpy(e.val.str.chars + offset,
-                  lval.str.chars,
-                  lval.str.len);
-            }
-            e.val.str.chars[totlen] = '\0';
-            return e;
-         }
          /* same reasons as for the BINOP_ADD case */
-         else if ((lhs.type == EXPR_STRING && rhs.type == EXPR_LOCATION) ||
-            (rhs.type == EXPR_STRING && lhs.type == EXPR_LOCATION)) {
+         if (lhs.type == EXPR_LOCATION || rhs.type == EXPR_LOCATION)
             break;
-         }
          DEFAULT_ARITH_BINOP(*);
          break;
 
@@ -853,21 +815,16 @@ expr_compile_binary(struct compiler *c, struct sourceloc op_sloc,
             bool result = (lhs.type == EXPR_NIL) == (rhs.type == EXPR_NIL);
             return expr_bool(result ^ invert);
          }
-         if (expr_isconst(lhs.type) && expr_isconst(rhs.type)) {
+         else if (expr_isconst(lhs.type) && expr_isconst(rhs.type)) {
             if (lhs.type == EXPR_BOOL && rhs.type == EXPR_BOOL) {
                return expr_bool((lval.boole == rval.boole) ^ invert);
-            }
-            else if (lhs.type == EXPR_STRING && rhs.type == EXPR_STRING) {
-               bool result = lval.str.len == rval.str.len &&
-                  memcmp(lval.str.chars, rval.str.chars, lval.str.len)
-                  == 0;
-               return expr_bool(result ^ invert);
-            }
+            }            
             else if (lhs.type == EXPR_NUMBER && rhs.type == EXPR_NUMBER) {
                return expr_bool((lval.num == rval.num) ^ invert);
             }
             goto error;
          }
+         break;
       }
 
       case BINOP_LT:
@@ -881,12 +838,6 @@ expr_compile_binary(struct compiler *c, struct sourceloc op_sloc,
          else if (expr_isconst(lhs.type) && expr_isconst(rhs.type)) {
             if (lhs.type == EXPR_BOOL && rhs.type == EXPR_BOOL) {
                return expr_bool((lval.boole < rval.boole) ^ invert);
-            }
-            else if (lhs.type == EXPR_STRING && rhs.type == EXPR_STRING) {
-               bool lt = lval.str.len < rval.str.len ||
-                  (lval.str.len == rval.str.len &&
-                     memcmp(lval.str.chars, rval.str.chars, lval.str.len) < 0);
-               return expr_bool(lt ^ invert);
             }
             else if (lhs.type == EXPR_NUMBER && rhs.type == EXPR_NUMBER) {
                return expr_bool((lval.num < rval.num) ^ invert);
@@ -907,12 +858,6 @@ expr_compile_binary(struct compiler *c, struct sourceloc op_sloc,
          if (expr_isconst(lhs.type) && expr_isconst(rhs.type)) {
             if (lhs.type == EXPR_BOOL && rhs.type == EXPR_BOOL) {
                return expr_bool((lval.boole <= rval.boole) ^ invert);
-            }
-            else if (lhs.type == EXPR_STRING && rhs.type == EXPR_STRING) {
-               bool lt = lval.str.len <= rval.str.len ||
-                  (lval.str.len == rval.str.len &&
-                    memcmp(lval.str.chars, rval.str.chars, lval.str.len) <= 0);
-               return expr_bool(lt ^ invert);
             }
             else if (lhs.type == EXPR_NUMBER && rhs.type == EXPR_NUMBER) {
                return expr_bool((lval.num <= rval.num) ^ invert);
@@ -1329,12 +1274,11 @@ parse_subexpr(struct compiler *c, struct expr_state *es)
  * Scans ahead token identifier to a string expression and returns it.
  */
 static struct expr
-scan_id(struct compiler *c)
+scan_id(struct compiler *c, loc_t target_hint)
 {
-   struct expr expr;
    assert(c->lex.tok == tok_identifier);
-   expr = expr_newstr(c, c->lex.tokstrlen);
-   memcpy(expr.val.str.chars, c->lex.tokstr, c->lex.tokstrlen + 1);
+   struct expr expr = const_fetch_str(c, target_hint, c->lex.tokstr,
+      c->lex.tokstrlen);
    lex(c);
    return expr;
 }
@@ -1367,7 +1311,7 @@ parse_table(struct compiler *c)
          int32_t oldtemp2;
 
          if (peek(c, tok_identifier)) {
-            key = expr_compile(c, scan_id(c), c->temp);
+            key = scan_id(c, c->temp);
             expect(c, ':');
             has_key = true;
          }
@@ -1426,8 +1370,7 @@ parse_primary_expr(struct compiler *c, struct expr_state *es)
       case tok_number: lex(c); expr = expr_num(c->lex.toknum); break;
 
       case tok_string:
-         expr = expr_newstr(c, c->lex.tokstrlen);
-         memcpy(expr.val.str.chars, c->lex.tokstr, c->lex.tokstrlen + 1);
+         expr = const_fetch_str(c, c->temp, c->lex.tokstr, c->lex.tokstrlen);
          lex(c);
          break;
 
@@ -1471,7 +1414,7 @@ parse_primary_expr(struct compiler *c, struct expr_state *es)
 
             /* now parse the key identifier and compile it to a register */
             check(c, tok_identifier);
-            struct expr key = expr_compile(c, scan_id(c), c->temp);
+            struct expr key = scan_id(c, c->temp);
 
             c->temp = temps;
 
@@ -1892,7 +1835,6 @@ compile(struct compile_info *info)
    lex_init(&comp.lex, &lex_info);
 
    /* finish setting up compiler state */
-   comp.tempalloc = linear_alloc_create(&info->alloc, LINEAR_ALLOC_PAGE_MIN_SIZE);
    comp.scopeids = array_seq_new(&info->alloc, sizeof(char));
    comp.scopeidssize = 0;
    comp.locals = array_seq_new(&info->alloc, sizeof(struct local));
@@ -1914,7 +1856,6 @@ error:
 cleanup:
    kfree(comp.locals, array_seq_len(comp.nlocals), &info->alloc);
    kfree(comp.scopeids, array_seq_len(comp.scopeidssize), &info->alloc);
-   linear_alloc_destroy(comp.tempalloc, &info->alloc);
    lex_deinit(&comp.lex);
 
    return comp.proto;
