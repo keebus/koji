@@ -72,11 +72,13 @@ koji_load(koji_state_t *state, struct koji_source *source)
 	ci.cls_string = &state->vm.cls_string;
 
 	/* compile the source into a prototype */
-	struct prototype *proto = compile(&ci);
+	struct prototype *proto = NULL;
+   koji_result_t result = compile(&ci, &proto);
 
-	/* some error occurred and the prototype could not be compiled, report the
+   /* some error occurred and the prototype could not be compiled, report the
 	 * error. */
-	if (!proto) return KOJI_ERROR;
+   if (result)
+      return result;
 
 	/* reset the num of references as the ref count will be increased when the
 	 * prototype is referenced by a the new frame */
@@ -103,7 +105,7 @@ koji_load_file(koji_state_t *state, const char *filename)
    struct koji_source src;
    if (!source_file_open(&src, filename)) {
       koji_push_stringf(state, "cannot open file '%s'.", filename);
-      return KOJI_ERROR;
+      return KOJI_ERROR_COMPILE;
    }
 	/* load the file */
 	koji_result_t r = koji_load(state, &src);

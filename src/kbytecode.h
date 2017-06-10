@@ -10,6 +10,7 @@
 #pragma once
 
 #include "kplatform.h"
+#include "kvalue.h"
 
 /*
  * Enumeration that lists all Virtual Machine opcodes
@@ -183,22 +184,23 @@ replace_C(instr_t *i, int32_t C)
  */
 struct prototype {
    int32_t refs;
-   int32_t ninstrs;
+   uint16_t size;
+   uint16_t ninstrs;
    uint16_t nargs;
    uint16_t nlocals;
    uint16_t nconsts;
    uint16_t nprotos;
-   uint16_t namelen;
    instr_t *instrs;
-   union value *consts;
    struct prototype **protos;
-   char name[]; /* _first char_ of the prototype name */
+   char *name;
+   union value consts[];
 };
 
 /*
  */
 kintern struct prototype *
-prototype_new(const char *name, int namelen, struct koji_allocator *alloc);
+prototype_new(int32_t namelen, int32_t nconsts,
+   int32_t ninstrs, int32_t nprotos, struct koji_allocator *alloc);
 
 /*
  */
@@ -210,4 +212,4 @@ prototype_release(struct prototype *proto, struct koji_allocator *alloc);
  * bytecode disassembly, constants for [proto] as well inner prototypes.
  */
 kintern void
-prototype_dump(struct prototype const *proto, int level);
+prototype_dump(struct prototype const *proto, int32_t level);

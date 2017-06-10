@@ -41,11 +41,12 @@ report(struct issue_handler *e, struct sourceloc sloc, const char *format, ...)
 }
 
 kintern void
-error(struct issue_handler *e, struct sourceloc sloc, const char *format, ...)
+error(struct issue_handler *e, struct sourceloc sloc,
+   const char *format, ...)
 {
    va_list args;
    va_start(args, format);
    reportv(e, sloc, format, args);
    va_end(args);
-   longjmp(e->error_jmpbuf, 0);
+   longjmp(e->error_jmpbuf, KOJI_ERROR_COMPILE);
 }

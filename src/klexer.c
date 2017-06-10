@@ -121,7 +121,7 @@ lex_init(struct lex *l, struct lex_info *info)
 	l->tokstrbuflen = 128;
 	l->tokstr = kalloc(char, l->tokstrbuflen, &l->alloc);
 	l->tokstrlen = 0;
-	l->sourceloc.filename = info->filename;
+	l->sourceloc.filename = info->source->name;
 	l->sourceloc.line = 1;
 	l->sourceloc.column = 0;
 	l->newline = 0;

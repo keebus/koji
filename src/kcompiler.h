@@ -20,8 +20,8 @@ struct compile_info {
 	struct koji_allocator alloc; /* the memory allocator to use */
 	struct koji_source *source; /* the source stream */
 	struct issue_handler issue_handler; /* used to report compilation issues */
-   uint8_t *scratchbeg; /* beginning of the scratch memory buffer */
-   uint8_t *scratchend; /* end of the scratch memory buffer */
+   uint8_t *scratch_beg; /* beginning of the scratch memory buffer */
+   uint8_t *scratch_end; /* end of the scratch memory buffer */
 	struct class *cls_string; /* pointer to the str class */
 };
 
@@ -29,5 +29,5 @@ struct compile_info {
  * Compiles a stream containing a source str to a koji module and returns
  * the prototype generated that represents the compiled module.
  */
-kintern struct prototype *
-compile(struct compile_info *);
+kintern koji_result_t
+compile(struct compile_info *, struct prototype **proto);

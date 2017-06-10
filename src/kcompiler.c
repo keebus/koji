@@ -40,6 +40,7 @@ struct scratch_pos {
    char *pos; /* first free byte within the page */
 };
 
+
 /* A local variable is simply a named location on the VM local value stack. */
 struct local {
    struct local *next; /* points to the next local */
@@ -48,28 +49,30 @@ struct local {
 };
 
 /*
- * A label is a dynamic array of the indices of the instructions that branch
- * to it.
  */
-struct label {
-   int32_t *instrs; /* the array of branch instrs to this label */
-   int32_t ninstrs; /* the num of branching intrs to this label */
-   int32_t instrslen; /* the capacity of the [instrs] array */
+struct branch {
+   struct branch *next;
+   int32_t instridx;
 };
 
 /* Wraps state for a compilation run. */
 struct compiler {
    struct lex lex; /* the lexer used to scan tokens from input source */
+   struct class *cls_string; /* string class */
+   instr_t *instrs;  /* buffer array of prototype instructions */
+   union value *consts; /* buffer of constants of this prototype */
+   struct local *locals; /* array of local variables */
+   struct branch *branch_true; /* list of branches that eval to true */
+   struct branch *branch_false; /* list of branches that eval to false */
    struct scratch_page *scratchhead; /* first page in the scratch buffers */
    struct scratch_page *scratchtail; /* last page in the scratch buffer chain*/
    struct scratch_pos scratchpos; /* scratch buffer cursor */
-   struct local *locals; /* array of local variables */
-   int32_t nlocals;
+   int32_t ninstrs;  /* curr prototype number of instructions */
+   int32_t instrslen; /* capacity of the instrs buffer */
+   int32_t nconsts;  /* number of constants in curr prototype */
+   int32_t constslen;   /* capacity of the consts buffer */
+   int32_t nlocals;  /* number of locals in curr prototype */
    loc_t temp; /* index of the next free register for locals */
-   struct label label_true; /* label jumped to from instrs evaluating to true*/
-   struct label label_false; /* same as previous, but to false */
-   struct prototype *proto; /* current prototype being compiled */
-   struct class *cls_string; /* str class */
 };
 
 /*
@@ -162,7 +165,7 @@ static const int32_t BINOP_PRECEDENCE[] = {
  * Binary operator to string table.
  */
 static const char *BINOP_TO_STR[] = {
-   "<invalid>", "*",  "/", "%", "+", "-", "<<",">>", "&", "|", "^", "<", "<=",
+   "<invalid>", "*",  "/", "%", "+", "-", "<<", ">>", "&", "|", "^", "<", "<=",
    ">", ">=", "==", "!=", "&&", "||"
 };
 
@@ -176,12 +179,12 @@ static const enum opcode BINOP_TO_OPCODE[] = {
 /*
  * A state structure used to contain information about expression parsing and
  * compilation such as the desired target register, whether the expression
- * should be negated and the indices of new jump instructions in compiler state
- * global true/false labels.
+ * should be negated and the indices of new branches in compiler state
+ * global true/false branches.
  */
 struct expr_state {
-   int32_t true_branch_idx; /* index of the first branch to true in exprstate*/
-   int32_t false_branch_idx; /* index to the first branch to false  */
+   struct branch *branch_true; /* index of the first branch to true in exprstate*/
+   struct branch *branch_false; /* index to the first branch to false  */
    bool negated; /* whether this expr is negated */
 };
 
@@ -244,7 +247,6 @@ scratch_deinit(struct compiler *c)
    }
 }
 
-
 static void *
 scratch_alloc(struct compiler *c, int32_t size, int32_t alignm)
 {
@@ -274,6 +276,9 @@ scratch_alloc(struct compiler *c, int32_t size, int32_t alignm)
    spos->pos = ptr + size;
    return ptr;
 }
+
+#define scratch_alloct(c, type)\
+   ((type *)scratch_alloc(c, sizeof(type), kalignof(type)))
 
 /*
  * Returns whether [l] is a constant location.
@@ -526,37 +531,39 @@ expect_endofstmt(struct compiler *c)
 /* compilation helper functions */
 
 /*
- * Pushes an offset to the [label] and returns a pointer to it.
+ * Pushes an offset to the [branch] and returns a pointer to its instr index.
  */
 static int32_t *
-label_push(struct compiler *c, struct label *label)
+branch_push(struct compiler *c, struct branch **head)
 {
-   return array_push(&label->instrs, &label->ninstrs, &label->instrslen,
-      &c->lex.alloc, int32_t, 1);
+   struct branch *br = scratch_alloct(c, struct branch);
+   br->next = *head;
+   *head = br;
+   return &br->instridx;
 }
 
 /*
- * Writes the offset to jump instructions contained in [label] starting from
+ * Writes the offset to branches contained in [branch] starting from
  * [firstidx] to target instruction constidx target_index.
  */
 static void
-label_bind(struct compiler *c, struct label *label, int32_t firstidx, int32_t instridx)
+branches_bind(struct compiler *c, struct branch **begin, struct branch *end,
+   int32_t instridx)
 {
-   for (int32_t i = firstidx, num = label->ninstrs; i < num; ++i) {
-      int32_t jumpinstridx = label->instrs[i];
-      replace_Bx(c->proto->instrs + jumpinstridx, instridx - jumpinstridx - 1);
-   }
-   label->ninstrs = firstidx;
+   for (struct branch *br = *begin; br != end; br = br->next)
+      replace_Bx(c->instrs + br->instridx, instridx - br->instridx - 1);
+   *begin = end;
 }
 
 /*
- * Binds jump instructions in [label] starting from [firstidx] to the next
+ * Binds branches in [branch] starting from [firstidx] to the next
  * instruction that will be emitted to current prototype.
  */
 static void
-label_bind_here(struct compiler *c, struct label *label, int32_t firstidx)
+branches_bind_here(struct compiler *c, struct branch **begin,
+   struct branch *end)
 {
-   label_bind(c, label, firstidx, c->proto->ninstrs);
+   branches_bind(c, begin, end, c->ninstrs);
 }
 
 /*
@@ -579,29 +586,31 @@ tok_to_binop(token_t tok)
       case '*':  return BINOP_MUL;
       case '/':  return BINOP_DIV;
       case '%':  return BINOP_MOD;
+      /*
       case '&':  return BINOP_BIT_AND;
       case '|':  return BINOP_BIT_OR;
       case '^':  return BINOP_BIT_XOR;
       case '<<': return BINOP_BIT_LSH;
       case '>>': return BINOP_BIT_RSH;
+      */
       default:   return BINOP_INVALID;
    }
 }
 
 /*
  * Makes a new expression state and returns it using [negated] to mark whether
- * expression is negated and holding the index of the first next free label
- * instruction slot in both labels true/false in the compiler so that next
- * jump instructions to either the true or the false label will belong to
+ * expression is negated and holding the index of the first next free branch
+ * instruction slot in both branches true/false in the compiler so that next
+ * branches to either the true or the false branch will belong to
  * returned expression state.
  */
 static struct expr_state
 make_exprstate(struct compiler *c, bool negated)
 {
    struct expr_state es;
-   es.true_branch_idx = c->label_true.ninstrs;     /* true_branches_begin  */
-   es.false_branch_idx = c->label_false.ninstrs;   /* false_branches_begin */
-   es.negated = negated;                           /* negated */
+   es.branch_true = c->branch_true;
+   es.branch_false = c->branch_false;
+   es.negated = negated;
    return es;
 }
 
@@ -627,16 +636,12 @@ use_temp(struct compiler *c, struct expr const *e)
 static void
 emit(struct compiler *c, instr_t instr)
 {
-   struct prototype *proto = c->proto;
-   enum opcode op = decode_op(instr);
-
    /* if instruction has target, update the current prototype total number of
       used registers */
-   if (opcode_has_target(op))
-      proto->nlocals =
-      (uint16_t)max_i32((int32_t)proto->nlocals, decode_A(instr) + 1);
+   if (opcode_has_target(decode_op(instr)))
+      c->nlocals = max_i32(c->nlocals, decode_A(instr) + 1);
 
-   *array_seq_push(&proto->instrs, &proto->ninstrs, &c->lex.alloc, instr_t, 1)
+   *array_push(&c->instrs, &c->ninstrs, &c->instrslen, &c->lex.alloc, loc_t, 1)
       = instr;
 }
 
@@ -707,13 +712,11 @@ expr_const(struct compiler *c, loc_t target_hint, int32_t constidx)
 static struct expr
 const_fetch_num(struct compiler *c, loc_t target_hint, koji_number_t num)
 {
-   struct prototype *proto = c->proto;
-   int32_t nconsts = proto->nconsts;
    union value value = value_num(num);
    int32_t constidx;
 
-   for (int32_t i = 0; i < nconsts; ++i) {
-      if (proto->consts[i].bits == value.bits) {
+   for (int32_t i = 0; i < c->nconsts; ++i) {
+      if (c->consts[i].bits == value.bits) {
          constidx = i; /* constant already existent */
          goto done;
       }
@@ -721,12 +724,10 @@ const_fetch_num(struct compiler *c, loc_t target_hint, koji_number_t num)
 
    /* constant not found, add it */
    union value *cnst =
-      array_seq_push(&proto->consts, &nconsts, &c->lex.alloc, union value, 1);
-
-   proto->nconsts = (uint16_t)nconsts;
-   *cnst = value;
+      array_seq_push(&c->consts, &c->nconsts, &c->lex.alloc, union value, 1);
    
-   constidx = (int32_t)(cnst - proto->consts);
+   *cnst = value;
+   constidx = (int32_t)(cnst - c->consts);
 
 done:
    return expr_const(c, target_hint, constidx);
@@ -740,13 +741,11 @@ static struct expr
 const_fetch_str(struct compiler *c, loc_t target_hint, const char *chars,
    int32_t len)
 {
-   struct prototype *proto = c->proto;
-   int32_t nconsts = proto->nconsts;
    union value *cnst;
    int32_t constidx;
 
-   for (int32_t i = 0; i < nconsts; ++i) {
-      cnst = proto->consts + i;
+   for (int32_t i = 0; i < c->nconsts; ++i) {
+      cnst = c->consts + i;
 
       /* is i-th cnst a string and do the strings match? if so, no need to
          add a new constant */
@@ -764,9 +763,8 @@ const_fetch_str(struct compiler *c, loc_t target_hint, const char *chars,
    }
 
    /* cnst not found, push the new cnst to the array */
-   cnst = array_seq_push(
-      &proto->consts, &nconsts, &c->lex.alloc, union value, 1);
-   proto->nconsts = (uint16_t)nconsts;
+   cnst = array_seq_push(&c->consts, &c->nconsts, &c->lex.alloc, union value,
+                         1);
 
    /* create a new string */
    *cnst = value_new_string(c->cls_string, &c->lex.alloc, len);
@@ -775,9 +773,8 @@ const_fetch_str(struct compiler *c, loc_t target_hint, const char *chars,
    memcpy(string->chars, chars, len + 1);
    assert(string->chars[len] == 0);
 
-   constidx = (int32_t)(cnst - proto->consts);
+   constidx = (int32_t)(cnst - c->consts);
 
-   /* return the index of the pushed cnst */
 done:
    return expr_const(c, target_hint, constidx);
 }
@@ -1046,13 +1043,13 @@ error:  /* the binary operation between lhs and rhs is invalid */
 static int32_t
 offset_to_next_instr(struct compiler *c, int32_t from_instr_idx)
 {
-   return c->proto->ninstrs - from_instr_idx - 1;
+   return c->ninstrs - from_instr_idx - 1;
 }
 
 /*
  * Compiles the lhs of a logical expression if [op] is such and [lhs] is a
  * register or comparison. In a nutshell, the purpose of this function is to
- * patch the current early out branches to the true or false label depending on
+ * patch the current early out branches to the true or false branch depending on
  * [op], the truth value (positivity) of lhs and whether the whole
  * expression should be negated (as stated by [es]).
  * What this function does is: compiles the comparison if lhs is one, or emit
@@ -1071,12 +1068,6 @@ compile_logical_op(struct compiler *c, struct expr_state *es, enum binop op,
    if ((lhs.type != EXPR_LOCATION && !expr_iscompare(lhs.type))
       || (op != BINOP_LOGICAL_AND && op != BINOP_LOGICAL_OR))
       return;
-
-   struct prototype *proto = c->proto; /* current prototype */
-   int32_t *offset; /* ptr to an offset entry into the label jumped */
-   int32_t jmplabelbegin; /* index of the first jump instruction pushed */
-   int32_t njumps; /* number of jump instructions */
-   struct label *jmplabel; /* the label we need to jump to */
 
    /* the boolean value to test the expression to */
    bool testval = (op == BINOP_LOGICAL_OR) ^ es->negated;
@@ -1105,53 +1096,58 @@ compile_logical_op(struct compiler *c, struct expr_state *es, enum binop op,
       default: assert(false);
    }
 
-   /* push jump instruction index to the appropriate label. */
-   offset = label_push(c, testval ? &c->label_true : &c->label_false);
-   *offset = proto->ninstrs;
+   /* ptr to an offset entry into the branch jumped */
+   /* push branch index to the appropriate branch. */
+   int32_t *offset;
+   struct branch *branch_end; /* index of the last branch pushed */
+   struct branch **branches; /* the branch we need to jump to */
+
+   offset = branch_push(c, testval ? &c->branch_true : &c->branch_false);
+   *offset = c->ninstrs;
    emit(c, OP_JUMP);
 
-   /* if we're testing to true then the label to jump to if evaluation is false
-      is the false label and viceversa */
+   /* if we're testing to true then the branch to jump to if evaluation is false
+      is the false branch and viceversa */
    if (testval) {
      /* or */
-      jmplabel = &c->label_false;
-      jmplabelbegin = es->false_branch_idx;
+      branches = &c->branch_false;
+      branch_end = es->branch_false;
 
    }
    else {
       /* and */
-      jmplabel = &c->label_true;
-      jmplabelbegin = es->true_branch_idx;
+      branches = &c->branch_true;
+      branch_end = es->branch_true;
    }
 
-   while ((njumps = jmplabel->ninstrs) > jmplabelbegin) {
-      /* get the index of the last jump instruction in the jump vector */
-      int32_t index = jmplabel->instrs[jmplabel->ninstrs - 1];
+   while (*branches != branch_end) {
+      /* get the index of the last branch in the jump vector */
+      int32_t index = (*branches)->instridx;
 
-      /* if instruction before the current jump instruction is a TESTSET, turn
+      /* if instruction before the current branch is a TESTSET, turn
          it to a simple TEST instruction as its "set" is wasted since we need
          to test more locations before we can finally set the target (example
          "c = a && b", if a is true, don't c just yet, we need to test b
          first) */
-      if (index > 0 && decode_op(proto->instrs[index - 1]) == OP_TESTSET) {
-         instr_t  instr = proto->instrs[index - 1];
+      if (index > 0 && decode_op(c->instrs[index - 1]) == OP_TESTSET) {
+         instr_t  instr = c->instrs[index - 1];
          int32_t      testloc = decode_B(instr);
          bool    flag = (bool)decode_C(instr);
-         proto->instrs[index - 1] = encode_ABx(OP_TEST, testloc, flag);
+         c->instrs[index - 1] = encode_ABx(OP_TEST, testloc, flag);
       }
 
       /* affix the jump to this instruction as more testing is needed to
          determine if expression is true or false. */
-      replace_Bx(proto->instrs + index, offset_to_next_instr(c, index));
+      replace_Bx(c->instrs + index, offset_to_next_instr(c, index));
 
       /* shrink the size of the true or false jump vector by one */
-      jmplabel->ninstrs = njumps - 1;
+      *branches = (*branches)->next;
    }
 }
 
 /*
  * It closes an expression, i.e. it compiles it to a location closing any
- * pending jump to true or false labels as stated in [es]. After this func
+ * pending jump to true or false branches as stated in [es]. After this func
  * returns all conditional jumps emitted but open part of this expression are
  * resolved, their offsets computed and terminating instructions such as
  * loadbool are emitted. The returned expression is guaranteed to refer to a
@@ -1164,11 +1160,8 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
    loc_t target_hint, bool movetotarget)
 {
    loc_t targetloc = target_hint;
-   struct prototype *proto = c->proto;
 
    /* declare some bookkeeping flags */
-   int32_t tlabel_ninstrs = es->true_branch_idx; /* num of branches to true */
-   int32_t flabel_ninstrs = es->false_branch_idx; /* to false label */
    bool value_is_compare = expr_iscompare(expr.type);
    int32_t rhs_move_jump_idx = 0; /* index of the instruction to jump to that
                                      moves rhs to lhs */
@@ -1180,7 +1173,7 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
       union expr_value eval = expr.val;
       int32_t A = OP_EQ + expr.type - EXPR_EQ;
       emit(c, encode_ABC(A, eval.comp.lhs, eval.comp.rhs, expr.positive));
-      *label_push(c, &c->label_true) = proto->ninstrs;
+      *branch_push(c, &c->branch_true) = c->ninstrs;
       emit(c, encode_ABx(OP_JUMP, 0, 0));
       set_value_to_false = true;
    }
@@ -1198,7 +1191,7 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
          if (targetloc >= c->temp) {
             /* first check whether last instruction targets old location, if so
                update it with the new desired location */
-            instr_t *instr = &c->proto->instrs[c->proto->ninstrs - 1];
+            instr_t *instr = &c->instrs[c->ninstrs - 1];
             if (opcode_has_target(decode_op(*instr)) && decode_A(*instr)
                == targetloc) {
               /* target matches result expression target register? if so,
@@ -1215,30 +1208,32 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
          targetloc = target_hint;
       }
 
-      if (c->label_true.ninstrs <= tlabel_ninstrs &&
-         c->label_false.ninstrs <= flabel_ninstrs) {
+      if (c->branch_true != es->branch_true &&
+          c->branch_false != es->branch_false) {
          goto done;
       }
 
-      rhs_move_jump_idx = proto->ninstrs;
+      rhs_move_jump_idx = c->ninstrs;
       emit(c, encode_ABx(OP_JUMP, 0, 0));
    }
+
+   struct branch *br; /* used for iteration */
 
    /* iterate over instructions that branch to false and if any is not a
       testset instruction, it means that we need to emit a loadbool instruction
       to set the result to false, so for now just remember this by flagging
-      set_value_to_kfalse to true. Also update the target register of the
+      set_value_to_false to true. Also update the target register of the
       TESTSET instruction to the actual target register */
-   for (int32_t i = flabel_ninstrs; i < c->label_false.ninstrs; ++i) {
-      int32_t index = c->label_false.instrs[i];
+   for (br = c->branch_false; br != es->branch_false; br = br->next) {
+      int32_t index = br->instridx;
       if (index > 0) {
-         instr_t *instr = &proto->instrs[index - 1];
+         instr_t *instr = &c->instrs[index - 1];
          if (decode_op(*instr) == OP_TESTSET) {
             replace_A(instr, target_hint);
          }
          else {
             set_value_to_false = true;
-            replace_Bx(proto->instrs + index, offset_to_next_instr(c, index));
+            replace_Bx(c->instrs + index, offset_to_next_instr(c, index));
          }
       }
    }
@@ -1247,7 +1242,7 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
       false) now and remember its index so that we can eventually patch it
       later */
    if (set_value_to_false) {
-      load_false_instr_idx = proto->ninstrs;
+      load_false_instr_idx = c->ninstrs;
       emit(c, encode_ABC(OP_LOADBOOL, target_hint, false, 0));
    }
 
@@ -1256,17 +1251,16 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
       testset, as we'll need to emit a loadbool to true instruction in such
       case. Also patch all jumps to this point as the next instruction emitted
       could be the loadbool to true. */
-   for (int32_t i = tlabel_ninstrs,
-                size = c->label_true.ninstrs; i < size;++i) {
-      int32_t index = c->label_true.instrs[i];
+   for (br = c->branch_true; br != es->branch_true; br = br->next) {
+      int32_t index = br->instridx;
       if (index > 0) {
-         instr_t *instr = &proto->instrs[index - 1];
+         instr_t *instr = &c->instrs[index - 1];
          if (decode_op(*instr) == OP_TESTSET) {
             replace_A(instr, target_hint);
          }
          else {
             set_value_to_true = true;
-            replace_Bx(proto->instrs + index, offset_to_next_instr(c, index));
+            replace_Bx(c->instrs + index, offset_to_next_instr(c, index));
          }
       }
    }
@@ -1279,7 +1273,7 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
       patch the jump offset to the current position (after the eventual
       loadbool to *true* has been emitted) */
    if (set_value_to_false)
-      replace_C(proto->instrs + load_false_instr_idx,
+      replace_C(c->instrs + load_false_instr_idx,
          offset_to_next_instr(c, load_false_instr_idx));
 
 /* If the final subexpression was a register, check if we have added any
@@ -1288,31 +1282,30 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
    or "neg" to skip the loadbool instructions. */
    if (!value_is_compare) {
       if (!set_value_to_true && !set_value_to_false)
-         --proto->ninstrs;
+         --c->ninstrs;
       else
-         replace_Bx(proto->instrs + rhs_move_jump_idx,
+         replace_Bx(c->instrs + rhs_move_jump_idx,
             offset_to_next_instr(c, rhs_move_jump_idx));
    }
 
    /* finally set the jump offset of all remaining TESTSET instructions
       generated by the expression to true... */
-   for (int32_t i = tlabel_ninstrs,
-      size = c->label_true.ninstrs; i < size; ++i) {
-      int32_t index = c->label_true.instrs[i];
-      if (index > 0 && decode_op(proto->instrs[index - 1]) == OP_TESTSET)
-         replace_Bx(proto->instrs + index, offset_to_next_instr(c, index));
+   for (br = c->branch_true; br != es->branch_true; br = br->next) {
+      int32_t index = br->instridx;
+      if (index > 0 && decode_op(c->instrs[index - 1]) == OP_TESTSET)
+         replace_Bx(c->instrs + index, offset_to_next_instr(c, index));
    }
 
    /* ...and to false to the next instruction. */
-   for (int32_t i = flabel_ninstrs; i < c->label_false.ninstrs; ++i) {
-      int32_t index = c->label_false.instrs[i];
-      if (index > 0 && decode_op(proto->instrs[index - 1]) == OP_TESTSET)
-         replace_Bx(proto->instrs + index, offset_to_next_instr(c, index));
+   for (br = c->branch_false; br != es->branch_false; br = br->next) {
+      int32_t index = br->instridx;
+      if (index > 0 && decode_op(c->instrs[index - 1]) == OP_TESTSET)
+         replace_Bx(c->instrs + index, offset_to_next_instr(c, index));
    }
 
 done: /* restore the compilation state and return result location expression */
-   c->label_true.ninstrs = es->true_branch_idx;
-   c->label_false.ninstrs = es->false_branch_idx;
+   c->branch_true  = es->branch_true;
+   c->branch_false = es->branch_false;
    return expr_loc(targetloc);
 }
 
@@ -1603,11 +1596,11 @@ parse_binary_expr_rhs(struct compiler *c, struct expr_state *es,
          binary operation (pass our rhs as their lhs) */
       if (next_binop_prec > tokprec) {
          /* the target and whether the expression is currently negated are the
-            same for the rhs, but reset the jump instruction lists as rhs is a
+            same for the rhs, but reset the branch lists as rhs is a
             subexpression on its own */
          rhs_es.negated = es->negated;
-         rhs_es.true_branch_idx = c->label_true.ninstrs;
-         rhs_es.false_branch_idx = c->label_false.ninstrs;
+         rhs_es.branch_true  = c->branch_true;
+         rhs_es.branch_false = c->branch_false;
 
          /* parse the expression rhs using higher precedence than operator
             precedence */
@@ -1685,8 +1678,8 @@ parse_exprto(struct compiler *c, loc_t target_hint, bool movetotarget)
       state as we found it upon return. Also backup the first free temporary
       to be restored before returning. */
    struct expr_state es;
-   es.true_branch_idx = c->label_true.ninstrs;
-   es.false_branch_idx = c->label_false.ninstrs;
+   es.branch_true = c->branch_true;
+   es.branch_false = c->branch_false;
    es.negated = false;
 
    /* parse the subexpression with our blank state. The parsed expression might
@@ -1743,7 +1736,6 @@ parse_vardecl(struct compiler *c)
 static void
 parse_cond(struct compiler *c, bool testval)
 {
-   struct prototype *proto = c->proto;
    struct expr_state es = make_exprstate(c, !testval);
 
    /* parse the expression */
@@ -1751,7 +1743,7 @@ parse_cond(struct compiler *c, bool testval)
 
    /* soft-close the expression, only emit branching instructions. We don't
       care to set the final expression value to some register. Only jump to the
-      two labels based on the expression result */
+      two branches based on the expression result */
    if (expr_iscompare(expr.type)) {
       emit(c, encode_ABC(OP_EQ + expr.type - EXPR_EQ,
          expr.val.comp.lhs,
@@ -1764,7 +1756,7 @@ parse_cond(struct compiler *c, bool testval)
    }
 
    /* emit jump to true instruction */
-   *label_push(c, &c->label_true) = proto->ninstrs;
+   *branch_push(c, &c->branch_true) = c->ninstrs;
    emit(c, encode_ABx(OP_JUMP, 0, 0));
 }
 
@@ -1774,9 +1766,8 @@ parse_cond(struct compiler *c, bool testval)
 static void
 parse_stmt_if(struct compiler *c)
 {
-   struct prototype *proto = c->proto;
-   int32_t label_true_begin = c->label_true.ninstrs;
-   int32_t label_false_begin = c->label_false.ninstrs;
+   struct branch *branch_true_end = c->branch_true;
+   struct branch *branch_false_end = c->branch_false;
 
    /* parse the condition to branch to 'true' if it's false. */
    expect(c, kw_if);
@@ -1784,21 +1775,21 @@ parse_stmt_if(struct compiler *c)
    parse_cond(c, false);
    expect(c, ')');
 
-   /* bind the true branch (contained in the false label) and parse the true
+   /* bind the true branch (contained in the false branch) and parse the true
     * branch block. */
-   label_bind_here(c, &c->label_false, label_false_begin);
+   branches_bind_here(c, &c->branch_false, branch_false_end);
    parse_block(c);
 
    /* check if there's a else block ahead */
    if (accept(c, kw_else)) {
       /* emit the jump from the true branch that will skip the else block */
-      int32_t exitjmpidx = proto->ninstrs;
+      int32_t exitjmpidx = c->ninstrs;
       emit(c, OP_JUMP);
 
-      /* bind the label to "else branch" contained in the true label
-         (remember, we're compiling the condition to false, so labels are
+      /* bind the branch to "else branch" contained in the true branch
+         (remember, we're compiling the condition to false, so branches are
          swapped). */
-      label_bind_here(c, &c->label_true, label_true_begin);
+      branches_bind_here(c, &c->branch_true, branch_true_end);
 
       if (peek(c, kw_if))
          parse_stmt_if(c);
@@ -1806,12 +1797,12 @@ parse_stmt_if(struct compiler *c)
          parse_block(c);
 
       /* patch the previous jump expression */
-      replace_Bx(proto->instrs + exitjmpidx,
+      replace_Bx(c->instrs + exitjmpidx,
          offset_to_next_instr(c, exitjmpidx));
    }
    else {
       /* just bind the exit branch */
-      label_bind_here(c, &c->label_true, label_true_begin);
+      branches_bind_here(c, &c->branch_true, branch_true_end);
    }
 }
 
@@ -1916,33 +1907,46 @@ parse_block(struct compiler *c)
  * Parses the body of a prototype, i.e. its instructions.
  */
 static void
-parse_prototype(struct compiler *c)
+parse_prototype_body(struct compiler *c)
 {
    parse_stmts(c);
    emit(c, encode_ABx(OP_RET, 0, 0)); /* emit a return nil instr anyway */
+
 }
 
 /*
  * Parses the content of a script source file. This is nothing more but the
  * body of the main prototype followed by an end of stream.
  */
-static void
+static struct prototype *
 parse_module(struct compiler *c)
 {
-   parse_prototype(c);
-   expect_endofstmt(c);
+   parse_prototype_body(c);
+   expect(c, tok_eos);
+
+   const char name[] = "@name";
+   struct prototype *proto = prototype_new(sizeof(name) - 1, c->nconsts,
+      c->ninstrs, 0, &c->lex.alloc);
+   proto->nargs = 0;
+   proto->nlocals = c->nlocals;
+   memcpy(proto->instrs, c->instrs, c->ninstrs * sizeof(*c->instrs));
+   memcpy(proto->name, name, sizeof(name));
+   memcpy(proto->consts, c->consts, c->nconsts * sizeof(*c->consts));
+
+   return proto;
 }
 
-kintern struct prototype *
-compile(struct compile_info *info)
+kintern koji_result_t
+compile(struct compile_info *info, struct prototype **proto)
 {
    struct compiler comp = { 0 };
    struct lex_info lex_info;
 
    /* redirect the error handler jum\p buffer here so that we can cleanup the
       state. */
-   if (setjmp(info->issue_handler.error_jmpbuf))
-      goto error;
+   koji_result_t result = setjmp(info->issue_handler.error_jmpbuf);
+   if (result)
+      goto cleanup;
 
    /* initialize the lex */
    lex_info.alloc = info->alloc;
@@ -1953,22 +1957,21 @@ compile(struct compile_info *info)
    /* finish setting up compiler state */
    scratch_init(&comp);
    comp.cls_string = info->cls_string;
-
-   /* create the source-file main prototype we will compile into */
-   comp.proto = prototype_new("@main", (int32_t)strlen("@main"), &info->alloc);
+   comp.instrslen = 512;
+   comp.instrs = kalloc(instr_t, comp.instrslen, &info->alloc);
+   comp.constslen = 256;
+   comp.consts = kalloc(union value, comp.constslen, &info->alloc);
 
    /* kick off compilation! */
-   parse_module(&comp);
+   *proto = parse_module(&comp);
 
    goto cleanup;
 
-error:
-   prototype_release(comp.proto, &info->alloc);
-   comp.proto = NULL;
-
 cleanup:
+   kfree(comp.instrs, comp.instrslen, &info->alloc);
+   kfree(comp.consts, comp.constslen, &info->alloc);
    scratch_deinit(&comp);
    lex_deinit(&comp.lex);
 
-   return comp.proto;
+   return result;
 }

@@ -68,15 +68,25 @@ const_destroy(union value c, struct koji_allocator *alloc)
 }
 
 kintern struct prototype *
-prototype_new(const char *name, int namelen, struct koji_allocator *alloc)
+prototype_new(int32_t namelen, int32_t nconsts,
+   int32_t ninstrs, int32_t nprotos, struct koji_allocator *alloc)
 {
-   struct prototype *proto =
-      alloc->alloc(sizeof(struct prototype) + namelen + 1, &alloc->alloc);
-   *proto = (struct prototype) { 1 };
-   proto->namelen = namelen;
-   memcpy(proto->name, name, namelen + 1);
-   proto->consts = array_seq_new(alloc, sizeof(union value));
-   proto->instrs = array_seq_new(alloc, sizeof(instr_t));
+   int instrs_offs = sizeof(struct prototype) + sizeof(union value) * nconsts;
+   int protos_offs = instrs_offs + sizeof(instr_t) * ninstrs;
+   int name_offs = protos_offs + sizeof(struct prototype *) * nprotos;
+   int size = name_offs + namelen + 1;
+   assert(size <= UINT16_MAX);
+
+   struct prototype *proto = alloc->alloc(size, &alloc->alloc);
+   proto->refs = 1;
+   proto->size = (uint16_t)size;
+   proto->ninstrs = ninstrs;
+   proto->nconsts = nconsts;
+   proto->nprotos = nprotos;
+   proto->instrs = (void *)((char *)proto + instrs_offs);
+   proto->protos = (void *)((char *)proto + protos_offs);
+   proto->name = (void *)((char *)proto + name_offs);
+
    return proto;
 }
 
@@ -84,26 +94,20 @@ kintern void
 prototype_release(struct prototype *proto, struct koji_allocator *alloc)
 {
    if (--proto->refs == 0) {
-      assert(proto->refs == 0);
-      kfree(proto->instrs, array_seq_len(proto->ninstrs), alloc);
-
       /* delete all child protos that reach reference to zero */
       for (int32_t i = 0, n = (int32_t)proto->nprotos; i < n; ++i)
          prototype_release(proto->protos[i], alloc);
-
-      kfree(proto->protos, array_seq_len(proto->nprotos), alloc);
 
       /* destroy constant values */
       for (int32_t i = 0, n = proto->nconsts; i < n; ++i)
          const_destroy(proto->consts[i], alloc);
 
-      kfree(proto->consts, array_seq_len(proto->nconsts), alloc);
-      kfree(proto, 1, alloc);
+      alloc->free(proto, proto->size, alloc);
    }
 }
 
 kintern void
-prototype_dump(struct prototype const *proto, int level)
+prototype_dump(struct prototype const *proto, int32_t level)
 {
    /* build a spacing str */
    int32_t margin_length = level * 3;

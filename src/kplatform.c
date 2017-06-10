@@ -82,7 +82,8 @@ array_seq_push_ex(void *arrayp_, int32_t *size, struct koji_allocator *alloc,
 	int32_t newlen =  array_seq_len(newsize);
 
 	if (currlen < newlen) {
-		*arrayp = alloc->alloc(newlen * elemsize, alloc->user);
+		*arrayp = alloc->realloc(*arrayp, currlen * elemsize, newlen * elemsize,
+         alloc->user);
 		if (!*arrayp) return NULL;
 	}
 

@@ -75,7 +75,6 @@ struct lex {
 struct lex_info {
    struct koji_allocator alloc;
    struct issue_handler *issue_handler;
-   const char *filename;
    struct koji_source *source;
 };
 

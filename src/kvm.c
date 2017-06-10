@@ -196,7 +196,7 @@ vm_resume(struct vm *vm)
 	 * return KOJI_ERROR from this function */
    if (setjmp(vm->errorjmpbuf)) {
       vm->validstate = VM_STATE_INVALID;
-		return KOJI_ERROR;
+		return KOJI_ERROR_RUNTIME;
    }
 
 	/* check state is valid, otherwise throw an error */
@@ -217,8 +217,9 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
       int32_t compare, newpc, reg, to_reg;
       union value *ra, arg1, arg2;
 		instr_t instr = instrs[frame->pc++];
+      enum opcode op = decode_op(instr);
 
-		switch (decode_op(instr)) {
+		switch (op) {
 			case OP_LOADNIL:
             reg = decode_A(instr);
             to_reg = reg + decode_Bx(instr);

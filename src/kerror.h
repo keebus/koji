@@ -54,5 +54,4 @@ report(struct issue_handler *e, struct sourceloc sloc,
  * Reports the specified error message and jumps to the error handler code.
  */
 kintern void
-error(struct issue_handler *e, struct sourceloc sloc,
-   const char *format, ...);
+error(struct issue_handler *e, struct sourceloc sloc, const char *format, ...);

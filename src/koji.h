@@ -29,15 +29,16 @@
 
 typedef enum {
    KOJI_OK = 0,
-   KOJI_OUT_OF_MEMORY = -1,
-   KOJI_ERROR = -2
+   KOJI_ERROR_OUT_OF_MEMORY = -1,
+   KOJI_ERROR_COMPILE = -2,
+   KOJI_ERROR_RUNTIME = -3
 } koji_result_t;
 
 struct koji_allocator {
    void *user;
    void *(*alloc)(int size, void *user);
    void *(*realloc)(void *ptr, int oldsize, int newsize, void *user);
-   void(*free)(void *ptr, int size, void *user);
+   void  (*free)(void *ptr, int size, void *user);
 };
 
 typedef double koji_number_t;
