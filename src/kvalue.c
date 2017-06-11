@@ -18,3 +18,16 @@ value_type_str(union value val)
 	if (value_isnum(val)) return "number";
 	return "object";
 }
+
+kintern void
+const_destroy(union value c, struct koji_allocator *alloc)
+{
+	if (value_isobj(c)) {
+      /* the only allowed objects as constants are strings */
+      struct string *s = value_getobjv(c);
+      struct class *cls_str = s->object.class;
+      string_free(s, alloc);
+      assert(cls_str->object.refs > 1);
+      --cls_str->object.refs;
+	}
+}

@@ -122,7 +122,7 @@ vm_push_frame(struct vm *vm, struct prototype *proto, int32_t stackbase)
 	frame->stackbase = stackbase;
 
 	/* push required locals in the value stack */
-	for (i = 0, n = proto->nlocals; i < n; ++i)
+	for (i = 0, n = proto->nregs; i < n; ++i)
 		*vm_push(vm) = value_nil();
 }
 
@@ -387,7 +387,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
          {
             union value *dest = vm_register(vm, frame, 0);
             union value* dest_end = dest + /* frame->proto->num_arguments +*/
-               frame->proto->nlocals;
+               frame->proto->nregs;
             union value* src = vm_register(vm, frame, decode_A(instr));
             union value* src_end = src + decode_Bx(instr);
 
@@ -407,7 +407,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 
 				/* pop the frame, release the prototype reference */
 				vm->framesp -= 1;
-				vm->valuesp -= frame->proto->nlocals;
+				vm->valuesp -= frame->proto->nregs;
 
 				prototype_release(frame->proto, alloc);
 				goto new_frame;

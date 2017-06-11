@@ -187,20 +187,19 @@ struct prototype {
    uint16_t size;
    uint16_t ninstrs;
    uint16_t nargs;
-   uint16_t nlocals;
+   uint16_t nregs;
    uint16_t nconsts;
    uint16_t nprotos;
    instr_t *instrs;
    struct prototype **protos;
-   char *name;
    union value consts[];
 };
 
 /*
  */
 kintern struct prototype *
-prototype_new(int32_t namelen, int32_t nconsts,
-   int32_t ninstrs, int32_t nprotos, struct koji_allocator *alloc);
+prototype_new(int32_t nconsts, int32_t ninstrs, int32_t nprotos,
+   struct koji_allocator *alloc);
 
 /*
  */
@@ -212,4 +211,4 @@ prototype_release(struct prototype *proto, struct koji_allocator *alloc);
  * bytecode disassembly, constants for [proto] as well inner prototypes.
  */
 kintern void
-prototype_dump(struct prototype const *proto, int32_t level);
+prototype_dump(struct prototype const *proto, int32_t index, int32_t level);

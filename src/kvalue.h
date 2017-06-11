@@ -149,3 +149,6 @@ value_getobj(union value val)
  */
 kintern const char *
 value_type_str(union value val);
+
+kintern void
+const_destroy(union value c, struct koji_allocator *alloc);

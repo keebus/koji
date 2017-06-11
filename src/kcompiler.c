@@ -55,24 +55,35 @@ struct branch {
    int32_t instridx;
 };
 
+struct protoinfo {
+   int32_t instrs_beg;
+   int32_t instrs_end;  /* curr prototype number of instructions */
+   int32_t consts_beg;
+   int32_t consts_end;  /* number of constants in curr prototype */
+   int32_t protos_beg;
+   int32_t protos_end;
+   int32_t nlocals;  /* number of locals in curr prototype */
+   int32_t nregs;
+   loc_t temp; /* index of the next free register for locals */
+   struct local *locals; /* array of local variables */
+   struct branch *branch_true; /* list of branches that eval to true */
+   struct branch *branch_false; /* list of branches that eval to false */
+};
+
 /* Wraps state for a compilation run. */
 struct compiler {
    struct lex lex; /* the lexer used to scan tokens from input source */
    struct class *cls_string; /* string class */
    instr_t *instrs;  /* buffer array of prototype instructions */
+   int32_t instrs_len; /* capacity of the instrs buffer */
    union value *consts; /* buffer of constants of this prototype */
-   struct local *locals; /* array of local variables */
-   struct branch *branch_true; /* list of branches that eval to true */
-   struct branch *branch_false; /* list of branches that eval to false */
+   int32_t consts_len;   /* capacity of the consts buffer */
+   struct prototype **protos; /* array of child prototypes */
+   int32_t protos_len;
    struct scratch_page *scratchhead; /* first page in the scratch buffers */
    struct scratch_page *scratchtail; /* last page in the scratch buffer chain*/
    struct scratch_pos scratchpos; /* scratch buffer cursor */
-   int32_t ninstrs;  /* curr prototype number of instructions */
-   int32_t instrslen; /* capacity of the instrs buffer */
-   int32_t nconsts;  /* number of constants in curr prototype */
-   int32_t constslen;   /* capacity of the consts buffer */
-   int32_t nlocals;  /* number of locals in curr prototype */
-   loc_t temp; /* index of the next free register for locals */
+   struct protoinfo pi;
 };
 
 /*
@@ -296,7 +307,7 @@ loc_is_const(loc_t l)
 static bool
 loc_is_temp(struct compiler *c, loc_t l)
 {
-   return l >= (loc_t)c->nlocals;
+   return l >= (loc_t)c->pi.nlocals;
 }
 
 /* expression handling */
@@ -563,7 +574,7 @@ static void
 branches_bind_here(struct compiler *c, struct branch **begin,
    struct branch *end)
 {
-   branches_bind(c, begin, end, c->ninstrs);
+   branches_bind(c, begin, end, c->pi.instrs_end);
 }
 
 /*
@@ -608,8 +619,8 @@ static struct expr_state
 make_exprstate(struct compiler *c, bool negated)
 {
    struct expr_state es;
-   es.branch_true = c->branch_true;
-   es.branch_false = c->branch_false;
+   es.branch_true = c->pi.branch_true;
+   es.branch_false = c->pi.branch_false;
    es.negated = negated;
    return es;
 }
@@ -618,15 +629,15 @@ make_exprstate(struct compiler *c, bool negated)
  * If expression [e] is a register of location equal to current free register,
  * it bumps up the free register counter. It returns the old temporary register
  * regardless whether if the current temporary register was bumped up. After
- * using the new temporary you must restore the temporary register [c->temp] to
+ * using the new temporary you must restore the temporary register [c->pi.temp] to
  * the value returned by this function.
  */
 static int32_t
 use_temp(struct compiler *c, struct expr const *e)
 {
-   int32_t oldtemp = c->temp;
-   if (e->type == EXPR_LOCATION && e->val.loc == c->temp)
-      ++c->temp;
+   int32_t oldtemp = c->pi.temp;
+   if (e->type == EXPR_LOCATION && e->val.loc == c->pi.temp)
+      ++c->pi.temp;
    return oldtemp;
 }
 
@@ -639,9 +650,9 @@ emit(struct compiler *c, instr_t instr)
    /* if instruction has target, update the current prototype total number of
       used registers */
    if (opcode_has_target(decode_op(instr)))
-      c->nlocals = max_i32(c->nlocals, decode_A(instr) + 1);
+      c->pi.nregs = max_i32(c->pi.nregs, decode_A(instr) + 1);
 
-   *array_push(&c->instrs, &c->ninstrs, &c->instrslen, &c->lex.alloc, loc_t, 1)
+   *array_push(&c->instrs, &c->pi.instrs_end, &c->instrs_len, &c->lex.alloc, loc_t, 1)
       = instr;
 }
 
@@ -665,10 +676,10 @@ local_alloc(struct compiler *c, char *id, int32_t idlen)
 static void
 local_push(struct compiler *c, struct local *local)
 {
-   local->loc = c->temp++;
-   local->next = c->locals;
-   c->locals = local;
-   ++c->nlocals;
+   local->loc = c->pi.temp++;
+   local->next = c->pi.locals;
+   c->pi.locals = local;
+   ++c->pi.nlocals;
 }
 
 /*
@@ -678,7 +689,7 @@ local_push(struct compiler *c, struct local *local)
 static struct local *
 local_fetch(struct compiler *c, const char *id)
 {
-   for (struct local *local = c->locals; local; local = local->next) {
+   for (struct local *local = c->pi.locals; local; local = local->next) {
       if (strcmp(local->id, id) == 0)
          return local;
    }
@@ -715,7 +726,7 @@ const_fetch_num(struct compiler *c, loc_t target_hint, koji_number_t num)
    union value value = value_num(num);
    int32_t constidx;
 
-   for (int32_t i = 0; i < c->nconsts; ++i) {
+   for (int32_t i = 0; i < c->pi.consts_end; ++i) {
       if (c->consts[i].bits == value.bits) {
          constidx = i; /* constant already existent */
          goto done;
@@ -723,8 +734,8 @@ const_fetch_num(struct compiler *c, loc_t target_hint, koji_number_t num)
    }
 
    /* constant not found, add it */
-   union value *cnst =
-      array_seq_push(&c->consts, &c->nconsts, &c->lex.alloc, union value, 1);
+   union value *cnst = array_seq_push(&c->consts, &c->pi.consts_end,
+      &c->lex.alloc, union value, 1);
    
    *cnst = value;
    constidx = (int32_t)(cnst - c->consts);
@@ -744,7 +755,7 @@ const_fetch_str(struct compiler *c, loc_t target_hint, const char *chars,
    union value *cnst;
    int32_t constidx;
 
-   for (int32_t i = 0; i < c->nconsts; ++i) {
+   for (int32_t i = 0; i < c->pi.consts_end; ++i) {
       cnst = c->consts + i;
 
       /* is i-th cnst a string and do the strings match? if so, no need to
@@ -763,7 +774,7 @@ const_fetch_str(struct compiler *c, loc_t target_hint, const char *chars,
    }
 
    /* cnst not found, push the new cnst to the array */
-   cnst = array_seq_push(&c->consts, &c->nconsts, &c->lex.alloc, union value,
+   cnst = array_seq_push(&c->consts, &c->pi.consts_end, &c->lex.alloc, union value,
                          1);
 
    /* create a new string */
@@ -836,8 +847,8 @@ expr_compile_unary(struct compiler *c, struct sourceloc sloc, struct expr e)
          return expr_num(-e.val.num);
 
       case EXPR_LOCATION:
-         emit(c, encode_ABx(OP_UNM, c->temp, e.val.loc));
-         return expr_loc(c->temp);
+         emit(c, encode_ABx(OP_UNM, c->pi.temp, e.val.loc));
+         return expr_loc(c->pi.temp);
 
       default:
          error(c->lex.issue_handler, sloc,
@@ -980,7 +991,7 @@ expr_compile_binary(struct compiler *c, struct sourceloc op_sloc,
    {
       loc_t oldtemp; /* backup the num of temporaries */
 
-      lhs = expr_compile(c, lhs, c->temp); /* compile the lhs to some reg */
+      lhs = expr_compile(c, lhs, c->pi.temp); /* compile the lhs to some reg */
 
       /* if lhs is using the current temporary (e.g., it's cnst that has been
          moved to the free temporary because its index is too large), mark
@@ -990,11 +1001,11 @@ expr_compile_binary(struct compiler *c, struct sourceloc op_sloc,
 
       /* compile the expression rhs to a register as well using a potentially
          new temporary */
-      rhs = expr_compile(c, rhs, c->temp);
+      rhs = expr_compile(c, rhs, c->pi.temp);
 
       /* both lhs and rhs are now compiled to registers, restore the old
          temporary location */
-      c->temp = oldtemp;
+      c->pi.temp = oldtemp;
 
       /* if the binary operation is a comparison generate and return a
          comparison expression */
@@ -1019,9 +1030,9 @@ expr_compile_binary(struct compiler *c, struct sourceloc op_sloc,
       else {
          /* the binary operation is not a comparison but an arithmetic
             operation, emit the appropriate instruction */
-         emit(c, encode_ABC(BINOP_TO_OPCODE[op], c->temp, lhs.val.loc,
+         emit(c, encode_ABC(BINOP_TO_OPCODE[op], c->pi.temp, lhs.val.loc,
             rhs.val.loc));
-         lhs = expr_loc(c->temp);
+         lhs = expr_loc(c->pi.temp);
       }
 
       return lhs;
@@ -1043,7 +1054,7 @@ error:  /* the binary operation between lhs and rhs is invalid */
 static int32_t
 offset_to_next_instr(struct compiler *c, int32_t from_instr_idx)
 {
-   return c->ninstrs - from_instr_idx - 1;
+   return c->pi.instrs_end - from_instr_idx - 1;
 }
 
 /*
@@ -1102,21 +1113,21 @@ compile_logical_op(struct compiler *c, struct expr_state *es, enum binop op,
    struct branch *branch_end; /* index of the last branch pushed */
    struct branch **branches; /* the branch we need to jump to */
 
-   offset = branch_push(c, testval ? &c->branch_true : &c->branch_false);
-   *offset = c->ninstrs;
+   offset = branch_push(c, testval ? &c->pi.branch_true : &c->pi.branch_false);
+   *offset = c->pi.instrs_end;
    emit(c, OP_JUMP);
 
    /* if we're testing to true then the branch to jump to if evaluation is false
       is the false branch and viceversa */
    if (testval) {
      /* or */
-      branches = &c->branch_false;
+      branches = &c->pi.branch_false;
       branch_end = es->branch_false;
 
    }
    else {
       /* and */
-      branches = &c->branch_true;
+      branches = &c->pi.branch_true;
       branch_end = es->branch_true;
    }
 
@@ -1173,7 +1184,7 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
       union expr_value eval = expr.val;
       int32_t A = OP_EQ + expr.type - EXPR_EQ;
       emit(c, encode_ABC(A, eval.comp.lhs, eval.comp.rhs, expr.positive));
-      *branch_push(c, &c->branch_true) = c->ninstrs;
+      *branch_push(c, &c->pi.branch_true) = c->pi.instrs_end;
       emit(c, encode_ABx(OP_JUMP, 0, 0));
       set_value_to_false = true;
    }
@@ -1188,10 +1199,10 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
             setting to this location, we can simply replace the A operand of
             all those instructions to [to] and optimize out the 'move'
             instruction */
-         if (targetloc >= c->temp) {
+         if (targetloc >= c->pi.temp) {
             /* first check whether last instruction targets old location, if so
                update it with the new desired location */
-            instr_t *instr = &c->instrs[c->ninstrs - 1];
+            instr_t *instr = &c->instrs[c->pi.instrs_end - 1];
             if (opcode_has_target(decode_op(*instr)) && decode_A(*instr)
                == targetloc) {
               /* target matches result expression target register? if so,
@@ -1208,12 +1219,12 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
          targetloc = target_hint;
       }
 
-      if (c->branch_true != es->branch_true &&
-          c->branch_false != es->branch_false) {
+      if (c->pi.branch_true != es->branch_true &&
+          c->pi.branch_false != es->branch_false) {
          goto done;
       }
 
-      rhs_move_jump_idx = c->ninstrs;
+      rhs_move_jump_idx = c->pi.instrs_end;
       emit(c, encode_ABx(OP_JUMP, 0, 0));
    }
 
@@ -1224,7 +1235,7 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
       to set the result to false, so for now just remember this by flagging
       set_value_to_false to true. Also update the target register of the
       TESTSET instruction to the actual target register */
-   for (br = c->branch_false; br != es->branch_false; br = br->next) {
+   for (br = c->pi.branch_false; br != es->branch_false; br = br->next) {
       int32_t index = br->instridx;
       if (index > 0) {
          instr_t *instr = &c->instrs[index - 1];
@@ -1242,7 +1253,7 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
       false) now and remember its index so that we can eventually patch it
       later */
    if (set_value_to_false) {
-      load_false_instr_idx = c->ninstrs;
+      load_false_instr_idx = c->pi.instrs_end;
       emit(c, encode_ABC(OP_LOADBOOL, target_hint, false, 0));
    }
 
@@ -1251,7 +1262,7 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
       testset, as we'll need to emit a loadbool to true instruction in such
       case. Also patch all jumps to this point as the next instruction emitted
       could be the loadbool to true. */
-   for (br = c->branch_true; br != es->branch_true; br = br->next) {
+   for (br = c->pi.branch_true; br != es->branch_true; br = br->next) {
       int32_t index = br->instridx;
       if (index > 0) {
          instr_t *instr = &c->instrs[index - 1];
@@ -1282,7 +1293,7 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
    or "neg" to skip the loadbool instructions. */
    if (!value_is_compare) {
       if (!set_value_to_true && !set_value_to_false)
-         --c->ninstrs;
+         --c->pi.instrs_end;
       else
          replace_Bx(c->instrs + rhs_move_jump_idx,
             offset_to_next_instr(c, rhs_move_jump_idx));
@@ -1290,32 +1301,70 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
 
    /* finally set the jump offset of all remaining TESTSET instructions
       generated by the expression to true... */
-   for (br = c->branch_true; br != es->branch_true; br = br->next) {
+   for (br = c->pi.branch_true; br != es->branch_true; br = br->next) {
       int32_t index = br->instridx;
       if (index > 0 && decode_op(c->instrs[index - 1]) == OP_TESTSET)
          replace_Bx(c->instrs + index, offset_to_next_instr(c, index));
    }
 
    /* ...and to false to the next instruction. */
-   for (br = c->branch_false; br != es->branch_false; br = br->next) {
+   for (br = c->pi.branch_false; br != es->branch_false; br = br->next) {
       int32_t index = br->instridx;
       if (index > 0 && decode_op(c->instrs[index - 1]) == OP_TESTSET)
          replace_Bx(c->instrs + index, offset_to_next_instr(c, index));
    }
 
 done: /* restore the compilation state and return result location expression */
-   c->branch_true  = es->branch_true;
-   c->branch_false = es->branch_false;
+   c->pi.branch_true  = es->branch_true;
+   c->pi.branch_false = es->branch_false;
    return expr_loc(targetloc);
 }
 
 /* parsing functions */
-static struct expr parse_expr(struct compiler *, struct expr_state *);
-static struct expr parse_exprto(struct compiler *, loc_t target_hint,
-   bool movetotarget);
-static void parse_block(struct compiler *c);
+static struct expr
+parse_expr(struct compiler *, struct expr_state *);
 
-/* Todo
+static struct expr
+parse_exprto(struct compiler *, loc_t target_hint, bool movetotarget);
+
+static void
+parse_prototype_body(struct compiler *);
+
+static void
+parse_block(struct compiler *c);
+
+/*
+ * Scans ahead token identifier to a string expression and returns it.
+ */
+static struct expr
+scan_id(struct compiler *c, loc_t target_hint)
+{
+   assert(c->lex.tok == tok_identifier);
+   struct expr expr = const_fetch_str(c, target_hint, c->lex.tokstr,
+      c->lex.tokstrlen);
+   lex(c);
+   return expr;
+}
+
+static void
+push_prototype(struct compiler *c, int32_t nargs, struct protoinfo const *pi)
+{
+   int32_t ninstrs = c->pi.instrs_end - c->pi.instrs_beg;
+   int32_t nconsts = c->pi.consts_end - c->pi.consts_beg;
+   int32_t nprotos = c->pi.protos_end - c->pi.protos_beg;
+   struct prototype *p = prototype_new(nconsts, ninstrs, nprotos, &c->lex.alloc);
+   p->nargs = nargs;
+   p->nregs = c->pi.nregs;
+   memcpy(p->instrs, c->instrs + c->pi.instrs_beg, ninstrs * sizeof(*c->instrs));
+   memcpy(p->consts, c->consts + c->pi.consts_beg, nconsts * sizeof(*c->consts));
+   memcpy(p->protos, c->protos + c->pi.protos_beg, nprotos * sizeof(*c->protos));
+   c->pi = *pi;
+   *array_push(&c->protos, &c->pi.protos_end, &c->protos_len, &c->lex.alloc,
+      struct prototype *, 1) = p;
+}
+
+/*
+ * Todo
  */
 static struct expr
 parse_localref_or_call(struct compiler *c, struct expr_state *es)
@@ -1342,6 +1391,7 @@ parse_localref_or_call(struct compiler *c, struct expr_state *es)
    return expr_nil();
 }
 
+
 /*
  * Parses and returns a subexpression like "(a + 2)".
  */
@@ -1365,23 +1415,52 @@ parse_subexpr(struct compiler *c, struct expr_state *es)
    switch (c->lex.tok) {
       case '+': case '-': case '*': case '/': case '(': case '&': case '|':
       case '[':
-         expr = expr_close(c, &sub_es, expr, c->temp, false);
+         expr = expr_close(c, &sub_es, expr, c->pi.temp, false);
    }
 
    return expr;
 }
 
 /*
- * Scans ahead token identifier to a string expression and returns it.
+ * 
  */
 static struct expr
-scan_id(struct compiler *c, loc_t target_hint)
+parse_closure(struct compiler *c)
 {
-   assert(c->lex.tok == tok_identifier);
-   struct expr expr = const_fetch_str(c, target_hint, c->lex.tokstr,
-      c->lex.tokstrlen);
+   assert(peek(c, kw_func));
    lex(c);
-   return expr;
+
+   /* save current prototype state */
+   struct protoinfo bak = c->pi;
+   c->pi = (struct protoinfo) {
+      c->pi.instrs_end, c->pi.instrs_end,
+      c->pi.consts_end, c->pi.consts_end,
+      c->pi.protos_end, c->pi.protos_end
+   };
+
+   int32_t nargs = 0;
+   if (accept(c, '(') && !accept(c, ')')) {
+      do
+      {
+         /* push the argument as local */
+         check(c, tok_identifier);
+         struct local *l = local_alloc(c, c->lex.tokstr, c->lex.tokstrlen);
+         local_push(c, l);
+         ++nargs;
+         lex(c);
+      } while(accept(c, ','));
+      expect(c, ')');
+   }
+
+   expect(c, '{');
+   parse_prototype_body(c);
+   expect(c, '}');
+
+   push_prototype(c, nargs, &bak);
+
+   /* turn the prototype into a closure at this point */
+   emit(c, encode_ABx(OP_CLOSURE, c->pi.temp, c->pi.protos_end - 1));
+   return expr_loc(c->pi.temp);
 }
 
 /*
@@ -1397,7 +1476,7 @@ parse_table(struct compiler *c)
    assert(peek(c, '{'));
    lex(c);
 
-   expr = expr_loc(c->temp);
+   expr = expr_loc(c->pi.temp);
    oldtemp = use_temp(c, &expr);
 
    emit(c, encode_ABx(OP_NEWTABLE, expr.val.loc, 0));
@@ -1412,14 +1491,14 @@ parse_table(struct compiler *c)
          int32_t oldtemp2;
 
          if (peek(c, tok_identifier)) {
-            key = scan_id(c, c->temp);
+            key = scan_id(c, c->pi.temp);
             expect(c, ':');
             has_key = true;
          }
          else {
             struct sourceloc sl = c->lex.sourceloc;
             bool square_bracket = accept(c, '[');
-            key = parse_exprto(c, c->temp, false);
+            key = parse_exprto(c, c->pi.temp, false);
             if (square_bracket) expect(c, ']');
 
             if (accept(c, ':')) {
@@ -1435,20 +1514,20 @@ parse_table(struct compiler *c)
          oldtemp2 = use_temp(c, &key);
 
          if (has_key) {
-            value = parse_exprto(c, c->temp, false); /* parse value */
+            value = parse_exprto(c, c->pi.temp, false); /* parse value */
          }
          else {
             value = key;
-            key = expr_compile(c, expr_num(index++), c->temp);  /* parse key */
+            key = expr_compile(c, expr_num(index++), c->pi.temp);  /* parse key */
          }
 
-         c->temp = oldtemp2;
+         c->pi.temp = oldtemp2;
          emit(c, encode_ABC(OP_SET, expr.val.loc, key.val.loc, value.val.loc));
 
       } while (accept(c, ','));
    }
    expect(c, '}');
-   c->temp = oldtemp;
+   c->pi.temp = oldtemp;
 
    return expr;
 }
@@ -1471,7 +1550,7 @@ parse_primary_expr(struct compiler *c, struct expr_state *es)
       case tok_number: lex(c); expr = expr_num(c->lex.toknum); break;
 
       case tok_string:
-         expr = const_fetch_str(c, c->temp, c->lex.tokstr, c->lex.tokstrlen);
+         expr = const_fetch_str(c, c->pi.temp, c->lex.tokstr, c->lex.tokstrlen);
          lex(c);
          break;
 
@@ -1495,6 +1574,10 @@ parse_primary_expr(struct compiler *c, struct expr_state *es)
          expr = parse_localref_or_call(c, es);
          break;
 
+      case kw_func:
+         expr = parse_closure(c);
+         break;
+
       case '{':
          expr = parse_table(c);
          break;
@@ -1510,18 +1593,18 @@ parse_primary_expr(struct compiler *c, struct expr_state *es)
          case '.':
          {
             lex(c);
-            expr_compile(c, expr, c->temp);
+            expr_compile(c, expr, c->pi.temp);
             int32_t temps = use_temp(c, &expr);
 
             /* now parse the key identifier and compile it to a register */
             check(c, tok_identifier);
-            struct expr key = scan_id(c, c->temp);
+            struct expr key = scan_id(c, c->pi.temp);
 
-            c->temp = temps;
+            c->pi.temp = temps;
 
-            emit(c, encode_ABC(OP_GET, c->temp, expr.val.loc, key.val.loc));
+            emit(c, encode_ABC(OP_GET, c->pi.temp, expr.val.loc, key.val.loc));
 
-            expr = expr_loc(c->temp);
+            expr = expr_loc(c->pi.temp);
 
             dot_accessor = true;
 
@@ -1599,8 +1682,8 @@ parse_binary_expr_rhs(struct compiler *c, struct expr_state *es,
             same for the rhs, but reset the branch lists as rhs is a
             subexpression on its own */
          rhs_es.negated = es->negated;
-         rhs_es.branch_true  = c->branch_true;
-         rhs_es.branch_false = c->branch_false;
+         rhs_es.branch_true  = c->pi.branch_true;
+         rhs_es.branch_false = c->pi.branch_false;
 
          /* parse the expression rhs using higher precedence than operator
             precedence */
@@ -1609,7 +1692,7 @@ parse_binary_expr_rhs(struct compiler *c, struct expr_state *es,
 
       /* sub-expr has been evaluated, restore the free register to the one
          before compiling rhs */
-      c->temp = oldtemp;
+      c->pi.temp = oldtemp;
 
       /* compile the binary operation */
       lhs = expr_compile_binary(c, sloc, binop, lhs, rhs);
@@ -1678,8 +1761,8 @@ parse_exprto(struct compiler *c, loc_t target_hint, bool movetotarget)
       state as we found it upon return. Also backup the first free temporary
       to be restored before returning. */
    struct expr_state es;
-   es.branch_true = c->branch_true;
-   es.branch_false = c->branch_false;
+   es.branch_true = c->pi.branch_true;
+   es.branch_false = c->pi.branch_false;
    es.negated = false;
 
    /* parse the subexpression with our blank state. The parsed expression might
@@ -1699,7 +1782,6 @@ static void
 parse_vardecl(struct compiler *c)
 {
    expect(c, kw_var);
-
    /* parse multiple variable declarations */
    do {
       /* read the variable identifier and push it to the scope identifier
@@ -1712,18 +1794,19 @@ parse_vardecl(struct compiler *c)
       if (accept(c, '=')) {
          /* parse the expression and make sure it lies in the current
             temporary */
-         parse_exprto(c, c->temp, true);
+         parse_exprto(c, c->pi.temp, true);
       }
       else {
          /* no initialization expression provided for this variable, initialize
             it to nil */
-         emit(c, encode_ABx(OP_LOADNIL, c->temp, c->temp));
+         emit(c, encode_ABx(OP_LOADNIL, c->pi.temp, c->pi.temp));
       }
 
       /* define the local variable */
       local_push(c, local);
 
    } while (accept(c, ','));
+   expect_endofstmt(c);
 }
 
 
@@ -1751,12 +1834,12 @@ parse_cond(struct compiler *c, bool testval)
          expr.positive ^ !testval));
    }
    else {
-      expr = expr_compile(c, expr, c->temp);
+      expr = expr_compile(c, expr, c->pi.temp);
       emit(c, encode_ABx(OP_TEST, expr.val.loc, testval));
    }
 
    /* emit jump to true instruction */
-   *branch_push(c, &c->branch_true) = c->ninstrs;
+   *branch_push(c, &c->pi.branch_true) = c->pi.instrs_end;
    emit(c, encode_ABx(OP_JUMP, 0, 0));
 }
 
@@ -1766,8 +1849,8 @@ parse_cond(struct compiler *c, bool testval)
 static void
 parse_stmt_if(struct compiler *c)
 {
-   struct branch *branch_true_end = c->branch_true;
-   struct branch *branch_false_end = c->branch_false;
+   struct branch *branch_true_end = c->pi.branch_true;
+   struct branch *branch_false_end = c->pi.branch_false;
 
    /* parse the condition to branch to 'true' if it's false. */
    expect(c, kw_if);
@@ -1777,19 +1860,19 @@ parse_stmt_if(struct compiler *c)
 
    /* bind the true branch (contained in the false branch) and parse the true
     * branch block. */
-   branches_bind_here(c, &c->branch_false, branch_false_end);
+   branches_bind_here(c, &c->pi.branch_false, branch_false_end);
    parse_block(c);
 
    /* check if there's a else block ahead */
    if (accept(c, kw_else)) {
       /* emit the jump from the true branch that will skip the else block */
-      int32_t exitjmpidx = c->ninstrs;
+      int32_t exitjmpidx = c->pi.instrs_end;
       emit(c, OP_JUMP);
 
       /* bind the branch to "else branch" contained in the true branch
          (remember, we're compiling the condition to false, so branches are
          swapped). */
-      branches_bind_here(c, &c->branch_true, branch_true_end);
+      branches_bind_here(c, &c->pi.branch_true, branch_true_end);
 
       if (peek(c, kw_if))
          parse_stmt_if(c);
@@ -1802,38 +1885,52 @@ parse_stmt_if(struct compiler *c)
    }
    else {
       /* just bind the exit branch */
-      branches_bind_here(c, &c->branch_true, branch_true_end);
+      branches_bind_here(c, &c->pi.branch_true, branch_true_end);
    }
 }
 
+/*
+ * Parses a 'throw' statement.
+ */
 static void
 parse_stmt_throw(struct compiler *c)
 {
    expect(c, kw_throw);
-   struct expr expr = parse_exprto(c, c->temp, false);
+   struct expr expr = parse_exprto(c, c->pi.temp, false);
    emit(c, encode_ABx(OP_THROW, 0, expr.val.loc));
+   expect_endofstmt(c);
+}
+
+static void
+parse_stmt_return(struct compiler *c)
+{
+   assert(peek(c, kw_return));
+   lex(c);
+   struct expr retval = parse_exprto(c, c->pi.temp, false);
+   emit(c, encode_ABx(OP_RET, retval.val.loc, 1));
+   expect_endofstmt(c);
 }
 
 /* TEMPORARY */
 static void
 parse_stmtdebug(struct compiler *c)
 {
-   int32_t oldtemps = c->temp;
+   int32_t oldtemps = c->pi.temp;
 
    expect(c, kw_debug);
    expect(c, '(');
 
    if (!peek(c, ')')) {
       do {
-         parse_exprto(c, c->temp, true);
-         ++c->temp;
+         parse_exprto(c, c->pi.temp, true);
+         ++c->pi.temp;
       } while (accept(c, ','));
    }
 
    expect(c, ')');
 
-   emit(c, encode_ABx(OP_DEBUG, oldtemps, c->temp - oldtemps));
-   c->temp = oldtemps;
+   emit(c, encode_ABx(OP_DEBUG, oldtemps, c->pi.temp - oldtemps));
+   c->pi.temp = oldtemps;
 }
 
 /*
@@ -1846,7 +1943,6 @@ parse_stmt(struct compiler *c)
    switch (c->lex.tok) {
       case kw_var: /* variable declaration */
          parse_vardecl(c);
-         expect_endofstmt(c);
          break;
 
       case kw_if: /* if statement */
@@ -1859,7 +1955,10 @@ parse_stmt(struct compiler *c)
 
       case kw_throw:
          parse_stmt_throw(c);
-         expect_endofstmt(c);
+         break;
+
+      case kw_return:
+         parse_stmt_return(c);
          break;
 
       default: /* expression */
@@ -1910,30 +2009,25 @@ static void
 parse_prototype_body(struct compiler *c)
 {
    parse_stmts(c);
-   emit(c, encode_ABx(OP_RET, 0, 0)); /* emit a return nil instr anyway */
 
+   /* emit a return nil instr if none emitted */
+   if (c->pi.instrs_end > c->pi.instrs_beg &&
+      decode_op(c->instrs[c->pi.instrs_end - 1]) != OP_RET)
+      emit(c, encode_ABx(OP_RET, 0, 0));
 }
 
 /*
  * Parses the content of a script source file. This is nothing more but the
  * body of the main prototype followed by an end of stream.
  */
-static struct prototype *
+static void
 parse_module(struct compiler *c)
 {
    parse_prototype_body(c);
    expect(c, tok_eos);
 
-   const char name[] = "@name";
-   struct prototype *proto = prototype_new(sizeof(name) - 1, c->nconsts,
-      c->ninstrs, 0, &c->lex.alloc);
-   proto->nargs = 0;
-   proto->nlocals = c->nlocals;
-   memcpy(proto->instrs, c->instrs, c->ninstrs * sizeof(*c->instrs));
-   memcpy(proto->name, name, sizeof(name));
-   memcpy(proto->consts, c->consts, c->nconsts * sizeof(*c->consts));
-
-   return proto;
+   struct protoinfo pi = { 0 };
+   push_prototype(c, 0, &pi);
 }
 
 kintern koji_result_t
@@ -1957,21 +2051,27 @@ compile(struct compile_info *info, struct prototype **proto)
    /* finish setting up compiler state */
    scratch_init(&comp);
    comp.cls_string = info->cls_string;
-   comp.instrslen = 512;
-   comp.instrs = kalloc(instr_t, comp.instrslen, &info->alloc);
-   comp.constslen = 256;
-   comp.consts = kalloc(union value, comp.constslen, &info->alloc);
+   comp.instrs_len = 512;
+   comp.instrs = kalloc(instr_t, comp.instrs_len, &info->alloc);
+   comp.consts_len = 256;
+   comp.consts = kalloc(union value, comp.consts_len, &info->alloc);
+   comp.protos_len = 16;
+   comp.protos = kalloc(struct prototype *, comp.protos_len, &info->alloc);
 
    /* kick off compilation! */
-   *proto = parse_module(&comp);
-
-   goto cleanup;
+   parse_module(&comp);
+   *proto = comp.protos[0];
+   comp.pi.protos_end = 0;
 
 cleanup:
-   kfree(comp.instrs, comp.instrslen, &info->alloc);
-   kfree(comp.consts, comp.constslen, &info->alloc);
+   for (int32_t i = 0; i < comp.pi.consts_end; ++i)
+      const_destroy(comp.consts[i], &info->alloc);
+   for (int32_t i = 0; i < comp.pi.protos_end; ++i)
+      prototype_release(comp.protos[i], &info->alloc);
+   kfree(comp.instrs, comp.instrs_len, &info->alloc);
+   kfree(comp.consts, comp.consts_len, &info->alloc);
+   kfree(comp.protos, comp.protos_len, &info->alloc);
    scratch_deinit(&comp);
    lex_deinit(&comp.lex);
-
    return result;
 }

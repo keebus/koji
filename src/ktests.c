@@ -72,7 +72,7 @@ run_simple_test(const char *filename)
       return false;
    }
 
-   prototype_dump(state->vm.framestack[0].proto, 0);
+   prototype_dump(state->vm.framestack[0].proto, 0, 0);
 
    res = koji_run(state);
    if (res) {
@@ -95,9 +95,10 @@ int32_t main()
 
 #define DIR "../tests/"
    static const char *simple_tests[] = {
-      DIR "empty.kj",
-      DIR "numbers.kj",
-      DIR "booleans.kj",
+      //DIR "empty.kj",
+      //DIR "numbers.kj",
+      //DIR "booleans.kj",
+      DIR "closures.kj",
       NULL
    };
 

@@ -35,7 +35,7 @@ static const enum op_format OP_FORMATS[] = {
    OP_FORMAT_A_B_C, /* OP_MOD */
    OP_FORMAT_A_B_C, /* OP_POW */
    OP_FORMAT_A_B_C, /* OP_TESTSET */
-   OP_FORMAT_UNKNOWN, /* OP_CLOSURE */
+   OP_FORMAT_A_BX, /* OP_CLOSURE */
    OP_FORMAT_UNKNOWN, /* OP_GLOBALS */
    OP_FORMAT_A_BX, /* OP_NEWTABLE */
    OP_FORMAT_A_B_C, /* OP_GET */
@@ -54,27 +54,13 @@ static const enum op_format OP_FORMATS[] = {
    OP_FORMAT_A_BX, /* OP_DEBUG */
 };
 
-static void
-const_destroy(union value c, struct koji_allocator *alloc)
-{
-	if (value_isobj(c)) {
-      /* the only allowed objects as constants are strings */
-      struct string *s = value_getobjv(c);
-      struct class *cls_str = s->object.class;
-      string_free(s, alloc);
-      assert(cls_str->object.refs > 1);
-      --cls_str->object.refs;
-	}
-}
-
 kintern struct prototype *
-prototype_new(int32_t namelen, int32_t nconsts,
-   int32_t ninstrs, int32_t nprotos, struct koji_allocator *alloc)
+prototype_new(int32_t nconsts, int32_t ninstrs, int32_t nprotos,
+   struct koji_allocator *alloc)
 {
    int instrs_offs = sizeof(struct prototype) + sizeof(union value) * nconsts;
    int protos_offs = instrs_offs + sizeof(instr_t) * ninstrs;
-   int name_offs = protos_offs + sizeof(struct prototype *) * nprotos;
-   int size = name_offs + namelen + 1;
+   int size = protos_offs;
    assert(size <= UINT16_MAX);
 
    struct prototype *proto = alloc->alloc(size, &alloc->alloc);
@@ -85,8 +71,6 @@ prototype_new(int32_t namelen, int32_t nconsts,
    proto->nprotos = nprotos;
    proto->instrs = (void *)((char *)proto + instrs_offs);
    proto->protos = (void *)((char *)proto + protos_offs);
-   proto->name = (void *)((char *)proto + name_offs);
-
    return proto;
 }
 
@@ -107,7 +91,7 @@ prototype_release(struct prototype *proto, struct koji_allocator *alloc)
 }
 
 kintern void
-prototype_dump(struct prototype const *proto, int32_t level)
+prototype_dump(struct prototype const *proto, int32_t index, int32_t level)
 {
    /* build a spacing str */
    int32_t margin_length = level * 3;
@@ -116,10 +100,10 @@ prototype_dump(struct prototype const *proto, int32_t level)
       margin[i] = ' ';
    margin[margin_length] = '\0';
 
-   printf("%sprototype \"%s\"\n"
-          "#%sinstructions %d, #constants %d, #locals %d, #prototypes %d\n",
-          margin, proto->name,
-          margin, proto->ninstrs, proto->nconsts, proto->nlocals, 0);
+   printf("%sprototype %d: "
+          "#instructions %d, #constants %d, #locals %d, #prototypes %d\n",
+          margin, index, proto->ninstrs, proto->nconsts, proto->nregs,
+          proto->nprotos);
 
    for (int32_t i = 0; i < proto->ninstrs; ++i) {
       instr_t instr = proto->instrs[i];
@@ -131,7 +115,7 @@ prototype_dump(struct prototype const *proto, int32_t level)
       int32_t constant_reg = 0;
       int32_t offset = 0xffffffff;
 
-      printf("%d) %s", i + 1, OP_STRINGS[op]);
+      printf("%s%d) %s", margin, i + 1, OP_STRINGS[op]);
 
       /* tabbing */
       for (int32_t j = 0, n = 10 - (int32_t)strlen(OP_STRINGS[op]); j < n; ++j)
@@ -181,5 +165,10 @@ prototype_dump(struct prototype const *proto, int32_t level)
       }
 
       printf("\n");
+   }
+
+   for (int i = 0; i < proto->nprotos; ++i) {
+      printf("\n");
+      prototype_dump(proto->protos[i], i, level + 1);
    }
 }
