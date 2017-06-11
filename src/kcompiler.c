@@ -2055,7 +2055,7 @@ compile(struct compile_info *info, struct prototype **proto)
    struct compiler comp = { 0 };
    struct lex_info lex_info;
 
-   /* redirect the error handler jum\p buffer here so that we can cleanup the
+   /* redirect the error handler jump buffer here so that we can cleanup the
       state. */
    koji_result_t result = setjmp(info->issue_handler.error_jmpbuf);
    if (result)
@@ -2069,7 +2069,7 @@ compile(struct compile_info *info, struct prototype **proto)
 
    /* finish setting up compiler state */
    scratch_init(&comp);
-   comp.cls_string = info->cls_string;
+   comp.cls_string = info->class_string;
    comp.instrs_len = 512;
    comp.instrs = kalloc(instr_t, comp.instrs_len, &info->alloc);
    comp.consts_len = 256;

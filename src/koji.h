@@ -29,9 +29,10 @@
 
 typedef enum {
    KOJI_OK = 0,
-   KOJI_ERROR_OUT_OF_MEMORY = -1,
-   KOJI_ERROR_COMPILE = -2,
-   KOJI_ERROR_RUNTIME = -3
+   KOJI_ERROR_INVALID = -1,
+   KOJI_ERROR_OUT_OF_MEMORY = -2,
+   KOJI_ERROR_COMPILE = -3,
+   KOJI_ERROR_RUNTIME = -4
 } koji_result_t;
 
 struct koji_allocator {
@@ -42,6 +43,7 @@ struct koji_allocator {
 };
 
 typedef double koji_number_t;
+typedef __int64 koji_int_t;
 
 /*
  * The signature of the stream reading function used by koji to read a source
@@ -72,39 +74,69 @@ struct koji_source {
  * A koji state encapsulates all state needed by koji for script compilation
  * and execution and is the target of all API operations.
  */
-typedef struct koji_state koji_state_t;
+typedef struct koji_vm * koji_t;
 
-KOJI_API koji_state_t *
+enum koji_op {
+   KOJI_OP_DTOR,
+   KOJI_OP_UNM,
+   KOJI_OP_ADD,
+   KOJI_OP_SUB,
+   KOJI_OP_MUL,
+   KOJI_OP_DIV,
+   KOJI_OP_MOD,
+   KOJI_OP_COMPARE,
+   KOJI_OP_GET,
+   KOJI_OP_SET,
+   KOJI_OP_USER0,
+};
+
+typedef int (*koji_function_t) (koji_t, void *user,
+   enum koji_op op, int nargs);
+
+KOJI_API koji_t
 koji_open(struct koji_allocator *alloc);
 
 KOJI_API void
-koji_close(koji_state_t*);
+koji_close(koji_t);
 
 KOJI_API koji_result_t
-koji_load(koji_state_t *state, struct koji_source *source);
+koji_load(koji_t, struct koji_source *source);
 
 KOJI_API koji_result_t
-koji_load_string(koji_state_t *, const char *source);
+koji_load_string(koji_t, const char *source);
 
 KOJI_API koji_result_t
-koji_load_file(koji_state_t *, const char *filename);
+koji_load_file(koji_t, const char *filename);
 
 KOJI_API koji_result_t
-koji_run(koji_state_t *);
+koji_run(koji_t);
 
 KOJI_API void
-koji_push_string(koji_state_t *, const char *source, int len);
+koji_push_string(koji_t, const char *source, int len);
 
 KOJI_API void
-koji_push_stringf(koji_state_t *, const char *format, ...);
+koji_push_stringf(koji_t, const char *format, ...);
 
 KOJI_API const char *
-koji_string(koji_state_t *, int offset);
+koji_string(koji_t, int offset);
 
 KOJI_API int
-koji_string_length(koji_state_t *, int offset);
+koji_string_len(koji_t, int offset);
 
 KOJI_API void
-koji_pop(koji_state_t *, int n);
+koji_push_class(koji_t, const char *name, const char **members, int nmembers);
+
+KOJI_API koji_result_t
+koji_class_set_op(koji_t, int offset, enum koji_op, koji_function_t);
+
+KOJI_API koji_result_t
+koji_class_set_fn(koji_t, int offset, const char *member,
+   koji_function_t);
+
+KOJI_API void
+koji_pop(koji_t, int n);
+
+KOJI_API void
+koji
 
 #endif /* KOJI_H_ */

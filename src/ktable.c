@@ -16,7 +16,7 @@ struct table_pair {
 };
 
 static struct
-table_pair *table_find(struct vm *vm, struct table_pair *entries,
+table_pair *table_find(struct koji_vm *vm, struct table_pair *entries,
    int32_t capacity, union value key)
 {
 	uint64_t hash = vm_value_hash(vm, key);
@@ -41,7 +41,7 @@ table_init(struct table *t, struct koji_allocator *alloc, int32_t capacity)
 }
 
 kintern void
-table_deinit(struct table *t, struct vm *vm)
+table_deinit(struct table *t, struct koji_vm *vm)
 {
 	for (int32_t i = 0; i < t->capacity; ++i) {
 		vm_value_destroy(vm, t->pairs[i].key);
@@ -51,7 +51,7 @@ table_deinit(struct table *t, struct vm *vm)
 }
 
 kintern void
-table_set(struct table *t, struct vm *vm, union value key, union value val)
+table_set(struct table *t, struct koji_vm *vm, union value key, union value val)
 {
 	struct table_pair *pair = table_find(vm, t->pairs, t->capacity, key);
 
@@ -84,7 +84,7 @@ table_set(struct table *t, struct vm *vm, union value key, union value val)
 }
 
 kintern union value
-table_get(struct table *table, struct vm *vm, union value key)
+table_get(struct table *table, struct koji_vm *vm, union value key)
 {
 	return table_find(vm, table->pairs, table->capacity, key)->value;
 }
@@ -100,44 +100,4 @@ value_new_table(struct class *cls_table, struct koji_allocator *alloc,
 	object_table->object.class = cls_table;
 	table_init(&object_table->table, alloc, capacity);
 	return value_obj(object_table);
-}
-
-static void
-table_dtor(struct vm *vm, struct object *obj)
-{
-   struct object_table *tbl = (struct object_table *)obj;
-	table_deinit(&tbl->table, vm);
-   kfree(tbl, 1, &vm->alloc);
-}
-
-static union class_op_result
-table_op_get(struct vm *vm, struct object *obj, enum class_op_kind op,
-   union value *args, int32_t nargs)
-{
-   assert(nargs == 1);
-	struct object_table *tbl = (struct object_table*)obj;
-   union class_op_result res;
-   res.value = table_get(&tbl->table, vm, *args);
-   return res;
-}
-
-static union class_op_result
-table_op_set(struct vm *vm, struct object *obj, enum class_op_kind op,
-   union value *args, int32_t nargs)
-{
-   assert(nargs == 2);
-	struct object_table *tbl = (struct object_table*)obj;
-   union class_op_result res;
-	table_set(&tbl->table, vm, args[0], args[1]);
-   res.value = args[1];
-	return res;
-}
-
-kintern void
-class_table_init(struct class *cls_table, struct class *cls_builtin)
-{
-	class_init_default(cls_table, cls_builtin, "table");
-	cls_table->dtor = table_dtor;
-	cls_table->operator[CLASS_OP_GET] = table_op_get;
-	cls_table->operator[CLASS_OP_SET] = table_op_set;
 }

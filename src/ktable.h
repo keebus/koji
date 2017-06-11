@@ -44,19 +44,19 @@ table_init(struct table*, struct koji_allocator *alloc, int32_t capacity);
  * deallocating the used memory.
  */
 kintern void
-table_deinit(struct table*, struct vm*);
+table_deinit(struct table*, struct koji_vm*);
 
 /*
  * Adds the mapping between [key] and [value] in specified table.
  */
 kintern void
-table_set(struct table*, struct vm*, union value key, union value val);
+table_set(struct table*, struct koji_vm*, union value key, union value val);
 
 /*
  * Returns the value associated to specified [key] or nil if not found.
  */
 kintern union value
-table_get(struct table*, struct vm *vm, union value key);
+table_get(struct table*, struct koji_vm *vm, union value key);
 
 /*
  * Creates a new table object and returns it in a value.

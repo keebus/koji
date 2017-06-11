@@ -20,8 +20,9 @@
  * be set to anything without making the NaN value invalid.
  */
 union value {
-   double num;
+   double   num;
    uint64_t bits;
+   uint64_t hash;
 };
 
 /*
@@ -29,8 +30,8 @@ union value {
  * object belongs to.
  */
 struct object {
-   int32_t            refs;
-   struct class*  class;
+   int32_t refs;
+   struct class *class;
 };
 
 #define BITS_NAN_MASK      ((uint64_t)(0x7ff4000000000000))

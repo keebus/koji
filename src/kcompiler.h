@@ -22,7 +22,7 @@ struct compile_info {
 	struct issue_handler issue_handler; /* used to report compilation issues */
    uint8_t *scratch_beg; /* beginning of the scratch memory buffer */
    uint8_t *scratch_end; /* end of the scratch memory buffer */
-	struct class *cls_string; /* pointer to the str class */
+	struct class *class_string; /* pointer to the str class */
 };
 
 /*

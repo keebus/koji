@@ -9,106 +9,80 @@
 
 #include "kclass.h"
 #include "kvm.h"
-
 #include <stdio.h>
+#include <string.h>
 
-static void
-class_dtor_empty(struct vm *vm, struct object *obj)
+kintern struct class*
+class_new(struct class *class_class, const char *name, int32_t namelen,
+   const char **members, int32_t nmembers,
+   struct koji_allocator *alloc)
 {
-   /* do nothing, this dtor should only be for class class */
-}
+   uint64_t seed = 0;
+   int32_t memberslen = nmembers;
+   bool *memused = kalloca(nmembers);
+   int32_t *memsizes = kalloca(nmembers * sizeof(int32_t));
+   int32_t memnamelen = 0;
 
-kintern union class_op_result
-class_op_invalid(struct vm *vm, struct object *obj,
-   enum class_op_kind op, union value *args, int32_t nargs)
-{
-   assert(nargs > 0);
+   for (int32_t i = 0; i < nmembers; ++i) {
+      int32_t len = strlen(members[i]);
+      memsizes[i] = len;
+      memnamelen += len + 1;
+   }
 
-   static const char *OPERATOR_STR[] = {
-      "-", "+", "-", "*", "/", "%", "__compare", "__hash", "[]", "[]="
-   };
+retry:
+   memberslen += memberslen / 3;
+   memset(memused, 0, nmembers);
+   seed = mix64(seed + 1);
+   for (int32_t i = 0; i < nmembers; ++i) {
+      uint64_t hash = murmur2(members[i], memsizes[i], seed);
+      int32_t index = hash % memberslen;
+      if (memused[index])
+         goto retry;
+      memused[index] = true;
+   }
 
-   struct class *cls = obj->class;
+   int32_t allmemberslen = memberslen + KOJI_OP_USER0;
 
-	if (op == CLASS_OP_UNM) {
-		vm_throw(vm, "cannot apply unary operator '%s' to '%s' object value.",
-         OPERATOR_STR[op], cls->name);
-	}
-	else {
-		const char *arg_type_str;
-		if (value_isobj(*args)) {
-			struct object *argobj = value_getobj(*args);
-			int32_t buflen = 64;
-			arg_type_str = kalloca(buflen);
-			
-         int32_t total_len = snprintf((char*)arg_type_str, buflen, "'%s' object",
-            argobj->class->name);
-			
-         if (total_len > buflen) {
-				arg_type_str = kalloca(total_len);
-				snprintf((char*)arg_type_str, total_len, "'%s' object",
-               argobj->class->name);
-			}
-		}
-		else {
-			arg_type_str = value_type_str(*args);
-		}
-		vm_throw(vm, "cannot apply binary operator '%s' between a %s and a %s.",
-         OPERATOR_STR[op], cls->name, arg_type_str);
-	}
+   int32_t size = sizeof(struct class)
+      + namelen + 1
+      + allmemberslen * sizeof(struct class_member)
+      + memnamelen;
 
-	return (union class_op_result){ 0 }; /* never executed*/
-}
+   struct class *cls = alloc->alloc(size, alloc->user);
+   cls->object.refs = 1;
+   cls->object.class = NULL;
+   cls->size = size;
+   cls->memberslen = memberslen;
+   cls->seed = seed;
 
-kintern union class_op_result
-class_op_compare_default(struct vm *vm, struct object *obj,
-   enum class_op_kind op, union value *args, int32_t nargs)
-{
-   assert(nargs == 1);
-	struct object *argobj = value_getobj(*args);
-   union class_op_result res = { 1 }; /* objects are always greater than any
-                                         other value type */
-	/* if rhs is also an object, then compare the addresses */
-	if (value_isobj(*args)) {
-		res.compare = (int32_t)(obj - argobj);
-	}
+   memset(cls->members, 0, allmemberslen * sizeof(struct class_member));
 
-	return res;
-}
+   char *names = (char*)(cls->members + allmemberslen);
+   for (int32_t i = 0; i < memberslen; ++i) {
+      uint32_t idx = KOJI_OP_USER0 + i;
+      cls->members[idx].name = names;
+      memcpy(names, members[i], memsizes[i] + 1);
+      names += memsizes[i] + 1;
+   }
 
-kintern union class_op_result
-class_op_hash_default(struct vm *vm, struct object *obj, enum class_op_kind op,
-   union value *args, int32_t nargs)
-{
-   union class_op_result res;
-   res.hash = (uint64_t)obj;
-	return res;
+   return cls;
 }
 
 kintern void
-class_init_default(struct class *cls, struct class *class_cls,
-   const char *name)
+class_free(struct class *class, struct koji_allocator *alloc)
 {
-	cls->object.class = class_cls;
-	cls->object.refs = 1;
-	cls->name = name;
-	cls->dtor = NULL; /* must be specified */
-	cls->operator[CLASS_OP_UNM] = class_op_invalid;
-	cls->operator[CLASS_OP_ADD] = class_op_invalid;
-	cls->operator[CLASS_OP_SUB] = class_op_invalid;
-	cls->operator[CLASS_OP_MUL] = class_op_invalid;
-	cls->operator[CLASS_OP_DIV] = class_op_invalid;
-	cls->operator[CLASS_OP_MOD] = class_op_invalid;
-	cls->operator[CLASS_OP_COMPARE] = class_op_compare_default;
-	cls->operator[CLASS_OP_HASH] = class_op_hash_default;
-	cls->operator[CLASS_OP_GET] = class_op_invalid;
-	cls->operator[CLASS_OP_SET] = class_op_invalid;
-   ++class_cls->object.refs;
+   alloc->free(class, class->size, alloc->user);
 }
 
-kintern void
-class_builtin_init(struct class* cls)
+kintern struct class_member *
+class_getmember(struct class *class, const char *member, int memberlen)
 {
-   class_init_default(cls, cls, "builtin_class");
-   cls->dtor = class_dtor_empty;
+   uint32_t index = (uint32_t)(murmur2(member, memberlen, class->seed)
+      % class->memberslen);
+
+   struct class_member *m = class->members + KOJI_OP_USER0 + index;
+   if (memcmp(member, m->name, memberlen + 1) != 0)
+      return NULL;
+
+   return m;
 }
