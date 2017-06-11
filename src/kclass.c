@@ -20,8 +20,10 @@ class_dtor_empty(struct vm *vm, struct object *obj)
 
 kintern union class_op_result
 class_op_invalid(struct vm *vm, struct object *obj,
-   enum class_op_kind op, union value arg1, union value arg2)
+   enum class_op_kind op, union value *args, int32_t nargs)
 {
+   assert(nargs > 0);
+
    static const char *OPERATOR_STR[] = {
       "-", "+", "-", "*", "/", "%", "__compare", "__hash", "[]", "[]="
    };
@@ -34,8 +36,8 @@ class_op_invalid(struct vm *vm, struct object *obj,
 	}
 	else {
 		const char *arg_type_str;
-		if (value_isobj(arg1)) {
-			struct object *argobj = value_getobj(arg1);
+		if (value_isobj(*args)) {
+			struct object *argobj = value_getobj(*args);
 			int32_t buflen = 64;
 			arg_type_str = kalloca(buflen);
 			
@@ -49,7 +51,7 @@ class_op_invalid(struct vm *vm, struct object *obj,
 			}
 		}
 		else {
-			arg_type_str = value_type_str(arg1);
+			arg_type_str = value_type_str(*args);
 		}
 		vm_throw(vm, "cannot apply binary operator '%s' between a %s and a %s.",
          OPERATOR_STR[op], cls->name, arg_type_str);
@@ -60,13 +62,14 @@ class_op_invalid(struct vm *vm, struct object *obj,
 
 kintern union class_op_result
 class_op_compare_default(struct vm *vm, struct object *obj,
-   enum class_op_kind op, union value arg1, union value arg2)
+   enum class_op_kind op, union value *args, int32_t nargs)
 {
-	struct object *argobj = value_getobj(arg1);
+   assert(nargs == 1);
+	struct object *argobj = value_getobj(*args);
    union class_op_result res = { 1 }; /* objects are always greater than any
                                          other value type */
 	/* if rhs is also an object, then compare the addresses */
-	if (value_isobj(arg1)) {
+	if (value_isobj(*args)) {
 		res.compare = (int32_t)(obj - argobj);
 	}
 
@@ -75,7 +78,7 @@ class_op_compare_default(struct vm *vm, struct object *obj,
 
 kintern union class_op_result
 class_op_hash_default(struct vm *vm, struct object *obj, enum class_op_kind op,
-   union value arg1, union value arg2)
+   union value *args, int32_t nargs)
 {
    union class_op_result res;
    res.hash = (uint64_t)obj;

@@ -57,6 +57,14 @@ vm_init(struct vm *vm, struct koji_allocator *alloc)
 	vm->validstate = true;
 	vm->alloc = *alloc;
 
+   /* init builtin classes */
+   class_builtin_init(&vm->cls_builtin);
+   class_string_init(&vm->cls_string, &vm->cls_builtin);
+   class_table_init(&vm->cls_table, &vm->cls_builtin);
+
+   /* init table of globals */
+   table_init(&vm->globals, alloc, 64);
+
 	/* init frame stack */
 	vm->framesp = 0;
 	vm->frameslen = 16;
@@ -66,11 +74,6 @@ vm_init(struct vm *vm, struct koji_allocator *alloc)
 	vm->valuesp = 0;
 	vm->valueslen = 16;
 	vm->valuestack = kalloc(union value, vm->valueslen, &vm->alloc);
-
-	/* init builtin classes */
-	class_builtin_init(&vm->cls_builtin);
-	class_string_init(&vm->cls_string, &vm->cls_builtin);
-	class_table_init(&vm->cls_table, &vm->cls_builtin);
 }
 
 kintern void
@@ -90,6 +93,10 @@ vm_deinit(struct vm *vm)
 	}
 	kfree(vm->framestack, vm->frameslen, &vm->alloc);
 
+   /* release table of globals */
+   table_deinit(&vm->globals, vm);
+
+   /* release builtin classes */
    assert(vm->cls_builtin.object.refs == 4);
    assert(vm->cls_string.object.refs == 1);
    assert(vm->cls_table.object.refs == 1);
@@ -215,7 +222,8 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 
 	for (;;) {
       int32_t compare, newpc, reg, to_reg;
-      union value *ra, arg1, arg2;
+      union value *ra;
+      union value arg1, arg2;
 		instr_t instr = instrs[frame->pc++];
       enum opcode op = decode_op(instr);
 
@@ -252,7 +260,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					struct object *obj = value_getobj(arg1);
 					vm_value_destroy(vm, *ra);
 					vm_value_set(vm, ra, obj->class->operator[CLASS_OP_UNM](vm, obj,
-                  CLASS_OP_UNM, arg1, value_nil()).value);
+                  CLASS_OP_UNM, &arg1, 1).value);
 				}
 				else {
 					vm_throw(vm, "cannot apply unary minus operation to a %s value.",
@@ -275,7 +283,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 						struct object *obj = value_getobj(arg1);\
 						vm_value_destroy(vm, *ra);\
 						vm_value_set(vm, ra, obj->class->operator[classop](vm, obj,\
-                     classop, arg1, arg2).value);\
+                     classop, &arg1, 2).value);\
 					}\
 					else {\
 						vm_throw(vm, "cannot apply binary operator " name_ " between a %s and a %s.", value_type_str(arg1), value_type_str(arg2));\
@@ -307,6 +315,10 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 				frame->pc = newpc;
 				break;
 
+         case OP_GETGLOB:
+            *RA = table_get(&vm->globals, vm, ARG(Bx));
+            break;
+
 			case OP_NEWTABLE:
 				*RA = value_new_table(&vm->cls_table, &vm->alloc,
                TABLE_DEFAULT_CAPACITY);
@@ -315,27 +327,13 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 			case OP_GET:
 				arg1 = ARG(B);
 				if (value_isobj(arg1)) {
+               arg2 = ARG(C);
 					struct object *obj = value_getobj(arg1);
 					vm_value_set(vm, RA, obj->class->operator[CLASS_OP_GET](vm, obj,
-                  CLASS_OP_GET, ARG(C), value_nil()).value);
+                  CLASS_OP_GET, &arg2, 1).value);
 				}
 				else {
 					vm_throw(vm, "primitive type %s does not support `get` "
-                  "operator.", value_type_str(arg1));
-				}
-				break;
-
-			case OP_SET:
-				ra = RA;
-				arg1 = ARG(B);
-				arg2 = ARG(C);
-				if (value_isobj(*ra)) {
-					struct object *obj = value_getobj(*ra);
-					obj->class->operator[CLASS_OP_SET](vm, obj, CLASS_OP_SET, arg1,
-                  arg2);
-				}
-				else {
-					vm_throw(vm, "primitive type %s does not support `set` "
                   "operator.", value_type_str(arg1));
 				}
 				break;
@@ -362,7 +360,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					else if (value_isobj(*ra)) {\
 						struct object *obj = value_getobj(*ra);\
 						compare = (obj->class->operator[CLASS_OP_COMPARE](vm,\
-                     obj, CLASS_OP_COMPARE, arg1, value_nil()).compare op_ 0);\
+                     obj, CLASS_OP_COMPARE, &arg1, 1).compare op_ 0);\
 					}\
 					else {\
 						compare = ra->bits op_ arg1.bits;\
@@ -383,11 +381,38 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 
 #undef COMPARISON_OPERATOR
 
+         case OP_CALL:
+            ra = RA;
+            arg1 = ARG(C);
+            /*if (value_isobj(arg1)) {
+               struct object *obj = value_getobj(arg1);
+               obj->class->operator[CLASS_OP_CALL](vm, obj, CLASS_OP_CALL, arg1, value_nil())
+            }
+            break;*/
+
+         case OP_SETGLOB:
+            table_set(&vm->globals, vm, ARG(Bx), *RA);
+            break;
+
+         case OP_SET:
+            ra = RA;
+            arg1 = ARG(B);
+            arg2 = ARG(C);
+            if (value_isobj(*ra)) {
+               struct object *obj = value_getobj(*ra);
+               obj->class->operator[CLASS_OP_SET](vm, obj, CLASS_OP_SET, &arg1,
+                  2);
+            }
+            else {
+               vm_throw(vm, "primitive type %s does not support `set` "
+                  "operator.", value_type_str(arg1));
+            }
+            break;
+
 			case OP_RET:
          {
             union value *dest = vm_register(vm, frame, 0);
-            union value* dest_end = dest + /* frame->proto->num_arguments +*/
-               frame->proto->nregs;
+            union value* dest_end = dest + frame->proto->nregs;
             union value* src = vm_register(vm, frame, decode_A(instr));
             union value* src_end = src + decode_Bx(instr);
 
@@ -486,7 +511,7 @@ vm_value_hash(struct vm *vm, union value val)
 	if (value_isobj(val)) {
 		struct object *obj = value_getobj(val);
 		return obj->class->operator[CLASS_OP_HASH](vm, obj, CLASS_OP_HASH,
-         value_nil(), value_nil()).hash;
+         NULL, 0).hash;
 	}
 	else {
 		return mix64(val.bits);

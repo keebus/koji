@@ -71,14 +71,15 @@ string_dtor(struct vm* vm, struct object *obj)
 
 static union class_op_result
 string_op_add(struct vm* vm, struct object *obj, enum class_op_kind op,
-   union value arg1, union value arg2)
+   union value *args, int32_t nargs)
 {
+   assert(nargs == 1);
    struct class *cls = obj->class;
 	struct string *lstr = (struct string *)obj; /* lhs str */
-	struct string *rstr = value_getobjv(arg1); /* rhs str */
+	struct string *rstr = value_getobjv(*args); /* rhs str */
    union class_op_result res;
 
-	if (value_isobj(arg1) && rstr->object.class == cls) {
+	if (value_isobj(*args) && rstr->object.class == cls) {
       struct string *res_str;
 		res.value = value_new_string(cls, &vm->alloc, lstr->len + rstr->len);
       res_str = value_getobjv(res.value);
@@ -87,24 +88,25 @@ string_op_add(struct vm* vm, struct object *obj, enum class_op_kind op,
 		return res;
 	}
 
-	return class_op_invalid(vm, obj, op, arg1, arg2);
+	return class_op_invalid(vm, obj, op, args, nargs);
 }
 
 static union class_op_result
 string_op_mul(struct vm* vm, struct object *obj, enum class_op_kind op,
-   union value arg1, union value arg2)
+   union value *args, int32_t nargs)
 {
+   assert(nargs == 1);
    struct class *cls = obj->class;
 	struct string *lstr = (struct string *)obj;
    union class_op_result res;
 
-	if (!value_isnum(arg1)) {
-		class_op_invalid(vm, obj, op, arg1, arg2);
+	if (!value_isnum(*args)) {
+		class_op_invalid(vm, obj, op, args, nargs);
       res.value = value_nil();
 		return res;
 	}
 
-	int32_t mult = (int32_t)arg1.num;
+	int32_t mult = (int32_t)args->num;
 	int32_t str_len = lstr->len;
 	res.value = value_new_string(cls, &vm->alloc, str_len * mult);
 	struct string *res_str = value_getobjv(res.value);
@@ -121,13 +123,14 @@ string_op_mul(struct vm* vm, struct object *obj, enum class_op_kind op,
 
 static union class_op_result
 string_op_compare(struct vm* vm, struct object *obj, enum class_op_kind op,
-   union value arg1, union value arg2)
+   union value *args, int32_t nargs)
 {
+   assert(nargs == 1);
    struct class *cls = obj->class;
 	struct string *lstr = (struct string *)obj;
-	struct string *rstr = value_getobjv(arg1);
+	struct string *rstr = value_getobjv(*args);
 
-   if (value_isobj(arg1) && rstr->object.class == cls) {
+   if (value_isobj(*args) && rstr->object.class == cls) {
 	   union class_op_result res;
       res.compare =  lstr->len < rstr->len ? -1 :
 						   lstr->len > rstr->len ? 1 :
@@ -135,13 +138,15 @@ string_op_compare(struct vm* vm, struct object *obj, enum class_op_kind op,
       return res;
    }
 
-	return class_op_compare_default(vm, obj, op, arg1, arg2);
+	return class_op_compare_default(vm, obj, op, args, nargs);
 }
 
 static union class_op_result
 string_op_hash(struct vm* vm, struct object *obj, enum class_op_kind op,
-   union value arg1, union value arg2)
+   union value *args, int32_t nargs)
 {
+   assert(nargs == 0);
+   (void)args;
 	struct string *lstr = (struct string *)obj;
    union class_op_result res;
    res.hash = murmur2(&lstr->chars, lstr->len, 0);
@@ -150,22 +155,22 @@ string_op_hash(struct vm* vm, struct object *obj, enum class_op_kind op,
 
 static union class_op_result
 string_op_get(struct vm* vm, struct object *obj, enum class_op_kind op,
-   union value arg1, union value arg2)
+   union value *args, int32_t nargs)
 {
+   assert(nargs == 1);
 	struct string *lstr = (struct string *)obj;
-
    union class_op_result res;
-   res.value = value_num(lstr->chars[(uint32_t)arg1.num]);
+   res.value = value_num(lstr->chars[(uint32_t)args->num]);
 	return res;
 }
 
 static union class_op_result
 string_op_set(struct vm* vm, struct object *object, enum class_op_kind op,
-   union value arg1, union value arg2)
+   union value *args, int32_t nargs)
 {
+   assert(nargs == 2);
 	struct string *lstr = (struct string *)object;
-	char ch = lstr->chars[(uint32_t)arg1.num] = (char)arg2.num;
-
+	char ch = lstr->chars[(uint32_t)args[0].num] = (char)args[1].num;
    union class_op_result res;
    res.value = value_num(ch);
 	return res;

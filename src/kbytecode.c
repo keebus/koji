@@ -36,7 +36,8 @@ static const enum op_format OP_FORMATS[] = {
    OP_FORMAT_A_B_C, /* OP_POW */
    OP_FORMAT_A_B_C, /* OP_TESTSET */
    OP_FORMAT_A_BX, /* OP_CLOSURE */
-   OP_FORMAT_UNKNOWN, /* OP_GLOBALS */
+   OP_FORMAT_A_BX, /* OP_GETGLOB */
+   OP_FORMAT_A_BX, /* OP_SETGLOB */
    OP_FORMAT_A_BX, /* OP_NEWTABLE */
    OP_FORMAT_A_B_C, /* OP_GET */
    OP_FORMAT_UNKNOWN, /* OP_THIS */
@@ -45,8 +46,7 @@ static const enum op_format OP_FORMATS[] = {
    OP_FORMAT_A_B_C, /* OP_EQ */
    OP_FORMAT_A_B_C, /* OP_LT */
    OP_FORMAT_A_B_C, /* OP_LTE */
-   OP_FORMAT_UNKNOWN, /* OP_SCALL */
-   OP_FORMAT_UNKNOWN, /* OP_CALL */
+   OP_FORMAT_A_B_C, /* OP_CALL */
    OP_FORMAT_UNKNOWN, /* OP_MCALL */
    OP_FORMAT_A_B_C, /* OP_SET */
    OP_FORMAT_A_B,  /* OP_RET */

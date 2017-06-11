@@ -112,22 +112,24 @@ table_dtor(struct vm *vm, struct object *obj)
 
 static union class_op_result
 table_op_get(struct vm *vm, struct object *obj, enum class_op_kind op,
-   union value arg1, union value arg2)
+   union value *args, int32_t nargs)
 {
+   assert(nargs == 1);
 	struct object_table *tbl = (struct object_table*)obj;
    union class_op_result res;
-   res.value = table_get(&tbl->table, vm, arg1);
+   res.value = table_get(&tbl->table, vm, *args);
    return res;
 }
 
 static union class_op_result
 table_op_set(struct vm *vm, struct object *obj, enum class_op_kind op,
-   union value arg1, union value arg2)
+   union value *args, int32_t nargs)
 {
+   assert(nargs == 2);
 	struct object_table *tbl = (struct object_table*)obj;
    union class_op_result res;
-	table_set(&tbl->table, vm, arg1, arg2);
-   res.value = arg2;
+	table_set(&tbl->table, vm, args[0], args[1]);
+   res.value = args[1];
 	return res;
 }
 

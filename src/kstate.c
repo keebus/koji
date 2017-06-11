@@ -51,6 +51,9 @@ koji_open(struct koji_allocator *alloc)
 	state->alloc = *alloc;
 	vm_init(&state->vm, alloc);
 
+   /* record builtin functions */
+
+
 	return state;
 }
 

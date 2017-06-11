@@ -96,9 +96,10 @@ int32_t main()
 #define DIR "../tests/"
    static const char *simple_tests[] = {
       //DIR "empty.kj",
+      DIR "assert.kj",
       //DIR "numbers.kj",
       //DIR "booleans.kj",
-      DIR "closures.kj",
+      //DIR "closures.kj",
       NULL
    };
 

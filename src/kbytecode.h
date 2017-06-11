@@ -18,24 +18,24 @@
  */
 enum opcode {
   /* operations that write into R(A) */
-   OP_LOADNIL,  /* loadnil A, Bx;    ; R(A), ..., R(Bx) = nil */
-   OP_LOADBOOL, /* loadbool A, B, C  ; R(A) = bool(B) then jump by C */
-   OP_MOV,      /* mov A, Bx         ; R(A) = R(Bx) */
-   OP_NEG,      /* neg A, Bx         ; R(A) = not R(Bx) */
-   OP_UNM,      /* unm A, Bx         ; R(A) = -R(Bx) */
-   OP_ADD,      /* add A, B, C       ; R(A) = R(B) + R(C) */
-   OP_SUB,      /* sub A, B, C       ; R(A) = R(B) - R(C) */
-   OP_MUL,      /* mul A, B, C       ; R(A) = R(B) * R(C) */
-   OP_DIV,      /* div A, B, C       ; R(A) = R(B) / R(C) */
-   OP_MOD,      /* mod A, B, C       ; R(A) = R(B) % R(C) */
-   OP_POW,      /* pow A, B, C       ; R(A) = pow(R(B), R(C)) */
-   OP_TESTSET,  /* testset A, B, C   ; if R(B) == (bool)C then
+   OP_LOADNIL,  /* loadnil A, Bx;   ; R(A), ..., R(Bx) = nil */
+   OP_LOADBOOL, /* loadbool A, B, C ; R(A) = bool(B) then jump by C */
+   OP_MOV,      /* mov A, Bx        ; R(A) = R(Bx) */
+   OP_NEG,      /* neg A, Bx        ; R(A) = not R(Bx) */
+   OP_UNM,      /* unm A, Bx        ; R(A) = -R(Bx) */
+   OP_ADD,      /* add A, B, C      ; R(A) = R(B) + R(C) */
+   OP_SUB,      /* sub A, B, C      ; R(A) = R(B) - R(C) */
+   OP_MUL,      /* mul A, B, C      ; R(A) = R(B) * R(C) */
+   OP_DIV,      /* div A, B, C      ; R(A) = R(B) / R(C) */
+   OP_MOD,      /* mod A, B, C      ; R(A) = R(B) % R(C) */
+   OP_POW,      /* pow A, B, C      ; R(A) = pow(R(B), R(C)) */
+   OP_TESTSET,  /* testset A, B, C  ; if R(B) == (bool)C then
                                           R(A) = R(B) else jump 1 */
-   OP_CLOSURE,  /* closure A, Bx     ; R(A) = closure for prototype Bx */
-   OP_GLOBALS,  /* globals A         ; get the global table into register A */
-   OP_NEWTABLE, /* newtable A        ; creates a new table in R(A) */
-   OP_GET,      /* get A, B, C       ; R(A) = R(B)[R(C)] */
-   OP_THIS,     /* this A            ; R(A) = this */
+   OP_CLOSURE,  /* closure A, Bx    ; R(A) = closure for prototype Bx */
+   OP_GETGLOB,  /* getglob A, Bx    ; get global val with key R(Bx) into R(A)*/
+   OP_NEWTABLE, /* newtable A       ; creates a new table in R(A) */
+   OP_GET,      /* get A, B, C      ; R(A) = R(B)[R(C)] */
+   OP_THIS,     /* this A           ; R(A) = this */
 
    /* operations that do not write into R(A) */
    OP_TEST,     /* test A, Bx        ; if (bool)R(A) != (bool)B then jump 1 */
@@ -46,12 +46,11 @@ enum opcode {
                                           then nothing else jump 1 */
    OP_LTE,      /* lte A, B, C       ; if (R(A) <= R(B)) == (bool)C
                                           then nothing else jump 1 */
-   OP_SCALL,    /* scall A, B, C     ; call static function at K[B] with C
-                                          arguments starting from R(A) */
-   OP_CALL,     /* call A, B, C      ; call closure R(B) with C arguments
+   OP_CALL,     /* call A, B, C      ; call object R(C) with B arguments
                                           starting at R(A) */
    OP_MCALL,    /* mcall A, B, C     ; call object R(A - 1) method with name
                                           R(B) with C arguments from R(A) on */
+   OP_SETGLOB,  /* setglob A, Bx     ; set global val R(A) with key R(Bx) */
    OP_SET,      /* set A, B, C       ; R(A)[R(B)] = R(C) */
    OP_RET,      /* ret A, B          ; return values R(A), ..., R(B)*/
    OP_THROW,    /* throw A           ; throws an error with R(A) msg string */
@@ -59,10 +58,10 @@ enum opcode {
 };
 
 static const char *OP_STRINGS[] = {
-    "loadnil",  "loadb", "mov",  "neg",   "unm",     "add",     "sub",
-    "mul",      "div",   "mod",  "pow",   "testset", "closure", "globals",
-    "newtable", "get",   "this", "test",  "jump",    "eq",      "lt",
-    "lte",      "scall", "call", "mcall", "set",     "ret",     "throw",
+    "loadnil",  "loadbool", "mov",   "neg",   "unm",     "add",     "sub",
+    "mul",      "div",      "mod",   "pow",   "testset", "closure", "getglob",
+    "newtable", "get",   "this",  "test",    "jump",    "eq",      "lt",
+    "lte",      "call",  "mcall", "setglob", "set",     "ret",     "throw",
     "debug",
 };
 
@@ -79,7 +78,7 @@ static const int32_t MAX_BX_VALUE = 131071;
  * Returns whether opcode @op involves writing into register A.
  */
 static bool
-opcode_has_target(enum opcode op)
+op_has_target(enum opcode op)
 {
    return op <= OP_THIS;
 }

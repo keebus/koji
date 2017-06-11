@@ -1,0 +1,4 @@
+
+/* tests that assert works */
+var a = 1
+assert(a > 0)

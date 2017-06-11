@@ -70,7 +70,7 @@ struct koji_source {
 
 /*
  * A koji state encapsulates all state needed by koji for script compilation
- * and execution and is, in fact, the target of all API operations.
+ * and execution and is the target of all API operations.
  */
 typedef struct koji_state koji_state_t;
 

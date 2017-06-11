@@ -47,7 +47,7 @@ union class_op_result {
  * releases all other resources held by the object. This function is also
  * responsible for deallocating the object itself.
  */
-typedef void (*class_dtor_t) (struct vm*, struct object*);
+typedef void (*class_method_t) (struct vm*, struct object*);
 
 /*
  * Class operator function type. [vm] is the current virtual machine invoking
@@ -55,8 +55,7 @@ typedef void (*class_dtor_t) (struct vm*, struct object*);
  * operator kind to be invoked while [arg1] and [arg2] are the arguments to the
  * operator (arg2 might be nil, depending on the operator kind)
  */
-typedef union class_op_result (*class_op_t) (struct vm *vm, struct object *obj,
-   enum class_op_kind op, union value arg1, union value arg2);
+typedef union class_op_result (*class_op_t) (struct vm *vm, struct object *obj);
 
 /*
  * The class object base type. Every object in koji is an instance of a class,
@@ -76,7 +75,7 @@ struct class {
  */
 kintern union class_op_result
 class_op_invalid(struct vm*, struct object *, enum class_op_kind,
-   union value arg1, union value arg2);
+   union value *args, int32_t nargs);
 
 /*
  * Class default compare operator. It sorts by type first, with primitive types
@@ -85,22 +84,21 @@ class_op_invalid(struct vm*, struct object *, enum class_op_kind,
  */
 kintern union class_op_result
 class_op_compare_default(struct vm*, struct object *,
-   enum class_op_kind, union value arg1, union value arg2);
+   enum class_op_kind, union value *args, int32_t nargs);
 
 /*
  * Class default hash operator. It hashes the object pointer.
  */
 kintern union class_op_result
 class_op_hash_default(struct vm*, struct object *, enum class_op_kind,
-   union value arg1, union value arg2);
+   union value *args, int32_t nargs);
 
 /*
  * Initializes the class [cls] to a default class where [class_cls] is the 
  * "class" class and [name] is the class [cls] name.
  */
 kintern void
-class_init_default(struct class* cls, struct class *class_cls,
-   const char *name);
+class_init_default(struct class* cls, struct class *class_cls, const char *name);
 
 /*
  * Initializes the "class" class.

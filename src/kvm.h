@@ -41,6 +41,10 @@ enum vm_state {
  */
 struct vm {
 	struct koji_allocator alloc; /* memory allocator */
+   struct class cls_builtin; /* the `builtin class` class */
+   struct class cls_string;  /* the `string` class */
+   struct class cls_table;   /* the `table` class */
+   struct table globals;     /* table of globals */
 	enum vm_state validstate; /* whether the VM is in a valid state for exec. */
 	struct vm_frame *framestack; /* stack of activation frames */
 	int32_t framesp; /* frame stack pointer */
@@ -49,9 +53,6 @@ struct vm {
    int32_t valuesp; /* stack pointer */
 	int32_t valueslen; /* maximum elements capacity of the current value stack */
 	jmp_buf errorjmpbuf; /* #documentation */
-	struct class cls_builtin; /* #documentation */
-	struct class cls_string;
-	struct class cls_table;
 };
 
 /*

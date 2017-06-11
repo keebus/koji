@@ -307,7 +307,7 @@ loc_is_const(loc_t l)
 static bool
 loc_is_temp(struct compiler *c, loc_t l)
 {
-   return l >= (loc_t)c->pi.nlocals;
+   return l >= c->pi.nlocals;
 }
 
 /* expression handling */
@@ -649,7 +649,7 @@ emit(struct compiler *c, instr_t instr)
 {
    /* if instruction has target, update the current prototype total number of
       used registers */
-   if (opcode_has_target(decode_op(instr)))
+   if (op_has_target(decode_op(instr)))
       c->pi.nregs = max_i32(c->pi.nregs, decode_A(instr) + 1);
 
    *array_push(&c->instrs, &c->pi.instrs_end, &c->instrs_len, &c->lex.alloc, loc_t, 1)
@@ -718,7 +718,8 @@ expr_const(struct compiler *c, loc_t target_hint, int32_t constidx)
 }
 
 /*
- * Fetches or defines if not found a real cnst [num] and returns its index.
+ * Fetches or defines if not found a real cnst [num] and returns a location
+ * expression referencing the constant.
  */
 static struct expr
 const_fetch_num(struct compiler *c, loc_t target_hint, koji_number_t num)
@@ -745,8 +746,8 @@ done:
 }
 
 /*
- * Fetches or defines if not found a string cnst [str] and returns its
- * constant index.
+ * Fetches or defines if not found a string cnst [str] and returns a location
+ * expression referencing the constant.
  */
 static struct expr
 const_fetch_str(struct compiler *c, loc_t target_hint, const char *chars,
@@ -1115,7 +1116,7 @@ compile_logical_op(struct compiler *c, struct expr_state *es, enum binop op,
 
    offset = branch_push(c, testval ? &c->pi.branch_true : &c->pi.branch_false);
    *offset = c->pi.instrs_end;
-   emit(c, OP_JUMP);
+   emit(c, encode_ABx(OP_JUMP, 0, 0));
 
    /* if we're testing to true then the branch to jump to if evaluation is false
       is the false branch and viceversa */
@@ -1199,11 +1200,11 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
             setting to this location, we can simply replace the A operand of
             all those instructions to [to] and optimize out the 'move'
             instruction */
-         if (targetloc >= c->pi.temp) {
+         if (loc_is_temp(c, targetloc)) {
             /* first check whether last instruction targets old location, if so
                update it with the new desired location */
             instr_t *instr = &c->instrs[c->pi.instrs_end - 1];
-            if (opcode_has_target(decode_op(*instr)) && decode_A(*instr)
+            if (op_has_target(decode_op(*instr)) && decode_A(*instr)
                == targetloc) {
               /* target matches result expression target register? if so,
                  replace it with [to] */
@@ -1287,10 +1288,10 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
       replace_C(c->instrs + load_false_instr_idx,
          offset_to_next_instr(c, load_false_instr_idx));
 
-/* If the final subexpression was a register, check if we have added any
-   loadb instruction. If so, set the right jump offset to this location,
-   otherwise pop the last instruction which is the "jump" after the "mov"
-   or "neg" to skip the loadbool instructions. */
+   /* If the final subexpression was a register, check if we have added any
+      loadb instruction. If so, set the right jump offset to this location,
+      otherwise pop the last instruction which is the "jump" after the "mov"
+      or "neg" to skip the loadbool instructions. */
    if (!value_is_compare) {
       if (!set_value_to_true && !set_value_to_false)
          --c->pi.instrs_end;
@@ -1367,30 +1368,48 @@ push_prototype(struct compiler *c, int32_t nargs, struct protoinfo const *pi)
  * Todo
  */
 static struct expr
-parse_localref_or_call(struct compiler *c, struct expr_state *es)
+parse_ref_or_call(struct compiler *c, struct expr_state *es)
 {
-   int32_t idlen;
-   struct local *local;
    assert(peek(c, tok_identifier));
 
-   idlen = c->lex.tokstrlen; /* remember identifier length */
-
-   /* temporary remember the identifier as we need to carry on lexing to know
-      whether it's a local variable reference or a function call */
-   char *id = kalloca(idlen + 1);
-   memcpy(id, c->lex.tokstr, idlen + 1);
-   lex(c);
-
    /* identifier refers to local variable? */
-   if ((local = local_fetch(c, id))) {
-      return expr_loc(local->loc);
+   loc_t temp = c->pi.temp;
+   struct expr val;
+   struct local *local = local_fetch(c, c->lex.tokstr);
+
+   if (local) {
+      val = expr_loc(local->loc);
+   }
+   else {
+      /* then it must be a global */
+      val = const_fetch_str(c, c->pi.temp, c->lex.tokstr, c->lex.tokstrlen);
+      emit(c, encode_ABx(OP_GETGLOB, c->pi.temp, val.val.loc));
+      val = expr_loc(c->pi.temp++);
    }
 
-   assert(!"todo");
-   (void)es;
-   return expr_nil();
-}
+   lex(c); /* eat the id */
 
+   /* is this is not a function call, early out */
+   if (accept(c, '(')) {
+      int nargs = 0;
+      loc_t firstarg = c->pi.temp;
+
+      /* compile arguments starting from firstarg */
+      if (!accept(c, ')')) {
+         do {
+            parse_exprto(c, c->pi.temp++, true);
+            ++nargs;
+         } while (accept(c, ','));
+         expect(c, ')');
+      }
+
+      emit(c, encode_ABC(OP_CALL, firstarg, nargs, val.val.loc));
+      val = expr_loc(firstarg);
+   }
+
+   c->pi.temp = temp;
+   return val;
+}
 
 /*
  * Parses and returns a subexpression like "(a + 2)".
@@ -1571,7 +1590,7 @@ parse_primary_expr(struct compiler *c, struct expr_state *es)
          break;
 
       case tok_identifier:
-         expr = parse_localref_or_call(c, es);
+         expr = parse_ref_or_call(c, es);
          break;
 
       case kw_func:
@@ -1867,7 +1886,7 @@ parse_stmt_if(struct compiler *c)
    if (accept(c, kw_else)) {
       /* emit the jump from the true branch that will skip the else block */
       int32_t exitjmpidx = c->pi.instrs_end;
-      emit(c, OP_JUMP);
+      emit(c, encode_ABx(OP_JUMP, 0, 0));
 
       /* bind the branch to "else branch" contained in the true branch
          (remember, we're compiling the condition to false, so branches are
@@ -2011,7 +2030,7 @@ parse_prototype_body(struct compiler *c)
    parse_stmts(c);
 
    /* emit a return nil instr if none emitted */
-   if (c->pi.instrs_end > c->pi.instrs_beg &&
+   if (c->pi.instrs_end <= c->pi.instrs_beg ||
       decode_op(c->instrs[c->pi.instrs_end - 1]) != OP_RET)
       emit(c, encode_ABx(OP_RET, 0, 0));
 }
