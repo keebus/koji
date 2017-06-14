@@ -75,12 +75,12 @@ prototype_new(int32_t nconsts, int32_t ninstrs, int32_t nprotos,
 }
 
 kintern void
-prototype_release(struct prototype *proto, struct koji_allocator *alloc)
+prototype_unref(struct prototype *proto, struct koji_allocator *alloc)
 {
    if (--proto->refs == 0) {
       /* delete all child protos that reach reference to zero */
       for (int32_t i = 0, n = (int32_t)proto->nprotos; i < n; ++i)
-         prototype_release(proto->protos[i], alloc);
+         prototype_unref(proto->protos[i], alloc);
 
       /* destroy constant values */
       for (int32_t i = 0, n = proto->nconsts; i < n; ++i)

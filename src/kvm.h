@@ -93,7 +93,7 @@ vm_top(struct koji_vm *, int32_t offset);
 kintern union value*
 vm_push(struct koji_vm *);
 
-kintern union value
+kintern void
 vm_pop(struct koji_vm *);
 
 kintern void

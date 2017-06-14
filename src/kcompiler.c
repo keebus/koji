@@ -764,11 +764,11 @@ const_fetch_str(struct compiler *c, loc_t target_hint, const char *chars,
       if (!value_isobj(*cnst))
          continue;
 
-      struct string *string = value_getobjv(*cnst);
-      if (string->object.class != c->cls_string)
+      struct string *str = value_getobjv(*cnst);
+      if (str->object.class != c->cls_string)
          continue;
 
-      if (string->len == len && memcmp(string->chars, chars, len) == 0) {
+      if (string_len(str) == len && memcmp(str->chars, chars, len) == 0) {
          constidx = i;
          goto done;
       }
@@ -2086,7 +2086,7 @@ cleanup:
    for (int32_t i = 0; i < comp.pi.consts_end; ++i)
       value_const_destroy(comp.consts[i], &info->alloc);
    for (int32_t i = 0; i < comp.pi.protos_end; ++i)
-      prototype_release(comp.protos[i], &info->alloc);
+      prototype_unref(comp.protos[i], &info->alloc);
    kfree(comp.instrs, comp.instrs_len, &info->alloc);
    kfree(comp.consts, comp.consts_len, &info->alloc);
    kfree(comp.protos, comp.protos_len, &info->alloc);

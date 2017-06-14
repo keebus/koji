@@ -39,8 +39,12 @@ string_free(struct string *, struct koji_allocator *);
  * Returns the length of the string, i.e. the number of characters without the
  * null byte.
  */
-kintern uint32_t
-string_len(struct string const *);
+static uint32_t
+string_len(struct string const *str)
+{
+   return str->object.size - sizeof(struct string) - 1;
+}
+
 
 /*
  * Allocates a str like [string_new] and returns an object value with it.

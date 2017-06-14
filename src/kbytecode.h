@@ -203,7 +203,7 @@ prototype_new(int32_t nconsts, int32_t ninstrs, int32_t nprotos,
 /*
  */
 kintern void
-prototype_release(struct prototype *proto, struct koji_allocator *alloc);
+prototype_unref(struct prototype *proto, struct koji_allocator *alloc);
 
 /*
  * Dumps the compiled prototype bytecode to stdout for debugging showing the

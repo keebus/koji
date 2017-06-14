@@ -153,14 +153,14 @@ koji_string_len(koji_t vm, int offset)
 	struct string *str = value_getobjv(value);
 	if (str->object.class != vm->class_string)
 		return -1;
-	return str->len;
+	return string_len(str);
 }
 
 KOJI_API void
 koji_push_class(koji_t vm, const char *name, const char **members, int nmembers)
 {
    *vm_push(vm) = value_obj(class_new(vm->class_class, name,
-      strlen(name), members, nmembers, &vm->alloc));
+      (int32_t)strlen(name), members, nmembers, &vm->alloc));
 }
 
 KOJI_API koji_result_t
@@ -191,7 +191,7 @@ koji_class_set_fn(koji_t vm, int offset, const char *member,
    if (c->object.class != vm->class_class)
       return KOJI_ERROR_INVALID;
    
-   struct class_member *m = class_getmember(c, member, strlen(member));
+   struct class_member *m = class_getmember(c, member, (int32_t)strlen(member));
    if (!m)
       return KOJI_ERROR_INVALID;
 

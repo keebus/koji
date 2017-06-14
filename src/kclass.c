@@ -13,7 +13,7 @@
 #include <string.h>
 
 static int
-class_dtor_default(koji_t vm, void *user, enum koji_op op, int nargs)
+class_op_dtor_default(koji_t vm, void *user, enum koji_op op, int nargs)
 {
 	return 0; /* nothing to do */
 }
@@ -24,10 +24,9 @@ class_op_hash_default(struct object *obj)
 	return (uint64_t)obj;
 }
 
-kintern struct class*
-class_new(struct class *class_class, const char *name, int32_t namelen,
-   const char **members, int32_t nmembers,
-   struct koji_allocator *alloc)
+static __forceinline struct class*
+class_new_ex(const char *name, int32_t namelen, const char **members,
+   int32_t nmembers, struct koji_allocator *alloc)
 {
    uint64_t seed = 0;
    int32_t memberslen = nmembers;
@@ -36,7 +35,7 @@ class_new(struct class *class_class, const char *name, int32_t namelen,
    int32_t memnamelentot = 0;
 
    for (int32_t i = 0; i < nmembers; ++i) {
-      int32_t len = strlen(members[i]);
+      int32_t len = (int32_t)strlen(members[i]);
       memsizes[i] = len;
       memnamelentot += len + 1;
    }
@@ -62,18 +61,19 @@ retry:
 
    struct class *cls = alloc->alloc(size, alloc->user);
    cls->object.refs = 1;
-   cls->object.class = class_class;
-   cls->size = size;
+   cls->object.size = size;
    cls->memberslen = memberslen;
    cls->seed = seed;
-   cls->hash = class_op_hash_default;
-
-   memset(cls->members, 0, allmemberslen * sizeof(struct class_member));
 
    char *names = (char*)(cls->members + allmemberslen);
    cls->name = names;
    memcpy(cls->name, name, namelen + 1);
    names += namelen + 1;
+
+   memset(cls->members, 0, allmemberslen * sizeof(struct class_member));
+   
+   cls->hash = class_op_hash_default;
+   cls->members[KOJI_OP_DTOR].func = class_op_dtor_default;
 
    for (int32_t i = 0; i < memberslen; ++i) {
       uint32_t idx = KOJI_OP_USER0 + i;
@@ -85,10 +85,29 @@ retry:
    return cls;
 }
 
+static int
+class_class_call(koji_t vm, void *user, enum koji_op op, int nargs)
+{
+   struct class *c = (struct class *)user - 1;
+   return c->members[KOJI_OP_CTOR].func(vm, user, op, nargs);
+}
+
+
+kintern struct class*
+class_new(struct class *class_class, const char *name, int32_t namelen,
+   const char **members, int32_t nmembers,
+   struct koji_allocator *alloc)
+{
+   struct class *c = class_new_ex(name, namelen, members, nmembers, alloc);
+   c->object.class = class_class;
+   ++class_class->object.refs;
+   return c;
+}
+
 kintern void
 class_free(struct class *class, struct koji_allocator *alloc)
 {
-   alloc->free(class, class->size, alloc->user);
+   alloc->free(class, class->object.size, alloc->user);
 }
 
 kintern struct class_member *
@@ -102,4 +121,14 @@ class_getmember(struct class *class, const char *member, int memberlen)
       return NULL;
 
    return m;
+}
+
+kintern struct class *
+class_class_new(struct koji_allocator *alloc)
+{
+    struct class *c = class_new_ex("class", 5, NULL, 0, alloc);
+    c->object.refs = 2;
+    c->object.class = c;
+    c->members[KOJI_OP_CALL].func = class_class_call;
+    return c;
 }

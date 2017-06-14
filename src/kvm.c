@@ -58,11 +58,7 @@ vm_init(struct koji_vm *vm, struct koji_allocator *alloc)
 	vm->alloc = *alloc;
 
    /* init builtin classes */
-   {
-      vm->class_class = class_new(NULL, "class", 5, NULL, 0, alloc);
-      vm->class_class->object.refs = 2;
-      vm->class_class->object.class = vm->class_class;
-   }
+   vm->class_class = class_class_new(alloc);
    vm->class_string = class_string_new(vm->class_class, alloc);
    vm->class_table = NULL;
 
@@ -93,7 +89,7 @@ vm_deinit(struct koji_vm *vm)
 
 	/* release frame stack prototype references */
 	for (i = 0; i < vm->framesp; ++i) {
-		prototype_release(vm->framestack[i].proto, &vm->alloc);
+		prototype_unref(vm->framestack[i].proto, &vm->alloc);
 	}
 	kfree(vm->framestack, vm->frameslen, &vm->alloc);
 
@@ -101,12 +97,12 @@ vm_deinit(struct koji_vm *vm)
    table_deinit(&vm->globals, vm);
 
    /* release builtin classes */
-   assert(vm->class_class->object.refs == 4);
+   assert(vm->class_class->object.refs == 3);
    assert(vm->class_string->object.refs == 1);
-   assert(vm->class_table->object.refs == 1);
+   //assert(vm->class_table->object.refs == 1);
    class_free(vm->class_class, &vm->alloc);
    class_free(vm->class_string, &vm->alloc);
-   class_free(vm->class_table, &vm->alloc);
+   //class_free(vm->class_table, &vm->alloc);
 }
 
 kintern void
@@ -173,14 +169,11 @@ vm_push(struct koji_vm *vm)
 	return vm->valuestack + valuesp;
 }
 
-kintern union value
+kintern void
 vm_pop(struct koji_vm *vm)
 {
-	union value *value = vm_top(vm, -1);
-	union value retvalue = *value;
-	*value = value_nil();
-	--vm->valuesp;
-	return retvalue;
+   assert(vm->valuesp > 0);
+   vm_value_destroy(vm, vm->valuestack[--vm->valuesp]);
 }
 
 kintern void
@@ -330,7 +323,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 				break;
 
          case OP_GETGLOB:
-            *RA = table_get(&vm->globals, vm, ARG(Bx));
+            vm_value_set(vm, RA, table_get(&vm->globals, vm, ARG(Bx)));
             break;
 
 			case OP_NEWTABLE:
@@ -399,11 +392,11 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
          case OP_CALL:
             ra = RA;
             arg1 = ARG(C);
-            /*if (value_isobj(arg1)) {
+            if (value_isobj(arg1)) {
                struct object *obj = value_getobj(arg1);
-               obj->class->operator[CLASS_OP_CALL](vm, obj, CLASS_OP_CALL, arg1, value_nil())
+               obj->class->members[KOJI_OP_CALL](vm, obj + 1, KOJI_OP_CALL, arg1, value_nil())
             }
-            break;*/
+            break;
 
          case OP_SETGLOB:
             table_set(&vm->globals, vm, ARG(Bx), *RA);
@@ -447,7 +440,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 				vm->framesp -= 1;
 				vm->valuesp -= frame->proto->nregs;
 
-				prototype_release(frame->proto, alloc);
+				prototype_unref(frame->proto, alloc);
 				goto new_frame;
          }
 
@@ -510,15 +503,17 @@ vm_object_unref(struct koji_vm *vm, struct object *obj)
 {
 entry:
 	assert(obj && obj->refs > 0);
-   if (--obj->refs == 0) {
-      struct class *cls = obj->class;
-      struct object *cls_obj = &cls->object;
-      int32_t nret =
-		  cls->members[KOJI_OP_DTOR].func(vm, obj + 1, KOJI_OP_DTOR, 0);
-      assert(nret == 0);
-      obj = cls_obj; 
-      goto entry;
-   }
+   if (--obj->refs > 0)
+      return;
+
+   struct class *cls = obj->class;
+   struct object *cls_obj = &cls->object;
+   int32_t nret = cls->members[KOJI_OP_DTOR]
+                  .func(vm, obj + 1, KOJI_OP_DTOR, 0);
+   assert(nret == 0);
+   vm->alloc.free(obj, obj->size, vm->alloc.user);
+   obj = cls_obj;
+   goto entry;
 }
 
 kintern uint64_t

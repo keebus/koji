@@ -64,7 +64,7 @@ value_new_stringf(struct class *cls_string, struct koji_allocator *alloc,
 static uint64_t
 string_class_hash(struct string *str)
 {
-	return murmur2(str->chars, str->len, 0);
+	return murmur2(str->chars, string_len(str), 0);
 }
 
 kintern struct class *

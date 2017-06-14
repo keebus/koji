@@ -77,6 +77,7 @@ struct koji_source {
 typedef struct koji_vm * koji_t;
 
 enum koji_op {
+   KOJI_OP_CTOR,
    KOJI_OP_DTOR,
    KOJI_OP_UNM,
    KOJI_OP_ADD,
@@ -87,6 +88,7 @@ enum koji_op {
    KOJI_OP_COMPARE,
    KOJI_OP_GET,
    KOJI_OP_SET,
+   KOJI_OP_CALL,
    KOJI_OP_USER0,
 };
 

@@ -33,7 +33,7 @@ test_string(koji_t vm)
    assert(value_isobj(val));
    assert(str->object.class == vm->class_string);
    assert(str->object.refs == 1);
-   assert(str->len == 12);
+   assert(string_len(str) == 12);
    assert(strcmp(str->chars, "hello world!") == 0);
 
    vm_value_destroy(vm, val);
@@ -89,7 +89,10 @@ test_simple(const char *filename)
 static int
 vector_fns(koji_t vm, void *user, enum koji_op op, int nargs)
 {
-   if (op == KOJI_OP_ADD) {
+   if (op == KOJI_OP_CTOR) {
+      nargs = 1;
+   }
+   else if (op == KOJI_OP_ADD) {
       nargs = 1;
    }
    else {
@@ -107,9 +110,11 @@ test_hostclass(void)
    const char *methods[] = { "length" };
 
    koji_push_class(vm, "Vector", methods, 1);
+   koji_class_set_op(vm, -1, KOJI_OP_CTOR, vector_fns);
    koji_class_set_op(vm, -1, KOJI_OP_ADD, vector_fns);
+   koji_class_set_fn(vm, -1, "length", vector_fns);
    koji_setglobal(vm, "Vector");
-
+   
    koji_result_t res = koji_load_file(vm, DIR "hostclass.kj");
    if (res) {
       printf("Compile error: %s\n", koji_string(vm, -1));
