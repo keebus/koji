@@ -2084,7 +2084,7 @@ compile(struct compile_info *info, struct prototype **proto)
 
 cleanup:
    for (int32_t i = 0; i < comp.pi.consts_end; ++i)
-      const_destroy(comp.consts[i], &info->alloc);
+      value_const_destroy(comp.consts[i], &info->alloc);
    for (int32_t i = 0; i < comp.pi.protos_end; ++i)
       prototype_release(comp.protos[i], &info->alloc);
    kfree(comp.instrs, comp.instrs_len, &info->alloc);

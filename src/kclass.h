@@ -20,7 +20,7 @@ typedef uint64_t (* class_op_hash_t) (struct object *);
 
 struct class {
    struct object object;
-   const char *name;
+   char *name;
    int32_t size;
    int32_t memberslen;
    uint64_t seed;

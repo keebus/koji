@@ -17,16 +17,15 @@
  */
 struct string {
    struct object object; /* the object base */
-   int32_t len; /* str length excluding null byte */
    char chars[]; /* str chars */
 };
 
 /*
  * Allocates a str with specified length [len] using specified alloc.
- * [cls_string] is a pointer to the `str` class.
+ * [class_string] is a pointer to the `str` class.
  */
 kintern struct string *
-string_new(struct class *cls_string, struct koji_allocator *, int32_t len);
+string_new(struct class *class_string, struct koji_allocator *, int32_t len);
 
 /*
  * Frees string using specified allocator. This function will decrement string
@@ -37,28 +36,36 @@ kintern void
 string_free(struct string *, struct koji_allocator *);
 
 /*
- * Allocates a str like [string_new] and returns an object value with it.
+ * Returns the length of the string, i.e. the number of characters without the
+ * null byte.
  */
-kintern union value
-value_new_string(struct class *cls_string, struct koji_allocator *, int32_t len);
+kintern uint32_t
+string_len(struct string const *);
 
 /*
  * Allocates a str like [string_new] and returns an object value with it.
  */
 kintern union value
-value_new_stringfv(struct class *cls_string, struct koji_allocator *,
+value_new_string(struct class *class_string, struct koji_allocator *,
+	int32_t len);
+
+/*
+ * Allocates a str like [string_new] and returns an object value with it.
+ */
+kintern union value
+value_new_stringfv(struct class *class_string, struct koji_allocator *,
    const char* format, va_list args);
 
 /*
  * Allocates a str like [string_new] and returns an object value with it.
  */
 kintern union value
-value_new_stringf(struct class *cls_string, struct koji_allocator *,
+value_new_stringf(struct class *class_string, struct koji_allocator *,
    const char *format, ...);
 
 /*
- * Initializes class [cls_string] to "str". [class_class] is the "class"
+ * Initializes class [class_string] to "str". [class_class] is the "class"
  * class.
  */
-kintern void
-class_string_init(struct class *cls_string, struct class *cls_builtin);
+kintern struct class *
+class_string_new(struct class *class_class, struct koji_allocator *);

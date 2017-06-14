@@ -31,6 +31,7 @@ union value {
  */
 struct object {
    int32_t refs;
+   uint32_t size;
    struct class *class;
 };
 
@@ -135,6 +136,7 @@ value_tobool(union value val)
 }
 
 /*
+ * Get the object referenced by value [val].
  */
 static struct object *
 value_getobj(union value val)
@@ -143,6 +145,11 @@ value_getobj(union value val)
    return (struct object *)(intptr_t)(val.bits & BITS_TAG_PAYLOAD);
 }
 
+/*
+ * Get the object referenced by value [val]. This macro casts the object to a
+ * void*, to be used when you already know the type of the object e.g.
+ * struct string *s = value_getobjv(myval);
+ */
 #define value_getobjv(val) ((void *)value_getobj(val))
 
 /*
@@ -152,4 +159,4 @@ kintern const char *
 value_type_str(union value val);
 
 kintern void
-const_destroy(union value c, struct koji_allocator *alloc);
+value_const_destroy(union value c, struct koji_allocator *alloc);

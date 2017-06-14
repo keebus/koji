@@ -84,7 +84,7 @@ prototype_release(struct prototype *proto, struct koji_allocator *alloc)
 
       /* destroy constant values */
       for (int32_t i = 0, n = proto->nconsts; i < n; ++i)
-         const_destroy(proto->consts[i], alloc);
+         value_const_destroy(proto->consts[i], alloc);
 
       alloc->free(proto, proto->size, alloc);
    }

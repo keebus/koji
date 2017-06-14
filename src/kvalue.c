@@ -20,7 +20,7 @@ value_type_str(union value val)
 }
 
 kintern void
-const_destroy(union value c, struct koji_allocator *alloc)
+value_const_destroy(union value c, struct koji_allocator *alloc)
 {
 	if (value_isobj(c)) {
       /* the only allowed objects as constants are strings */

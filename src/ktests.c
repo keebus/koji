@@ -86,8 +86,8 @@ test_simple(const char *filename)
 
 #define DIR "../tests/"
 
-static void
-vector_fns(koji_t vm, enum koji_op op, int nargs)
+static int
+vector_fns(koji_t vm, void *user, enum koji_op op, int nargs)
 {
    if (op == KOJI_OP_ADD) {
       nargs = 1;
@@ -96,6 +96,7 @@ vector_fns(koji_t vm, enum koji_op op, int nargs)
       /* length */
       nargs = 1;
    }
+   return 0;
 }
 
 static bool
@@ -129,12 +130,12 @@ test_hostclass(void)
 
 int32_t main()
 {
-   koji_t state = koji_open(NULL);
+   koji_t vm = koji_open(NULL);
 
-   test_string(state);
-   test_table(state);
+   test_string(vm);
+   test_table(vm);
 
-   koji_close(state);
+   koji_close(vm);
 
    static const char *simple_tests[] = {
       //DIR "empty.kj",

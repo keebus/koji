@@ -59,12 +59,11 @@ vm_init(struct koji_vm *vm, struct koji_allocator *alloc)
 
    /* init builtin classes */
    {
-      const char name[] = "class";
-      vm->class_class = class_new(NULL, name, sizeof(name) - 1, NULL, 0, alloc);
+      vm->class_class = class_new(NULL, "class", 5, NULL, 0, alloc);
       vm->class_class->object.refs = 2;
       vm->class_class->object.class = vm->class_class;
    }
-   vm->class_string = NULL;
+   vm->class_string = class_string_new(vm->class_class, alloc);
    vm->class_table = NULL;
 
    /* init table of globals */
@@ -512,9 +511,10 @@ vm_object_unref(struct koji_vm *vm, struct object *obj)
 entry:
 	assert(obj && obj->refs > 0);
    if (--obj->refs == 0) {
-      struct object *cls_obj = &obj->class->object;
+      struct class *cls = obj->class;
+      struct object *cls_obj = &cls->object;
       int32_t nret =
-		   obj->class->members[KOJI_OP_DTOR].func(vm, obj + 1, KOJI_OP_DTOR, 0);
+		  cls->members[KOJI_OP_DTOR].func(vm, obj + 1, KOJI_OP_DTOR, 0);
       assert(nret == 0);
       obj = cls_obj; 
       goto entry;

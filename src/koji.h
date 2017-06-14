@@ -137,6 +137,6 @@ KOJI_API void
 koji_pop(koji_t, int n);
 
 KOJI_API void
-koji
+koji_setglobal(koji_t, const char *key);
 
 #endif /* KOJI_H_ */

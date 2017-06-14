@@ -12,6 +12,18 @@
 #include <stdio.h>
 #include <string.h>
 
+static int
+class_dtor_default(koji_t vm, void *user, enum koji_op op, int nargs)
+{
+	return 0; /* nothing to do */
+}
+
+static uint64_t
+class_op_hash_default(struct object *obj)
+{
+	return (uint64_t)obj;
+}
+
 kintern struct class*
 class_new(struct class *class_class, const char *name, int32_t namelen,
    const char **members, int32_t nmembers,
@@ -21,12 +33,12 @@ class_new(struct class *class_class, const char *name, int32_t namelen,
    int32_t memberslen = nmembers;
    bool *memused = kalloca(nmembers);
    int32_t *memsizes = kalloca(nmembers * sizeof(int32_t));
-   int32_t memnamelen = 0;
+   int32_t memnamelentot = 0;
 
    for (int32_t i = 0; i < nmembers; ++i) {
       int32_t len = strlen(members[i]);
       memsizes[i] = len;
-      memnamelen += len + 1;
+      memnamelentot += len + 1;
    }
 
 retry:
@@ -46,18 +58,23 @@ retry:
    int32_t size = sizeof(struct class)
       + namelen + 1
       + allmemberslen * sizeof(struct class_member)
-      + memnamelen;
+      + memnamelentot;
 
    struct class *cls = alloc->alloc(size, alloc->user);
    cls->object.refs = 1;
-   cls->object.class = NULL;
+   cls->object.class = class_class;
    cls->size = size;
    cls->memberslen = memberslen;
    cls->seed = seed;
+   cls->hash = class_op_hash_default;
 
    memset(cls->members, 0, allmemberslen * sizeof(struct class_member));
 
    char *names = (char*)(cls->members + allmemberslen);
+   cls->name = names;
+   memcpy(cls->name, name, namelen + 1);
+   names += namelen + 1;
+
    for (int32_t i = 0; i < memberslen; ++i) {
       uint32_t idx = KOJI_OP_USER0 + i;
       cls->members[idx].name = names;
