@@ -70,7 +70,7 @@ string_class_hash(struct string *str)
 kintern struct class *
 class_string_new(struct class *class_class, struct koji_allocator *alloc)
 {
-	struct class* c = class_new(class_class, "string", 6, NULL, 0, alloc);
+	struct class* c = class_new(class_class, "string", 6, 0, NULL, 0, alloc);
 	c->hash = (class_op_hash_t)string_class_hash;
 	return c;
 }

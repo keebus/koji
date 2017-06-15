@@ -234,7 +234,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 	instrs = frame->proto->instrs;
 
 	for (;;) {
-      int32_t compare, newpc, reg, to_reg;
+      int32_t compare, newpc;
       union value *ra;
       union value arg1, arg2;
 		instr_t instr = instrs[frame->pc++];
@@ -242,10 +242,8 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 
 		switch (op) {
 			case OP_LOADNIL:
-            reg = decode_A(instr);
-            to_reg = reg + decode_Bx(instr);
-				for (; reg < to_reg; ++reg)
-					vm_value_setnil(vm, vm_register(vm, frame, reg));
+				for (union value *r = RA, *re = r + decode_Bx(instr); r < re; ++r)
+					vm_value_setnil(vm, r);
 				break;
 
 			case OP_LOADBOOL:
@@ -258,9 +256,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 				break;
 
 			case OP_NEG:
-				ra = RA;
-				arg1 = ARG(Bx);
-				vm_value_setbool(vm, ra, !value_tobool(ARG(Bx)));
+				vm_value_setbool(vm, RA, !value_tobool(ARG(Bx)));
 				break;
 
 			case OP_UNM:
@@ -335,7 +331,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 				arg1 = ARG(B);
 				if (value_isobj(arg1)) {
                vm_value_set(vm, vm_push(vm), ARG(C));
-               vm_callop(vm, value_getobj(arg1), KOJI_OP_GET, 1, ra, 1);
+               vm_callop(vm, value_getobj(arg1), KOJI_OP_GET, 1, RA, 1);
 				}
 				else {
 					vm_throw(vm, "primitive type %s does not support `get` "
@@ -394,7 +390,11 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
             arg1 = ARG(C);
             if (value_isobj(arg1)) {
                struct object *obj = value_getobj(arg1);
-               obj->class->members[KOJI_OP_CALL](vm, obj + 1, KOJI_OP_CALL, arg1, value_nil())
+               int32_t nargs = decode_B(instr);
+               int32_t sp = vm->valuesp;
+               vm->valuesp = (int32_t)(ra - vm->valuestack) + nargs;
+               obj->class->members[KOJI_OP_CALL].func(vm, obj + 1, KOJI_OP_CALL, nargs);
+               vm->valuesp = sp;
             }
             break;
 

@@ -21,15 +21,17 @@ typedef uint64_t (* class_op_hash_t) (struct object *);
 struct class {
    struct object object;
    char *name;
+   uint16_t objsize;
+   uint16_t seed;
    int32_t memberslen;
-   uint64_t seed;
    class_op_hash_t hash;
    struct class_member members[];
 };
 
 kintern struct class *
 class_new(struct class *class_class, const char *name, int32_t namelen,
-   const char **members, int32_t nmembers, struct koji_allocator *alloc);
+   uint16_t objsize, const char **members, int32_t nmembers,
+   struct koji_allocator *alloc);
 
 kintern void
 class_free(struct class *class, struct koji_allocator *alloc);

@@ -111,25 +111,16 @@ koji_result_t koji_run(koji_t vm)
 	return vm_resume(vm);
 }
 
-KOJI_API void
-koji_push_string(koji_t vm, const char *chars, int len)
+KOJI_API koji_number_t
+koji_number(koji_t vm, int offset)
 {
-	struct string *str = string_new(vm->class_string, &vm->alloc, len);
-	memcpy(&str->chars, chars, len);
-	str->chars[len] = 0;
-	*vm_push(vm) = value_obj(str);
-}
-
-KOJI_API void
-koji_push_stringf(koji_t vm, const char *format, ...)
-{
-	va_list args;
-	va_start(args, format);
-	int size = vsnprintf(0, 0, format, args);
-	struct string *str = string_new(vm->class_string, &vm->alloc, size);
-	vsnprintf(str->chars, size + 1, format, args);
-	*vm_push(vm) = value_obj(str);
-	va_end(args);
+   union value value = *vm_top(vm, offset);
+   if (value_isnum(value))
+      return value.num;
+   else if (value_isbool(value))
+      return value_getbool(value);
+   else
+      return 0;
 }
 
 KOJI_API const char *
@@ -157,10 +148,32 @@ koji_string_len(koji_t vm, int offset)
 }
 
 KOJI_API void
-koji_push_class(koji_t vm, const char *name, const char **members, int nmembers)
+koji_push_string(koji_t vm, const char *chars, int len)
+{
+	struct string *str = string_new(vm->class_string, &vm->alloc, len);
+	memcpy(&str->chars, chars, len);
+	str->chars[len] = 0;
+	*vm_push(vm) = value_obj(str);
+}
+
+KOJI_API void
+koji_push_stringf(koji_t vm, const char *format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	int size = vsnprintf(0, 0, format, args);
+	struct string *str = string_new(vm->class_string, &vm->alloc, size);
+	vsnprintf(str->chars, size + 1, format, args);
+	*vm_push(vm) = value_obj(str);
+	va_end(args);
+}
+
+KOJI_API void
+koji_push_class(koji_t vm, const char *name, int objsize,
+   const char **members, int nmembers)
 {
    *vm_push(vm) = value_obj(class_new(vm->class_class, name,
-      (int32_t)strlen(name), members, nmembers, &vm->alloc));
+      (int32_t)strlen(name), objsize, members, nmembers, &vm->alloc));
 }
 
 KOJI_API koji_result_t

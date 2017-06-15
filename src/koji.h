@@ -113,11 +113,8 @@ koji_load_file(koji_t, const char *filename);
 KOJI_API koji_result_t
 koji_run(koji_t);
 
-KOJI_API void
-koji_push_string(koji_t, const char *source, int len);
-
-KOJI_API void
-koji_push_stringf(koji_t, const char *format, ...);
+KOJI_API koji_number_t
+koji_number(koji_t, int offset);
 
 KOJI_API const char *
 koji_string(koji_t, int offset);
@@ -126,7 +123,14 @@ KOJI_API int
 koji_string_len(koji_t, int offset);
 
 KOJI_API void
-koji_push_class(koji_t, const char *name, const char **members, int nmembers);
+koji_push_string(koji_t, const char *source, int len);
+
+KOJI_API void
+koji_push_stringf(koji_t, const char *format, ...);
+
+KOJI_API void
+koji_push_class(koji_t, const char *name, int objsize, const char **members,
+   int nmembers);
 
 KOJI_API koji_result_t
 koji_class_set_op(koji_t, int offset, enum koji_op, koji_function_t);

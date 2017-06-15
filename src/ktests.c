@@ -86,11 +86,20 @@ test_simple(const char *filename)
 
 #define DIR "../tests/"
 
+struct vector {
+   int x;
+   int y;
+};
+
 static int
 vector_fns(koji_t vm, void *user, enum koji_op op, int nargs)
 {
+   struct vector *self = user;
    if (op == KOJI_OP_CTOR) {
-      nargs = 1;
+      assert(nargs == 2);
+      self->x = (int)koji_number(vm, -2);
+      self->y = (int)koji_number(vm, -1);
+      koji_pop(vm, nargs);
    }
    else if (op == KOJI_OP_ADD) {
       nargs = 1;
@@ -100,6 +109,7 @@ vector_fns(koji_t vm, void *user, enum koji_op op, int nargs)
       nargs = 1;
    }
    return 0;
+
 }
 
 static bool
@@ -109,7 +119,7 @@ test_hostclass(void)
 
    const char *methods[] = { "length" };
 
-   koji_push_class(vm, "Vector", methods, 1);
+   koji_push_class(vm, "Vector", sizeof(struct vector), methods, 1);
    koji_class_set_op(vm, -1, KOJI_OP_CTOR, vector_fns);
    koji_class_set_op(vm, -1, KOJI_OP_ADD, vector_fns);
    koji_class_set_fn(vm, -1, "length", vector_fns);
