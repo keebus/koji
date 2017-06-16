@@ -224,5 +224,7 @@ koji_setglobal(koji_t vm, const char* key)
 	union value keyv = value_new_stringf(vm->class_string, &vm->alloc, "%s", key);
 	table_set(&vm->globals, vm, keyv, *vm_top(vm, -1));
 	vm_pop(vm);
-	value_const_destroy(keyv, &vm->alloc);
+	struct object *keyo = value_getobj(keyv);
+	assert(keyo->refs == 2);
+	keyo->refs = 1;
 }

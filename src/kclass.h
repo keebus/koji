@@ -16,7 +16,8 @@ struct class_member {
    koji_function_t func;
 };
 
-typedef uint64_t (* class_op_hash_t) (struct object *);
+typedef uint64_t	(* class_op_hash_t) (struct object *);
+typedef bool		(* class_op_equals_t) (struct object *, struct object *);
 
 struct class {
    struct object object;
@@ -24,6 +25,7 @@ struct class {
    uint16_t objsize;
    uint16_t seed;
    int32_t memberslen;
+   class_op_equals_t equals;
    class_op_hash_t hash;
    struct class_member members[];
 };

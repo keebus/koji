@@ -1,8 +1,8 @@
 /*
  * koji scripting language
- * 
+ *
  * Copyright (C) 2017 Canio Massimo Tristano
- * 
+ *
  * This source file is part of the koji scripting language, distributed under
  * the MIT license. See koji.h for further licensing information.
  */
@@ -15,24 +15,24 @@
 #include <stdio.h> /* temp */
 
 static void
-vm_value_setnil(struct koji_vm *vm, union value *val)
+vm_value_setnil(struct koji_vm *vm, union value *v)
 {
-	vm_value_destroy(vm, *val);
-	*val = value_nil();
+	vm_value_destroy(vm, *v);
+	*v = value_nil();
 }
 
 static void
-vm_value_setbool(struct koji_vm *vm, union value *val, bool b)
+vm_value_setbool(struct koji_vm *vm, union value *v, bool b)
 {
-	vm_value_destroy(vm, *val);
-	*val = value_bool(b);
+	vm_value_destroy(vm, *v);
+	*v = value_bool(b);
 }
 
 static void
-vm_value_setnum(struct koji_vm *vm, union value *val, koji_number_t num)
+vm_value_setnum(struct koji_vm *vm, union value *v, koji_number_t num)
 {
-	vm_value_destroy(vm, *val);
-	*val = value_num(num);
+	vm_value_destroy(vm, *v);
+	*v = value_num(num);
 }
 
 static union value *
@@ -48,7 +48,7 @@ vm_value(struct koji_vm *vm, struct koji_vm_frame *frame, int32_t loc)
 	return *(loc >= 0
 		? vm_register(vm, frame, loc)
 		: (assert(-loc - 1 < (int32_t)frame->proto->nconsts),
-         frame->proto->consts - (loc + 1)));
+			frame->proto->consts - (loc + 1)));
 }
 
 kintern void
@@ -58,14 +58,14 @@ vm_init(struct koji_vm *vm, struct koji_allocator *alloc)
 	vm->alloc = *alloc;
 
    /* init builtin classes */
-   vm->class_class = class_class_new(alloc);
-   vm->class_string = class_string_new(vm->class_class, alloc);
-   vm->class_table = NULL;
+	vm->class_class = class_class_new(alloc);
+	vm->class_string = class_string_new(vm->class_class, alloc);
+	vm->class_table = NULL;
 
-   /* init table of globals */
-   table_init(&vm->globals, alloc, 64);
+	/* init table of globals */
+	table_init(&vm->globals, alloc, 64);
 
-	/* init frame stack */
+	 /* init frame stack */
 	vm->framesp = 0;
 	vm->frameslen = 16;
 	vm->framestack = kalloc(struct koji_vm_frame, vm->frameslen, &vm->alloc);
@@ -79,49 +79,52 @@ vm_init(struct koji_vm *vm, struct koji_allocator *alloc)
 kintern void
 vm_deinit(struct koji_vm *vm)
 {
-   int32_t i;
+	int32_t i;
 
-	/* destroy all values on the stack */
-	for (i = 0; i < vm->valuesp; ++i) {
+	 /* destroy all values on the stack */
+	for (i = 0; i < vm->valuesp; ++i)
+	{
 		vm_value_destroy(vm, vm->valuestack[i]);
 	}
 	kfree(vm->valuestack, vm->valueslen, &vm->alloc);
 
 	/* release frame stack prototype references */
-	for (i = 0; i < vm->framesp; ++i) {
+	for (i = 0; i < vm->framesp; ++i)
+	{
 		prototype_unref(vm->framestack[i].proto, &vm->alloc);
 	}
 	kfree(vm->framestack, vm->frameslen, &vm->alloc);
 
    /* release table of globals */
-   table_deinit(&vm->globals, vm);
+	table_deinit(&vm->globals, vm);
 
-   /* release builtin classes */
-   assert(vm->class_class->object.refs == 3);
-   assert(vm->class_string->object.refs == 1);
-   //assert(vm->class_table->object.refs == 1);
-   class_free(vm->class_class, &vm->alloc);
-   class_free(vm->class_string, &vm->alloc);
-   //class_free(vm->class_table, &vm->alloc);
+	/* release builtin classes */
+	assert(vm->class_class->object.refs == 3);
+	assert(vm->class_string->object.refs == 1);
+	//assert(vm->class_table->object.refs == 1);
+	class_free(vm->class_class, &vm->alloc);
+	class_free(vm->class_string, &vm->alloc);
+	//class_free(vm->class_table, &vm->alloc);
 }
 
 kintern void
 vm_push_frame(struct koji_vm *vm, struct prototype *proto, int32_t stackbase)
 {
-   int32_t i, n;
+	int32_t i, n;
 
-	/* bump up the num of prototype references as it is now referenced by the
-	 * new frame */
+	 /* bump up the num of prototype references as it is now referenced by the
+	  * new frame */
 	++proto->refs;
 
 	/* bump up the frame stack pointer */
 	const int32_t frame_ptr = vm->framesp++;
 
 	/* resize the array if needed */
-	if (vm->framesp > vm->frameslen) {
+	if (vm->framesp > vm->frameslen)
+	{
 		int32_t newframeslen = vm->frameslen * 2;
 		vm->framestack = krealloc(vm->framestack, vm->frameslen, newframeslen,
-         &vm->alloc);
+			&vm->alloc);
 		vm->frameslen = newframeslen;
 	}
 
@@ -156,13 +159,14 @@ kintern union value *
 vm_push(struct koji_vm *vm)
 {
 	const int32_t valuesp = vm->valuesp++;
-	
+
    /* do we need to reallocate the value stack because it is not large
 	 * enough? */
-	if (vm->valuesp > vm->valueslen) {
+	if (vm->valuesp > vm->valueslen)
+	{
 		int32_t newvalueslen = vm->valueslen * 2;
 		vm->valuestack = krealloc(vm->valuestack, vm->valueslen, newvalueslen,
-         &vm->alloc);
+			&vm->alloc);
 		vm->valueslen = newvalueslen;
 	}
 
@@ -172,15 +176,16 @@ vm_push(struct koji_vm *vm)
 kintern void
 vm_pop(struct koji_vm *vm)
 {
-   assert(vm->valuesp > 0);
-   vm_value_destroy(vm, vm->valuestack[--vm->valuesp]);
+	assert(vm->valuesp > 0);
+	vm_value_destroy(vm, vm->valuestack[--vm->valuesp]);
 }
 
 kintern void
 vm_popn(struct koji_vm *vm, int32_t n)
 {
-   int32_t i;
-	for (i = 0; i < n; ++i) {
+	int32_t i;
+	for (i = 0; i < n; ++i)
+	{
 		union value *value = vm_top(vm, -1);
 		vm_value_destroy(vm, *value);
 	}
@@ -189,15 +194,15 @@ vm_popn(struct koji_vm *vm, int32_t n)
 
 static __forceinline void
 vm_callop(struct koji_vm *vm, struct object *obj, enum koji_op op,
-   int32_t nargs, union value *dest, int32_t ndest)
+	int32_t nargs, union value *dest, int32_t ndest)
 {
-   int32_t nret = obj->class->members[op].func(vm, obj + 1, op, nargs);
-   int32_t nset = min_i32(nret, ndest);
-   for (int32_t i = 0; i < nset; ++i)
-      dest[i] = *vm_top(vm, -nret + i);
-   for (int32_t i = nset; i < ndest; ++i)
-      vm_value_setnil(vm, dest + i);
-   vm_popn(vm, nret);
+	int32_t nret = obj->class->members[op].func(vm, obj + 1, op, nargs);
+	int32_t nset = min_i32(nret, ndest);
+	for (int32_t i = 0; i < nset; ++i)
+		dest[i] = *vm_top(vm, -nret + i);
+	for (int32_t i = nset; i < ndest; ++i)
+		vm_value_setnil(vm, dest + i);
+	vm_popn(vm, nret);
 }
 
 kintern koji_result_t
@@ -208,18 +213,19 @@ vm_resume(struct koji_vm *vm)
 #define ARG(x) vm_value(vm, frame, decode_##x(instr))
 
    /* declare important bookkeeping variable*/
-   struct koji_allocator *alloc = &vm->alloc;
-   struct koji_vm_frame *frame;
-   instr_t const *instrs;
+	struct koji_allocator *alloc = &vm->alloc;
+	struct koji_vm_frame *frame;
+	instr_t const *instrs;
 
-	/* set the error handler so that if any runtime error occurs, we can cleanly
-	 * return KOJI_ERROR from this function */
-   if (setjmp(vm->errorjmpbuf)) {
-      vm->validstate = VM_STATE_INVALID;
+	 /* set the error handler so that if any runtime error occurs, we can cleanly
+	  * return KOJI_ERROR from this function */
+	if (setjmp(vm->errorjmpbuf))
+	{
+		vm->validstate = VM_STATE_INVALID;
 		return KOJI_ERROR_RUNTIME;
-   }
+	}
 
-	/* check state is valid, otherwise throw an error */
+	 /* check state is valid, otherwise throw an error */
 	if (vm->validstate == VM_STATE_INVALID)
 		vm_throw(vm, "cannot resume invalid state.");
 
@@ -233,14 +239,16 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 	frame = vm->framestack + (vm->framesp - 1);
 	instrs = frame->proto->instrs;
 
-	for (;;) {
-      int32_t compare, newpc;
-      union value *ra;
-      union value arg1, arg2;
+	for (;;)
+	{
+		int32_t compare, newpc;
+		union value *ra;
+		union value arg1, arg2;
 		instr_t instr = instrs[frame->pc++];
-      enum opcode op = decode_op(instr);
+		enum opcode op = decode_op(instr);
 
-		switch (op) {
+		switch (op)
+		{
 			case OP_LOADNIL:
 				for (union value *r = RA, *re = r + decode_Bx(instr); r < re; ++r)
 					vm_value_setnil(vm, r);
@@ -265,14 +273,14 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 				if (value_isnum(arg1))
 					vm_value_setnum(vm, ra, -arg1.num);
 				else if (value_isobj(arg1))
-               vm_callop(vm, value_getobj(arg1), KOJI_OP_UNM, 0, ra, 1);
+					vm_callop(vm, value_getobj(arg1), KOJI_OP_UNM, 0, ra, 1);
 				else
 					vm_throw(vm, "cannot apply unary minus operation to a %s value.",
-                  value_type_str(arg1));
+						value_type_str(arg1));
 				break;
 
 				/* binary operators */
-#define BINARY_OPERATOR(case_, op_, name_, classop, NUMBER_MODIFIER)\
+			#define BINARY_OPERATOR(case_, op_, name_, classop, NUMBER_MODIFIER)\
 				case case_:\
 					ra = RA;\
 					arg1 = ARG(B);\
@@ -293,55 +301,59 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 					}\
 					break;
 
-#define PASSTHROUGH(x) x
-#define CAST_TO_INT(x) ((int64_t)x)
+			#define PASSTHROUGH(x) x
+			#define CAST_TO_INT(x) ((int64_t)x)
 
-				BINARY_OPERATOR(OP_ADD, +, "add",  KOJI_OP_ADD, PASSTHROUGH)
-				BINARY_OPERATOR(OP_SUB, -, "sub",  KOJI_OP_SUB, PASSTHROUGH)
-				BINARY_OPERATOR(OP_MUL, *, "mul",  KOJI_OP_MUL, PASSTHROUGH)
-				BINARY_OPERATOR(OP_DIV, / , "div", KOJI_OP_DIV, PASSTHROUGH)
-				BINARY_OPERATOR(OP_MOD, %, "mod",  KOJI_OP_MOD, CAST_TO_INT)
+				BINARY_OPERATOR(OP_ADD, +, "add", KOJI_OP_ADD, PASSTHROUGH)
+					BINARY_OPERATOR(OP_SUB, -, "sub", KOJI_OP_SUB, PASSTHROUGH)
+					BINARY_OPERATOR(OP_MUL, *, "mul", KOJI_OP_MUL, PASSTHROUGH)
+					BINARY_OPERATOR(OP_DIV, / , "div", KOJI_OP_DIV, PASSTHROUGH)
+					BINARY_OPERATOR(OP_MOD, %, "mod", KOJI_OP_MOD, CAST_TO_INT)
 
-#undef PASSTHROUGH
-#undef CAST_TO_INT
-#undef BINARY_OPERATOR
+				#undef PASSTHROUGH
+				#undef CAST_TO_INT
+				#undef BINARY_OPERATOR
 
 			case OP_TESTSET:
 				/* if arg B to bool matches the boole value in C, make the jump
-               otherwise skip it */
+			   otherwise skip it */
 				newpc = frame->pc + 1;
 				union value const arg = ARG(B);
-				if (value_tobool(arg) == decode_C(instr)) {
+				if (value_tobool(arg) == decode_C(instr))
+				{
 					vm_value_set(vm, RA, arg);
 					newpc += decode_Bx(instrs[frame->pc]);
 				}
 				frame->pc = newpc;
 				break;
 
-         case OP_GETGLOB:
-            vm_value_set(vm, RA, table_get(&vm->globals, vm, ARG(Bx)));
-            break;
+			case OP_GETGLOB:
+				vm_value_set(vm, RA, table_get(&vm->globals, vm, ARG(Bx)));
+				break;
 
 			case OP_NEWTABLE:
 				*RA = value_new_table(vm->class_table, &vm->alloc,
-               TABLE_DEFAULT_CAPACITY);
+					TABLE_DEFAULT_CAPACITY);
 				break;
 
 			case OP_GET:
 				arg1 = ARG(B);
-				if (value_isobj(arg1)) {
-               vm_value_set(vm, vm_push(vm), ARG(C));
-               vm_callop(vm, value_getobj(arg1), KOJI_OP_GET, 1, RA, 1);
+				if (value_isobj(arg1))
+				{
+					vm_value_set(vm, vm_push(vm), ARG(C));
+					vm_callop(vm, value_getobj(arg1), KOJI_OP_GET, 1, RA, 1);
 				}
-				else {
+				else
+				{
 					vm_throw(vm, "primitive type %s does not support `get` "
-                  "operator.", value_type_str(arg1));
+						"operator.", value_type_str(arg1));
 				}
 				break;
 
 			case OP_TEST:
 				newpc = frame->pc + 1;
-				if (value_tobool(*RA) == decode_Bx(instr)) {
+				if (value_tobool(*RA) == decode_Bx(instr))
+				{
 					newpc += decode_Bx(instrs[frame->pc]);
 				}
 				frame->pc = newpc;
@@ -351,7 +363,7 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 				frame->pc += decode_Bx(instr);
 				break;
 
-#define COMPARISON_OPERATOR(case_, op_)\
+			#define COMPARISON_OPERATOR(case_, op_)\
 			case case_:\
 				ra = RA;\
 				arg1 = ARG(B);\
@@ -371,67 +383,73 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 				}\
 				goto compare_done;
 
-			COMPARISON_OPERATOR(OP_EQ, ==);
-			COMPARISON_OPERATOR(OP_LT, <);
-			COMPARISON_OPERATOR(OP_LTE, <=);
+				COMPARISON_OPERATOR(OP_EQ, == );
+				COMPARISON_OPERATOR(OP_LT, < );
+				COMPARISON_OPERATOR(OP_LTE, <= );
 
-      compare_done:
-            newpc = frame->pc + 1;
-				if (compare == decode_C(instr)) {
+			compare_done:
+				newpc = frame->pc + 1;
+				if (compare == decode_C(instr))
+				{
 					newpc += decode_Bx(instrs[frame->pc]);
 				}
 				frame->pc = newpc;
-            break;
+				break;
 
-#undef COMPARISON_OPERATOR
+			#undef COMPARISON_OPERATOR
 
-         case OP_CALL:
-            ra = RA;
-            arg1 = ARG(C);
-            if (value_isobj(arg1)) {
-               struct object *obj = value_getobj(arg1);
-               int32_t nargs = decode_B(instr);
-               int32_t sp = vm->valuesp;
-               vm->valuesp = (int32_t)(ra - vm->valuestack) + nargs;
-               obj->class->members[KOJI_OP_CALL].func(vm, obj + 1, KOJI_OP_CALL, nargs);
-               vm->valuesp = sp;
-            }
-            break;
+			case OP_CALL:
+				ra = RA;
+				arg2 = ARG(C);
+				if (value_isobj(arg2))
+				{
+					struct object *obj = value_getobj(arg2);
+					int32_t nargs = decode_B(instr);
+					int32_t sp = vm->valuesp;
+					vm->valuesp = (int32_t)(ra - vm->valuestack) + nargs;
+					obj->class->members[KOJI_OP_CALL].func(vm, obj + 1, KOJI_OP_CALL, nargs);
+					vm->valuesp = sp;
+				}
+				break;
 
-         case OP_SETGLOB:
-            table_set(&vm->globals, vm, ARG(Bx), *RA);
-            break;
+			case OP_SETGLOB:
+				table_set(&vm->globals, vm, ARG(Bx), *RA);
+				break;
 
-         case OP_SET:
-            ra = RA;
-            if (value_isobj(*ra)) {
-               vm_value_set(vm, vm_push(vm), ARG(B));
-               vm_value_set(vm, vm_push(vm), ARG(C));
-               vm_callop(vm, value_getobj(*ra), KOJI_OP_SET, 2, NULL, 0);
-            }
-            else {
-               vm_throw(vm, "primitive type %s does not support `set` "
-                  "operator.", value_type_str(arg1));
-            }
-            break;
+			case OP_SET:
+				ra = RA;
+				if (value_isobj(*ra))
+				{
+					vm_value_set(vm, vm_push(vm), ARG(B));
+					vm_value_set(vm, vm_push(vm), ARG(C));
+					vm_callop(vm, value_getobj(*ra), KOJI_OP_SET, 2, NULL, 0);
+				}
+				else
+				{
+					vm_throw(vm, "primitive type %s does not support `set` "
+						"operator.", value_type_str(arg1));
+				}
+				break;
 
 			case OP_RET:
-         {
-            union value *dest = vm_register(vm, frame, 0);
-            union value* dest_end = dest + frame->proto->nregs;
-            union value* src = vm_register(vm, frame, decode_A(instr));
-            union value* src_end = src + decode_Bx(instr);
+			{
+				union value *dest = vm_register(vm, frame, 0);
+				union value* dest_end = dest + frame->proto->nregs;
+				union value* src = vm_register(vm, frame, decode_A(instr));
+				union value* src_end = src + decode_Bx(instr);
 
-				/* copy locals from starting from 0 from the current frame to the
-               previous frame result locals */
-            for (; src < src_end; ++src, ++dest) {
-               vm_value_destroy(vm, *dest); /* make return reg nil */
-               *dest = *src; /* move value over */
-               *src = value_nil();
-            }
-            
-				/* set all other current locals to nil */
-				for (; dest < dest_end; ++dest) {
+					/* copy locals from starting from 0 from the current frame to the
+				   previous frame result locals */
+				for (; src < src_end; ++src, ++dest)
+				{
+					vm_value_destroy(vm, *dest); /* make return reg nil */
+					*dest = *src; /* move value over */
+					*src = value_nil();
+				}
+
+					/* set all other current locals to nil */
+				for (; dest < dest_end; ++dest)
+				{
 					vm_value_destroy(vm, *dest);
 					*dest = value_nil();
 				}
@@ -442,28 +460,29 @@ new_frame: /* jumped to when a new frame is pushed onto the stack */
 
 				prototype_unref(frame->proto, alloc);
 				goto new_frame;
-         }
+			}
 
-         case OP_THROW:
-         {
-            arg1 = ARG(Bx);
-            struct string *str = value_getobjv(arg1);
-            if (value_isobj(arg1) && str->object.class == vm->class_string)
-               vm_throw(vm, str->chars);
-            else
-               vm_throw(vm, "throw argument must be a string.");
-            break;
-         }
-            
+			case OP_THROW:
+			{
+				arg1 = ARG(Bx);
+				struct string *str = value_getobjv(arg1);
+				if (value_isobj(arg1) && str->object.class == vm->class_string)
+					vm_throw(vm, str->chars);
+				else
+					vm_throw(vm, "throw argument must be a string.");
+				break;
+			}
+
 			case OP_DEBUG:
 				printf("debug: ");
-				for (union value *r = RA, *e = r + decode_Bx(instr); r < e; ++r) {
+				for (union value *r = RA, *e = r + decode_Bx(instr); r < e; ++r)
+				{
 					if (value_isnil(*r))
-                  printf("nil");
+						printf("nil");
 					else if (value_isbool(*r))
-                  printf("%s", value_getbool(*r) ? "true" : "false");
+						printf("%s", value_getbool(*r) ? "true" : "false");
 					else if (value_isnum(*r))
-                  printf("%f", r->num);
+						printf("%f", r->num);
 					else if (value_getobj(*r)->class == vm->class_string)
 						printf("%s", &((struct string*)value_getobj(*r))->chars);
 					else
@@ -503,27 +522,43 @@ vm_object_unref(struct koji_vm *vm, struct object *obj)
 {
 entry:
 	assert(obj && obj->refs > 0);
-   if (--obj->refs > 0)
-      return;
+	if (--obj->refs > 0)
+		return;
 
-   struct class *cls = obj->class;
-   struct object *cls_obj = &cls->object;
-   int32_t nret = cls->members[KOJI_OP_DTOR]
-                  .func(vm, obj + 1, KOJI_OP_DTOR, 0);
-   assert(nret == 0);
-   vm->alloc.free(obj, obj->size, vm->alloc.user);
-   obj = cls_obj;
-   goto entry;
+	struct class *cls = obj->class;
+	struct object *cls_obj = &cls->object;
+	int32_t nret = cls->members[KOJI_OP_DTOR]
+		.func(vm, obj + 1, KOJI_OP_DTOR, 0);
+	assert(nret == 0);
+	vm->alloc.free(obj, obj->size, vm->alloc.user);
+	obj = cls_obj;
+	goto entry;
+}
+
+kintern bool
+vm_value_equals(struct koji_vm *vm, union value v1, union value v2)
+{
+	if (value_isobj(v1) && value_isobj(v2))
+	{
+		struct object *obj = value_getobj(v1);
+		return obj->class->equals(obj, value_getobj(v2));
+	}
+	else
+	{
+		return v1.bits == v2.bits;
+	}
 }
 
 kintern uint64_t
-vm_value_hash(struct koji_vm *vm, union value val)
+vm_value_hash(struct koji_vm *vm, union value v)
 {
-	if (value_isobj(val)) {
-		struct object *obj = value_getobj(val);
-      return obj->class->hash(obj);
+	if (value_isobj(v))
+	{
+		struct object *obj = value_getobj(v);
+		return obj->class->hash(obj);
 	}
-	else {
-		return mix64(val.bits);
+	else
+	{
+		return mix64(v.bits);
 	}
 }

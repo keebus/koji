@@ -108,14 +108,17 @@ vm_value_set(struct koji_vm *vm, union value *dest, union value src);
 kintern void
 vm_object_unref(struct koji_vm *, struct object*);
 
+kintern bool
+vm_value_equals(struct koji_vm *vm, union value v1, union value v2);
+
 kintern uint64_t
-vm_value_hash(struct koji_vm *, union value val);
+vm_value_hash(struct koji_vm *, union value v);
 
 static void
-vm_value_destroy(struct koji_vm *vm, union value val)
+vm_value_destroy(struct koji_vm *vm, union value v)
 {
-	if (value_isobj(val)) {
-		struct object *object = value_getobj(val);
+	if (value_isobj(v)) {
+		struct object *object = value_getobj(v);
 		vm_object_unref(vm, object);
 	}
 }

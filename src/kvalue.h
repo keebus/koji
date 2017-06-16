@@ -22,7 +22,6 @@
 union value {
    double   num;
    uint64_t bits;
-   uint64_t hash;
 };
 
 /*
@@ -86,52 +85,52 @@ value_obj(void const *obj)
 /*
  */
 static bool
-value_isnil(union value val)
+value_isnil(union value v)
 {
-   return val.bits == BITS_NAN_MASK;
+   return v.bits == BITS_NAN_MASK;
 }
 
 /*
  */
 static bool
-value_isbool(union value val)
+value_isbool(union value v)
 {
-   return (val.bits & BITS_TAG_MASK) == BITS_TAG_BOOLEAN;
+   return (v.bits & BITS_TAG_MASK) == BITS_TAG_BOOLEAN;
 }
 
 /*
  */
 static bool
-value_isnum(union value val)
+value_isnum(union value v)
 {
-   return (val.bits & BITS_NAN_MASK) != BITS_NAN_MASK;
+   return (v.bits & BITS_NAN_MASK) != BITS_NAN_MASK;
 }
 
 /*
  */
 static bool
-value_isobj(union value val)
+value_isobj(union value v)
 {
-   return (val.bits & BITS_TAG_MASK) == BITS_TAG_OBJECT;
+   return (v.bits & BITS_TAG_MASK) == BITS_TAG_OBJECT;
 }
 
 /*
  */
 static bool
-value_getbool(union value val)
+value_getbool(union value v)
 {
-   assert(value_isbool(val));
-   return (val.bits & (uint64_t)1);
+   assert(value_isbool(v));
+   return (v.bits & (uint64_t)1);
 }
 
 /*
  */
 static bool
-value_tobool(union value val)
+value_tobool(union value v)
 {
-   if (value_isbool(val)) return value_getbool(val);
-   else if (value_isnum(val)) return val.num != 0;
-   else if (value_isnil(val)) return false;
+   if (value_isbool(v)) return value_getbool(v);
+   else if (value_isnum(v)) return v.num != 0;
+   else if (value_isnil(v)) return false;
    return true;
 }
 
@@ -139,10 +138,10 @@ value_tobool(union value val)
  * Get the object referenced by value [val].
  */
 static struct object *
-value_getobj(union value val)
+value_getobj(union value v)
 {
-   assert(value_isobj(val));
-   return (struct object *)(intptr_t)(val.bits & BITS_TAG_PAYLOAD);
+   assert(value_isobj(v));
+   return (struct object *)(intptr_t)(v.bits & BITS_TAG_PAYLOAD);
 }
 
 /*
@@ -150,13 +149,13 @@ value_getobj(union value val)
  * void*, to be used when you already know the type of the object e.g.
  * struct string *s = value_getobjv(myval);
  */
-#define value_getobjv(val) ((void *)value_getobj(val))
+#define value_getobjv(v) ((void *)value_getobj(v))
 
 /*
  * Returns a str with the type of [value].
  */
 kintern const char *
-value_type_str(union value val);
+value_type_str(union value v);
 
 kintern void
 value_const_destroy(union value c, struct koji_allocator *alloc);

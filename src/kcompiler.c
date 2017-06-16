@@ -135,7 +135,7 @@ union expr_value {
 struct expr {
    enum expr_type type : 16; /* this expression type */
    bool positive; /* whether this expression is negated (positive==false) */
-   union expr_value val; /* this expression value */
+   union expr_value v; /* this expression value */
 };
 
 /*
@@ -333,7 +333,7 @@ expr_bool(bool value)
    struct expr e;
    e.type = EXPR_BOOL;
    e.positive = true;
-   e.val.boole = value;
+   e.v.boole = value;
    return e;
 }
 
@@ -346,7 +346,7 @@ expr_num(koji_number_t value)
    struct expr e;
    e.type = EXPR_NUMBER;
    e.positive = true;
-   e.val.num = value;
+   e.v.num = value;
    return e;
 }
 
@@ -359,7 +359,7 @@ expr_loc(loc_t value)
    struct expr e;
    e.type = EXPR_LOCATION;
    e.positive = true;
-   e.val.loc = value;
+   e.v.loc = value;
    return e;
 }
 
@@ -373,8 +373,8 @@ exprcompare(enum expr_type type, bool testval, int32_t lhsloc, int32_t rhsloc)
    struct expr e;
    e.type = type;
    e.positive = testval;
-   e.val.comp.lhs = lhsloc;
-   e.val.comp.rhs = rhsloc;
+   e.v.comp.lhs = lhsloc;
+   e.v.comp.rhs = rhsloc;
    return e;
 }
 
@@ -400,7 +400,7 @@ expr_tobool(struct expr expr)
 
       case EXPR_BOOL:
       case EXPR_NUMBER:
-         return expr.val.num != 0;
+         return expr.v.num != 0;
 
       default:
          assert(0);
@@ -426,7 +426,7 @@ expr_negate(struct expr e)
 {
    switch (e.type) {
       case EXPR_NIL:    return expr_bool(true);
-      case EXPR_BOOL:   return expr_bool(!e.val.boole);
+      case EXPR_BOOL:   return expr_bool(!e.v.boole);
       case EXPR_NUMBER: return expr_bool(!expr_tobool(e));
       default:
          e.positive = !e.positive;
@@ -636,7 +636,7 @@ static int32_t
 use_temp(struct compiler *c, struct expr const *e)
 {
    int32_t oldtemp = c->pi.temp;
-   if (e->type == EXPR_LOCATION && e->val.loc == c->pi.temp)
+   if (e->type == EXPR_LOCATION && e->v.loc == c->pi.temp)
       ++c->pi.temp;
    return oldtemp;
 }
@@ -808,15 +808,15 @@ expr_compile(struct compiler *c, struct expr e, int32_t target_hint)
          return expr_loc(target_hint);
 
       case EXPR_BOOL:
-         emit(c, encode_ABC(OP_LOADBOOL, target_hint, e.val.boole, 0));
+         emit(c, encode_ABC(OP_LOADBOOL, target_hint, e.v.boole, 0));
          return expr_loc(target_hint);
 
       case EXPR_NUMBER:
-         return const_fetch_num(c, target_hint, e.val.num);
+         return const_fetch_num(c, target_hint, e.v.num);
 
       case EXPR_LOCATION:
          if (e.positive) return e;
-         emit(c, encode_ABx(OP_NEG, target_hint, e.val.loc));
+         emit(c, encode_ABx(OP_NEG, target_hint, e.v.loc));
          return expr_loc(target_hint);
 
       case EXPR_EQ:
@@ -824,8 +824,8 @@ expr_compile(struct compiler *c, struct expr e, int32_t target_hint)
       case EXPR_LTE:
          /* compile the comparison expression to a sequence of instructions
             that write into [target_hint] the value of the comparison */
-         emit(c, encode_ABC(OP_EQ + e.type - EXPR_EQ, e.val.comp.lhs,
-            e.positive, e.val.comp.rhs));
+         emit(c, encode_ABC(OP_EQ + e.type - EXPR_EQ, e.v.comp.lhs,
+            e.positive, e.v.comp.rhs));
          emit(c, encode_ABx(OP_JUMP, 0, 1));
          emit(c, encode_ABC(OP_LOADBOOL, target_hint, false, 1));
          emit(c, encode_ABC(OP_LOADBOOL, target_hint, true, 0));
@@ -845,10 +845,10 @@ expr_compile_unary(struct compiler *c, struct sourceloc sloc, struct expr e)
 {
    switch (e.type) {
       case EXPR_NUMBER:
-         return expr_num(-e.val.num);
+         return expr_num(-e.v.num);
 
       case EXPR_LOCATION:
-         emit(c, encode_ABx(OP_UNM, c->pi.temp, e.val.loc));
+         emit(c, encode_ABx(OP_UNM, c->pi.temp, e.v.loc));
          return expr_loc(c->pi.temp);
 
       default:
@@ -875,11 +875,11 @@ expr_compile_binary(struct compiler *c, struct sourceloc op_sloc,
 #define DEFAULT_ARITH_BINOP(opchar)\
    DEFAULT_ARITH_INVALID_OPS_CHECKS();\
    if (lhs.type == EXPR_NUMBER && rhs.type == EXPR_NUMBER) {\
-      return expr_num(lhs.val.num opchar rhs.val.num);\
+      return expr_num(lhs.v.num opchar rhs.v.num);\
    }
 
-   union expr_value lval = lhs.val;
-   union expr_value rval = rhs.val;
+   union expr_value lval = lhs.v;
+   union expr_value rval = rhs.v;
 
    /* make a binary operator between our lhs and the rhs; */
    switch (op) {
@@ -1026,13 +1026,13 @@ expr_compile_binary(struct compiler *c, struct sourceloc op_sloc,
          enum expr_type exprtype = COMPARISON_BINOP_TO_exprtype[op - BINOP_LT];
          bool       positive = COMPARISON_BINOP_TO_TEST_VALUE[op - BINOP_LT];
 
-         lhs = exprcompare(exprtype, positive, lhs.val.loc, rhs.val.loc);
+         lhs = exprcompare(exprtype, positive, lhs.v.loc, rhs.v.loc);
       }
       else {
          /* the binary operation is not a comparison but an arithmetic
             operation, emit the appropriate instruction */
-         emit(c, encode_ABC(BINOP_TO_OPCODE[op], c->pi.temp, lhs.val.loc,
-            rhs.val.loc));
+         emit(c, encode_ABC(BINOP_TO_OPCODE[op], c->pi.temp, lhs.v.loc,
+            rhs.v.loc));
          lhs = expr_loc(c->pi.temp);
       }
 
@@ -1088,20 +1088,20 @@ compile_logical_op(struct compiler *c, struct expr_state *es, enum binop op,
    switch (lhs.type) {
       case EXPR_LOCATION:
          if ((!lhs.positive) == es->negated) {
-            emit(c, encode_ABC(OP_TESTSET, MAX_ABC_VALUE, lhs.val.loc,
+            emit(c, encode_ABC(OP_TESTSET, MAX_ABC_VALUE, lhs.v.loc,
                testval));
          }
          else {
-            assert(lhs.val.loc >= 0); /* is non-cnst */
-            emit(c, encode_ABC(OP_TEST, lhs.val.loc, !testval, 0));
+            assert(lhs.v.loc >= 0); /* is non-cnst */
+            emit(c, encode_ABC(OP_TEST, lhs.v.loc, !testval, 0));
          }
          break;
 
       case EXPR_EQ: case EXPR_LT: case EXPR_LTE:
       {
          bool res = (lhs.positive ^ es->negated) ^ !testval;
-         emit(c, encode_ABC(OP_EQ + lhs.type - EXPR_EQ, lhs.val.comp.lhs,
-            lhs.val.comp.rhs, res));
+         emit(c, encode_ABC(OP_EQ + lhs.type - EXPR_EQ, lhs.v.comp.lhs,
+            lhs.v.comp.rhs, res));
          break;
       }
 
@@ -1182,7 +1182,7 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
    int32_t load_false_instr_idx = 0; /* idx of the instr that loadbools false*/
 
    if (value_is_compare) {
-      union expr_value eval = expr.val;
+      union expr_value eval = expr.v;
       int32_t A = OP_EQ + expr.type - EXPR_EQ;
       emit(c, encode_ABC(A, eval.comp.lhs, eval.comp.rhs, expr.positive));
       *branch_push(c, &c->pi.branch_true) = c->pi.instrs_end;
@@ -1192,7 +1192,7 @@ expr_close(struct compiler *c, struct expr_state *es, struct expr expr,
    else {
       /* compiled expression instance that will hold final instruction location
          and the instructions that ultimately write to that location */
-      targetloc = expr_compile(c, expr, target_hint).val.loc;
+      targetloc = expr_compile(c, expr, target_hint).v.loc;
 
       if (movetotarget && targetloc != target_hint) {
          /* if from location is a temporary location (i.e. not a local
@@ -1374,17 +1374,17 @@ parse_ref_or_call(struct compiler *c, struct expr_state *es)
 
    /* identifier refers to local variable? */
    loc_t temp = c->pi.temp;
-   struct expr val;
+   struct expr v;
    struct local *local = local_fetch(c, c->lex.tokstr);
 
    if (local) {
-      val = expr_loc(local->loc);
+      v = expr_loc(local->loc);
    }
    else {
       /* then it must be a global */
-      val = const_fetch_str(c, c->pi.temp, c->lex.tokstr, c->lex.tokstrlen);
-      emit(c, encode_ABx(OP_GETGLOB, c->pi.temp, val.val.loc));
-      val = expr_loc(c->pi.temp++);
+      v = const_fetch_str(c, c->pi.temp, c->lex.tokstr, c->lex.tokstrlen);
+      emit(c, encode_ABx(OP_GETGLOB, c->pi.temp, v.v.loc));
+      v = expr_loc(c->pi.temp++);
    }
 
    lex(c); /* eat the id */
@@ -1403,12 +1403,12 @@ parse_ref_or_call(struct compiler *c, struct expr_state *es)
          expect(c, ')');
       }
 
-      emit(c, encode_ABC(OP_CALL, firstarg, nargs, val.val.loc));
-      val = expr_loc(firstarg);
+      emit(c, encode_ABC(OP_CALL, firstarg, nargs, v.v.loc));
+      v = expr_loc(firstarg);
    }
 
    c->pi.temp = temp;
-   return val;
+   return v;
 }
 
 /*
@@ -1498,7 +1498,7 @@ parse_table(struct compiler *c)
    expr = expr_loc(c->pi.temp);
    oldtemp = use_temp(c, &expr);
 
-   emit(c, encode_ABx(OP_NEWTABLE, expr.val.loc, 0));
+   emit(c, encode_ABx(OP_NEWTABLE, expr.v.loc, 0));
 
    if (!peek(c, '}')) {
       int32_t index = 0;
@@ -1541,7 +1541,7 @@ parse_table(struct compiler *c)
          }
 
          c->pi.temp = oldtemp2;
-         emit(c, encode_ABC(OP_SET, expr.val.loc, key.val.loc, value.val.loc));
+         emit(c, encode_ABC(OP_SET, expr.v.loc, key.v.loc, value.v.loc));
 
       } while (accept(c, ','));
    }
@@ -1621,7 +1621,7 @@ parse_primary_expr(struct compiler *c, struct expr_state *es)
 
             c->pi.temp = temps;
 
-            emit(c, encode_ABC(OP_GET, c->pi.temp, expr.val.loc, key.val.loc));
+            emit(c, encode_ABC(OP_GET, c->pi.temp, expr.v.loc, key.v.loc));
 
             expr = expr_loc(c->pi.temp);
 
@@ -1745,10 +1745,10 @@ parse_expr(struct compiler *c, struct expr_state *es)
          case EXPR_LOCATION:
             /* check the location is a valid assignable, i.e. neither a cnst
                nor a temporary */
-            if (loc_is_const(lhs.val.loc) || loc_is_temp(c, lhs.val.loc)) {
+            if (loc_is_const(lhs.v.loc) || loc_is_temp(c, lhs.v.loc)) {
                goto error_lhs_not_assignable;
             }
-            parse_exprto(c, lhs.val.loc, true);
+            parse_exprto(c, lhs.v.loc, true);
             return lhs;
 
          default:
@@ -1848,13 +1848,13 @@ parse_cond(struct compiler *c, bool testval)
       two branches based on the expression result */
    if (expr_iscompare(expr.type)) {
       emit(c, encode_ABC(OP_EQ + expr.type - EXPR_EQ,
-         expr.val.comp.lhs,
-         expr.val.comp.rhs,
+         expr.v.comp.lhs,
+         expr.v.comp.rhs,
          expr.positive ^ !testval));
    }
    else {
       expr = expr_compile(c, expr, c->pi.temp);
-      emit(c, encode_ABx(OP_TEST, expr.val.loc, testval));
+      emit(c, encode_ABx(OP_TEST, expr.v.loc, testval));
    }
 
    /* emit jump to true instruction */
@@ -1916,7 +1916,7 @@ parse_stmt_throw(struct compiler *c)
 {
    expect(c, kw_throw);
    struct expr expr = parse_exprto(c, c->pi.temp, false);
-   emit(c, encode_ABx(OP_THROW, 0, expr.val.loc));
+   emit(c, encode_ABx(OP_THROW, 0, expr.v.loc));
    expect_endofstmt(c);
 }
 
@@ -1926,7 +1926,7 @@ parse_stmt_return(struct compiler *c)
    assert(peek(c, kw_return));
    lex(c);
    struct expr retval = parse_exprto(c, c->pi.temp, false);
-   emit(c, encode_ABx(OP_RET, retval.val.loc, 1));
+   emit(c, encode_ABx(OP_RET, retval.v.loc, 1));
    expect_endofstmt(c);
 }
 

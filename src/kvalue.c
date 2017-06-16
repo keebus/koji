@@ -11,11 +11,11 @@
 #include "kstring.h"
 
 kintern const char*
-value_type_str(union value val)
+value_type_str(union value v)
 {
-	if (value_isnil(val)) return "nil";
-	if (value_isbool(val)) return "bool";
-	if (value_isnum(val)) return "number";
+	if (value_isnil(v)) return "nil";
+	if (value_isbool(v)) return "bool";
+	if (value_isnum(v)) return "number";
 	return "object";
 }
 

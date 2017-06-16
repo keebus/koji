@@ -61,6 +61,14 @@ value_new_stringf(struct class *cls_string, struct koji_allocator *alloc,
 	return value;
 }
 
+static bool
+string_class_equals(struct string *lhs, struct object *rhs)
+{
+	return	rhs->class == lhs->object.class &&
+			lhs->object.size == rhs->size &&
+			memcmp(lhs->chars, ((struct string *)rhs)->chars, string_len(lhs)) == 0;
+}
+
 static uint64_t
 string_class_hash(struct string *str)
 {
@@ -71,6 +79,7 @@ kintern struct class *
 class_string_new(struct class *class_class, struct koji_allocator *alloc)
 {
 	struct class* c = class_new(class_class, "string", 6, 0, NULL, 0, alloc);
+	c->equals = (class_op_equals_t)string_class_equals;
 	c->hash = (class_op_hash_t)string_class_hash;
 	return c;
 }

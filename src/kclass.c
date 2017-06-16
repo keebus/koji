@@ -18,6 +18,12 @@ class_op_dtor_default(koji_t vm, void *user, enum koji_op op, int nargs)
 	return 0; /* nothing to do */
 }
 
+static bool
+class_op_equals_default(struct object *lhs, struct object *rhs)
+{
+	return lhs == rhs;
+}
+
 static uint64_t
 class_op_hash_default(struct object *obj)
 {
@@ -53,8 +59,8 @@ retry:
       memused[index] = true;
    }
 
+   /* allocate and setup class */
    int32_t allmemberslen = memberslen + KOJI_OP_USER0;
-
    int32_t size = sizeof(struct class)
       + namelen + 1
       + allmemberslen * sizeof(struct class_member)
@@ -66,17 +72,18 @@ retry:
    cls->objsize = objsize;
    cls->memberslen = memberslen;
    cls->seed = seed;
+   cls->equals = class_op_equals_default;
+   cls->hash = class_op_hash_default;
+   cls->members[KOJI_OP_DTOR].func = class_op_dtor_default;
    
+   /* store class name */
    char *names = (char*)(cls->members + allmemberslen);
    cls->name = names;
    memcpy(cls->name, name, namelen + 1);
    names += namelen + 1;
 
+   /* setup class members */
    memset(cls->members, 0, allmemberslen * sizeof(struct class_member));
-   
-   cls->hash = class_op_hash_default;
-   cls->members[KOJI_OP_DTOR].func = class_op_dtor_default;
-
    for (int32_t i = 0; i < memberslen; ++i) {
       uint32_t idx = KOJI_OP_USER0 + i;
       cls->members[idx].name = names;

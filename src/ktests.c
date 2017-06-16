@@ -26,17 +26,17 @@ struct koji {
 static void
 test_string(koji_t vm)
 {
-   union value val = value_new_stringf(vm->class_string, &vm->alloc,
+   union value v = value_new_stringf(vm->class_string, &vm->alloc,
       "hello %s!", "world");
-   struct string *str = value_getobjv(val);
+   struct string *str = value_getobjv(v);
 
-   assert(value_isobj(val));
+   assert(value_isobj(v));
    assert(str->object.class == vm->class_string);
    assert(str->object.refs == 1);
    assert(string_len(str) == 12);
    assert(strcmp(str->chars, "hello world!") == 0);
 
-   vm_value_destroy(vm, val);
+   vm_value_destroy(vm, v);
 }
 
 static void
@@ -124,6 +124,11 @@ test_hostclass(void)
    koji_class_set_op(vm, -1, KOJI_OP_ADD, vector_fns);
    koji_class_set_fn(vm, -1, "length", vector_fns);
    koji_setglobal(vm, "Vector");
+
+   union value key = value_new_stringf(vm->class_string, &vm->alloc, "%s", "Vector");
+   union value v = table_get(&vm->globals, vm, key);
+   assert(value_isobj(v));
+   struct class* cls = value_getobjv(v);
    
    koji_result_t res = koji_load_file(vm, DIR "hostclass.kj");
    if (res) {
@@ -147,8 +152,8 @@ int32_t main()
 {
    koji_t vm = koji_open(NULL);
 
-   test_string(vm);
-   test_table(vm);
+   //test_string(vm);
+   //test_table(vm);
 
    koji_close(vm);
 

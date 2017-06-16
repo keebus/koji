@@ -50,7 +50,7 @@ table_deinit(struct table*, struct koji_vm*);
  * Adds the mapping between [key] and [value] in specified table.
  */
 kintern void
-table_set(struct table*, struct koji_vm*, union value key, union value val);
+table_set(struct table*, struct koji_vm*, union value key, union value v);
 
 /*
  * Returns the value associated to specified [key] or nil if not found.
