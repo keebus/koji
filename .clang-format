@@ -1,0 +1,13 @@
+---
+BasedOnStyle: LLVM
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  SplitEmptyFunction: true
+ColumnLimit: '80'
+IndentWidth: '3'
+TabWidth: '3'
+UseTab: ForIndentation
+AllowShortFunctionsOnASingleLine: None
+AlwaysBreakAfterReturnType : All
+...
